@@ -25,7 +25,7 @@ Status: draft v0.1 · Scope: Company edition (chat, voice/video channels, files,
                                          └──────────────────────────────────────────────────────┘
 ```
 
-**Language:** Rust for the server and for a shared client core. The same crate runs natively on desktop (Tauri), on mobile (via UniFFI) and in the browser (WASM), so the crypto is written once. The UI is TypeScript and implements the design system.
+**Language:** Rust for the server and for a shared client core. The same crate runs natively on desktop (Tauri 2, see D2), on mobile (via UniFFI) and in the browser (WASM), so the crypto is written once. The UI is TypeScript and implements the design system.
 
 ## 3. Identity and keys
 
@@ -158,10 +158,17 @@ mcp_clients(id, org_id, name, model_class[local|external], scopes[], approved_by
 mcp_audit(id, client_id, user_id, tool, channels_touched[], ts)
 ```
 
-## 11. Open decisions
+## 11. Decisions
 
-1. **Desktop shell:** Tauri (small, Rust-native; recommended) or Electron (codex-messenger's choice, heavier).
-2. **Default for new channels:** Sealed or Company? Recommendation: **Company** for public team channels and **Sealed** for DMs, private channels and anything tagged HR, legal or board.
-3. **Recovery escrow:** on by default for Enterprise, off for Team. It needs a legal review of each country's employee-monitoring law.
-4. **Our hosted cloud:** EU-only hosting (OVH, Scaleway or Hetzner), and the Brain on hosted plans runs in confidential VMs only.
-5. **Brain model:** which open-weight models to ship and test against by default.
+| # | Decision | Status | Why |
+|---|---|---|---|
+| D1 | **License: AGPL-3.0-only** for server, core and clients, plus a Contributor License Agreement so the project can also sell commercial licenses (dual licensing). | Decided 2026-09-25 | Anyone who runs a modified Anarchy as a service must publish their changes. **It does not stop resale:** AGPL allows anyone to sell or host it. If blocking competing hosted offers becomes the goal, switch *before accepting outside contributions* to the Functional Source License (FSL-1.1-Apache-2.0, which becomes Apache-2.0 after 2 years). That is source-available, not open source, so the sovereignty pitch weakens. |
+| D2 | **Desktop shell: Tauri 2** (Rust backend, web UI). GPUI rejected for now. | Decided 2026-09-25 | Tauri reuses one TypeScript UI and the design-system CSS across web, desktop and (Tauri 2) mobile. A web client is required anyway for guests, the portal and public forums. GPUI (Zed) is fast and Rust-native, but has no web or mobile target, no stable API, thin docs, and weaker screen-reader support, which would mean a second UI codebase. Revisit if the desktop app hits performance limits the web UI can't fix. |
+| D3 | **Trust state for new channels is chosen by the creator** with radio buttons (Sealed / Company) in the create-channel dialog. No preselected default beyond what org policy forces. | Decided 2026-09-25 | Keeps the choice explicit while we learn what users pick. Org policy can still lock a state for channel classes (HR, legal, board → Sealed only). Revisit defaults with usage data. DMs are always Sealed. |
+
+## 12. Open decisions
+
+1. **Recovery escrow:** on by default for Enterprise, off for Team. It needs a legal review of each country's employee-monitoring law.
+2. **Our hosted cloud:** EU-only hosting (OVH, Scaleway or Hetzner), and the Brain on hosted plans runs in confidential VMs only.
+3. **Brain model:** which open-weight models to ship and test against by default.
+4. **Can a channel change state later?** Sealed → Company means adding the Brain (history before that stays unreadable to it unless members re-share). Company → Sealed means removing the Brain and purging its index. Both need a confirmation dialog.

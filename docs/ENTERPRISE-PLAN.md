@@ -47,7 +47,7 @@ Pricing is to be validated. Anchor below Microsoft 365 Business Standard per sea
 ## Go-to-market
 
 1. **Design partners:** 3–5 EU organisations on free Business licences in exchange for weekly feedback, starting at ROADMAP phase 1.
-2. **Open core:** server and clients open source (license to be decided; AGPL for the server protects against cloud resale). Enterprise features (SCIM, legal hold, escrow, the hosted Brain) are commercial.
+2. **Open core:** server and clients under AGPL-3.0 with a CLA (see ARCHITECTURE D1). AGPL forces anyone hosting a modified version to publish it, but it does **not** forbid reselling. The moat is the hosted service, support, and commercial licenses for companies that can't accept AGPL. Enterprise features (SCIM, legal hold, escrow, the hosted Brain) are commercial.
 3. **Channels:** EU cloud providers (OVH, Scaleway, Hetzner marketplaces) and sovereignty-focused integrators.
 
 ## Main risks

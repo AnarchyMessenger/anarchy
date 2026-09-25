@@ -1,0 +1,19 @@
+<!-- @dsCard group="Channel" height=420 -->
+<style>body{margin:0;padding:16px;background:var(--canvas)}
+.opt{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:start;padding:12px;border:1px solid var(--border-strong);border-radius:var(--radius-md);background:var(--surface);cursor:pointer}
+.opt:has(input:checked){border-color:var(--primary);background:var(--primary-soft)}
+.opt input{margin:3px 0 0;accent-color:var(--primary)}
+.opt b{display:flex;align-items:center;gap:8px;font-size:var(--fs-label)}
+.opt span{grid-column:2;color:var(--ink-muted);font-size:var(--fs-caption)}
+fieldset{display:grid;gap:8px;margin:0;padding:0;border:0}
+legend{margin-bottom:6px;color:var(--ink-muted);font-size:var(--fs-caption)}</style>
+<form class="ax ax-card" style="max-width:460px" onsubmit="event.preventDefault()">
+<h3>Create a channel</h3>
+<label class="ax-field">Name<input id="cc-name" class="ax-input" value="# q4-planning"></label>
+<fieldset><legend>Who can read this channel?</legend>
+<label class="opt"><input type="radio" name="trust" id="cc-sealed" value="sealed"><b>Sealed <span class="ax-seal sealed" style="grid-column:auto">End-to-end</span></b><span>Only the people in the channel. Agents run on members' devices only.</span></label>
+<label class="opt"><input type="radio" name="trust" id="cc-company" value="company"><b>Company <span class="ax-seal server" style="grid-column:auto">Brain member</span></b><span>Still end-to-end encrypted, but the Company Brain joins as a visible member so agents and the Company MCP can use it.</span></label>
+</fieldset>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="ax-btn ghost">Cancel</button><button id="cc-create" class="ax-btn primary" disabled>Create channel</button></div>
+</form>
+<script>document.querySelectorAll('input[name=trust]').forEach(r=>r.addEventListener('change',()=>{document.getElementById('cc-create').disabled=false}))</script>

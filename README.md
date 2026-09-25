@@ -13,3 +13,7 @@ The Community edition (Discord-style servers plus public forums) comes later. Se
 | [design-system/](design-system/) | Tokens (Light, Dark, Luna), component CSS, component guidelines |
 
 Status: design and architecture drafts. No code yet.
+
+## License
+
+[AGPL-3.0-only](LICENSE). Contributions require a CLA so the project can also offer commercial licenses. See `docs/ARCHITECTURE.md` D1.

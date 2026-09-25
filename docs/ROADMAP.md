@@ -6,7 +6,8 @@ Company edition first. The Community edition starts only after the Company core 
 
 - Rust core crate: device keys, OpenMLS groups, local SQLCipher store, sync engine (subscribe, append, cursors).
 - Server: gateway, delivery service (ordered logs), directory, OIDC login (Keycloak for development).
-- Design system → UI kit (Light, Dark, Luna) in the desktop shell.
+- Design system → UI kit (Light, Dark, Luna) in a Tauri 2 shell (ARCHITECTURE D2).
+- CLA bot on pull requests (required for dual licensing, D1).
 - Clean-room process written down: reference notes cite *ideas* from Anytype and Filen, never code. Dependency license allowlist enforced in CI (MIT, Apache-2.0, BSD, ISC).
 - **Exit:** two devices exchange E2EE messages in one channel and stay in sync offline and online.
 
@@ -15,7 +16,7 @@ Company edition first. The Community edition starts only after the Company core 
 - Channels, DMs, threads, mentions, reactions, edits and deletes, pins.
 - IRC-style commands and compact IRC transcript mode.
 - Local search (sealed channels included).
-- Trust states: Sealed or Company per channel, org policy defaults.
+- Trust states: Sealed or Company chosen per channel with radio buttons at creation (D3); org policy can lock a state per channel class.
 - Invites: org and channel invites with expiry, use limits and approval. AccessRequest queue.
 - Admin console: users, devices, policy, audit.
 - **Exit:** we use Anarchy internally instead of our current chat.

@@ -1,0 +1,3 @@
+Create-channel dialog where the creator picks the channel's trust state with radio buttons.
+
+Provide the name field (lowercase, `#` prefix shown), an optional topic, the visibility (public in the org or invite-only), and the **Who can read this channel** radio group: *Sealed* (people only; on-device agents) or *Company* (the Company Brain joins as a visible member). Neither option is preselected unless org policy forces one; then the locked option shows the policy reason and the other is disabled. The primary button stays disabled until a state is picked. Each option names its consequence in one line, and the EncryptionBadge wording matches the option labels exactly.
