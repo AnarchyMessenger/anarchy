@@ -1,0 +1,42 @@
+<!-- @dsCard height=288 -->
+<style>
+html,body{margin:0}
+.cv{position:relative;width:960px;height:288px;overflow:hidden;background:var(--canvas);font-family:var(--font-sans)}
+.cv svg{position:absolute;inset:0}
+.b-primary{fill:var(--primary);rx:var(--radius-lg)}
+.b-ink{fill:var(--ink);rx:var(--radius-lg)}
+.b-amber{fill:var(--highlight);rx:var(--radius-lg)}
+.b-sealed{fill:var(--sealed);rx:var(--radius-lg)}
+.b-sunken{fill:var(--surface-sunken);rx:var(--radius-lg)}
+.row{fill:var(--on-primary);rx:var(--radius-sm)}
+.row-sel{fill:var(--surface-selected);rx:var(--radius-sm)}
+.row-mute{fill:var(--border-strong);rx:var(--radius-sm)}
+.cv .txt{position:absolute;left:40px;bottom:36px;max-width:440px}
+.cv h1{margin:0;font-size:96px;line-height:.92;font-weight:600;letter-spacing:-.03em;color:var(--ink)}
+.cv p{margin:14px 0 0;font-size:14px;color:var(--ink-muted)}
+</style>
+<div class="cv">
+<svg width="960" height="288" viewBox="0 0 960 288" aria-hidden="true">
+<!-- blocks: primary 256x202, ink 218x130, highlight 88x72, sealed 118x158, surface-sunken 256x86 (x>=480)
+     arrangement: one tall cobalt slab (the app pane) with satellites bleeding off the top and right edges, like a docked window
+     pattern: "geometric, modular, dense UI" -> list-row tiles cut by radius-sm, one row in the amber selection, because the README makes the selected row the signature
+     steps and radii: row 14 on a 26 pitch, gaps space-3 (12px), radii radius-lg / radius-sm -->
+<rect class="b-primary" x="480" y="-6" width="256" height="202"/>
+<rect class="b-ink" x="748" y="-6" width="218" height="130"/>
+<rect class="b-amber" x="748" y="136" width="88" height="72"/>
+<rect class="b-sealed" x="848" y="136" width="118" height="158"/>
+<rect class="b-sunken" x="480" y="208" width="256" height="86"/>
+<rect class="row" x="500" y="24" width="120" height="14"/>
+<rect class="row" x="632" y="24" width="84" height="14"/>
+<rect class="row-sel" x="500" y="50" width="216" height="14"/>
+<rect class="row" x="500" y="76" width="160" height="14"/>
+<rect class="row" x="500" y="102" width="92" height="14"/>
+<rect class="row" x="604" y="102" width="112" height="14"/>
+<rect class="row" x="500" y="128" width="216" height="14"/>
+<rect class="row-mute" x="500" y="224" width="140" height="14"/>
+<rect class="row-mute" x="652" y="224" width="64" height="14"/>
+<rect class="row-mute" x="500" y="250" width="216" height="14"/>
+</svg>
+<div class="txt"><h1>Anarchy</h1><p>Encrypted chat, files and forums for organisations and communities.</p></div>
+</div>
+<script>/* static */</script>

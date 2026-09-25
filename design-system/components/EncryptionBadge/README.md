@@ -1,0 +1,3 @@
+Pill that states who can read a space, channel, folder, file, invite or call: Sealed, Company or Public.
+
+**Sealed** (`sealed`) means end-to-end encrypted, with only human members and on-device agents inside. **Company** (`.server` class) means still end-to-end encrypted, but the org's Company Brain is a visible member of the group, so its agents and the Company MCP can use the content, filtered by each caller's permissions. **Public** (`public`) means discoverable and indexed (Community edition). When a Company channel's org allows external models, the label reads "Company · external model". Show the badge in every channel header, folder header, invite and forum. Never hide it, and never replace the word with an icon alone.
