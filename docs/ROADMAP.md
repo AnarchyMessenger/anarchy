@@ -4,12 +4,22 @@ Company edition first. The Community edition starts only after the Company core 
 
 ## Phase 0: foundations (≈ 6–8 weeks)
 
-- Rust core crate: device keys, OpenMLS groups, local SQLCipher store, sync engine (subscribe, append, cursors).
-- Server: gateway, delivery service (ordered logs), directory, OIDC login (Keycloak for development).
-- Design system → UI kit (Light, Dark, Luna) in a Tauri 2 shell (ARCHITECTURE D2).
-- CLA bot on pull requests (required for dual licensing, D1).
-- Clean-room process written down: reference notes cite *ideas* from Anytype and Filen, never code. Dependency license allowlist enforced in CI (MIT, Apache-2.0, BSD, ISC).
-- **Exit:** two devices exchange E2EE messages in one channel and stay in sync offline and online.
+Done:
+- [x] Cargo workspace: `anarchy-proto`, `anarchy-core`, `anarchy-server`, `anarchy-desktop`.
+- [x] Core: device keys, OpenMLS channel groups (create, add device, join from Welcome, encrypt, decrypt, apply commits).
+- [x] Sync engine: per-channel cursors, catch-up after offline, own-message and pre-join skipping, idempotent appends.
+- [x] Delivery service: ordered per-channel logs, epoch check that serialises concurrent commits, key package claim, Welcome inbox (in memory).
+- [x] Tauri 2 desktop shell using the design system (Light, Dark, Luna switcher), calling the Rust core over IPC.
+- [x] CI: fmt, clippy, tests, desktop build, `cargo deny` license and advisory policy, generated-CSS drift check.
+- [x] CLA workflow and draft `CLA.md` (needs legal review).
+- [x] **Exit test:** two devices exchange E2EE messages in one channel and stay in sync offline and online (`crates/anarchy-core/tests/two_devices.rs`).
+
+Remaining:
+- [ ] Persistence: Postgres for the server (`Store` trait), SQLCipher local store on the device (MLS state survives restarts).
+- [ ] WebSocket subscriptions (live push instead of polling `sync`).
+- [ ] Directory and OIDC login (Keycloak for development); authenticate every request (today any caller can read any channel's ciphertext and post to any inbox).
+- [ ] Bundle Instrument Sans and IBM Plex Mono (both OFL) in the app instead of relying on system fallbacks. The build already strips the Google Fonts import.
+- [ ] Clean-room process note: how reference reading of Anytype and Filen docs is recorded.
 
 ## Phase 1: Company chat MVP (≈ 8 weeks)
 

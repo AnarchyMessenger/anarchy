@@ -12,7 +12,25 @@ The Community edition (Discord-style servers plus public forums) comes later. Se
 | [docs/COMMUNITY-PLAN.md](docs/COMMUNITY-PLAN.md) | Community edition (parked) |
 | [design-system/](design-system/) | Tokens (Light, Dark, Luna), component CSS, component guidelines |
 
-Status: design and architecture drafts. No code yet.
+## Repository layout
+
+| Path | What |
+|---|---|
+| `crates/anarchy-proto` | Wire types shared by clients and server |
+| `crates/anarchy-core` | Client core: device keys, MLS channels (OpenMLS), sync engine |
+| `crates/anarchy-server` | Gateway and delivery service: ordered ciphertext logs per channel |
+| `apps/desktop` | Tauri 2 desktop app (UI in `apps/desktop/ui`) |
+| `design-system/` | Tokens, component CSS and guidelines; `build.mjs` generates the CSS |
+
+## Quick start
+
+```sh
+cargo test                     # two devices exchange MLS-encrypted messages through a real server
+cargo run -p anarchy-server    # server on 127.0.0.1:8080
+cargo run -p anarchy-desktop   # desktop app (Linux needs WebKitGTK, see CONTRIBUTING.md)
+```
+
+Status: phase 0 in progress (see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ## License
 

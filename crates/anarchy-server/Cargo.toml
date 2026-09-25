@@ -1,0 +1,17 @@
+[package]
+name = "anarchy-server"
+description = "Anarchy server: gateway and delivery service for encrypted channel logs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+anarchy-proto.workspace = true
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+uuid.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

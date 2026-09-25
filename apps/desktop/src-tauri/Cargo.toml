@@ -1,0 +1,16 @@
+[package]
+name = "anarchy-desktop"
+description = "Anarchy desktop app (Tauri 2)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anarchy-core.workspace = true
+tauri = { version = "2", features = [] }
+serde.workspace = true

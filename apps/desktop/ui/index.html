@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anarchy</title>
+<link rel="stylesheet" href="ds/tokens.css">
+<link rel="stylesheet" href="ds/components.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body class="ax">
+<div class="shell">
+  <nav class="ax-rail" aria-label="Spaces">
+    <span class="ax-rail-kind">Orgs</span>
+    <button class="ax-rail-item active" aria-current="true" title="Northwind">NW</button>
+    <span class="ax-rail-sep"></span>
+    <button class="ax-rail-item" title="Join or create a space" aria-label="Join or create a space">+</button>
+  </nav>
+  <aside class="ax-sidebar sidebar">
+    <label class="ax-search"><input id="search" aria-label="Search" placeholder="Search"></label>
+    <div class="ax-group">Channels</div>
+    <button class="ax-row active"><span class="hash">#</span><strong>general</strong><span></span></button>
+    <div class="ax-group">Theme</div>
+    <div class="ax-seg theme" role="radiogroup" aria-label="Theme">
+      <span role="radio" tabindex="0" data-theme-choice="system">System</span>
+      <span role="radio" tabindex="0" data-theme-choice="light">Light</span>
+      <span role="radio" tabindex="0" data-theme-choice="dark">Dark</span>
+      <span role="radio" tabindex="0" data-theme-choice="luna">Luna</span>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="ax-header">
+      <span class="name"># general</span>
+      <span class="ax-seal sealed">Sealed</span>
+      <span class="topic">Phase 0 shell</span>
+    </header>
+    <section class="ax-transcript transcript" aria-live="polite">
+      <div class="ax-notice">This device generated its MLS keys on start</div>
+      <div class="ax-banner sealed">
+        <span>Device <code id="device-id">…</code> · <span id="suite"></span>. Keys stay on this device; the server only relays ciphertext.</span>
+      </div>
+    </section>
+    <form class="ax-composer composer" id="composer">
+      <textarea id="message" aria-label="Message #general" placeholder="Message #general (sending arrives in phase 1)" disabled></textarea>
+    </form>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

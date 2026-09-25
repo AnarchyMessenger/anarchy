@@ -1,0 +1,25 @@
+[package]
+name = "anarchy-core"
+description = "Anarchy client core: device identity, MLS channels and sync"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+anarchy-proto.workspace = true
+openmls.workspace = true
+openmls_rust_crypto.workspace = true
+openmls_basic_credential.workspace = true
+openmls_traits.workspace = true
+tls_codec.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+anarchy-server.workspace = true
+axum.workspace = true
+tokio.workspace = true

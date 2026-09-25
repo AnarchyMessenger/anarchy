@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = ["crates/anarchy-proto", "crates/anarchy-core", "crates/anarchy-server", "apps/desktop/src-tauri"]
+# The desktop app needs WebKitGTK on Linux; build it explicitly with `-p anarchy-desktop`.
+default-members = ["crates/anarchy-proto", "crates/anarchy-core", "crates/anarchy-server"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "AGPL-3.0-only"
+repository = "https://github.com/AnarchyMessenger/anarchy"
+rust-version = "1.88"
+publish = false
+
+[workspace.dependencies]
+anarchy-proto = { path = "crates/anarchy-proto" }
+anarchy-core = { path = "crates/anarchy-core" }
+anarchy-server = { path = "crates/anarchy-server" }
+openmls = "0.9"
+openmls_rust_crypto = "0.6"
+openmls_basic_credential = "0.6"
+openmls_traits = "0.6"
+tls_codec = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
