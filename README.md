@@ -18,15 +18,19 @@ The Community edition (Discord-style servers plus public forums) comes later. Se
 |---|---|
 | `crates/anarchy-proto` | Wire types shared by clients and server |
 | `crates/anarchy-core` | Client core: device keys, MLS channels (OpenMLS), sync engine |
-| `crates/anarchy-server` | Gateway and delivery service: ordered ciphertext logs per channel |
+| `crates/anarchy-server` | Gateway and delivery service: OIDC sign-in, ordered ciphertext logs per channel in Postgres |
+| `crates/anarchy-brain` | Company Brain: a member device that indexes the channels it's added to and answers audience-scoped searches |
+| `crates/anarchy-testkit` | Test helpers: local OIDC provider, throwaway Postgres databases |
 | `apps/desktop` | Tauri 2 desktop app (UI in `apps/desktop/ui`) |
 | `design-system/` | Tokens, component CSS and guidelines; `build.mjs` generates the CSS |
 
 ## Quick start
 
 ```sh
-cargo test                     # two devices exchange MLS-encrypted messages through a real server
-cargo run -p anarchy-server    # server on 127.0.0.1:8080
+docker compose up -d db        # Postgres for the tests
+export ANARCHY_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres
+cargo test                     # E2EE messaging, auth and Brain scoping against a real server
+cargo run -p anarchy-server    # needs DATABASE_URL and OIDC settings, see docs/SELF-HOSTING.md
 cargo run -p anarchy-desktop   # desktop app (Linux needs WebKitGTK, see CONTRIBUTING.md)
 ```
 

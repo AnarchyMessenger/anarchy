@@ -35,6 +35,12 @@ crate = "anarchy-server"
 [[licenses.exceptions]]
 allow = ["AGPL-3.0-only"]
 crate = "anarchy-desktop"
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
+crate = "anarchy-testkit"
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
+crate = "anarchy-brain"
 
 [bans]
 multiple-versions = "allow"
@@ -50,3 +56,11 @@ yanked = "deny"
 # Vulnerabilities always fail. "Unmaintained" notices fail only for crates we depend on
 # directly; transitive ones (today: proc-macro-error*, unic-* via Tauri's build tooling) are tracked upstream.
 unmaintained = "workspace"
+ignore = [
+  # Marvin attack on `rsa` (timing side channel when decrypting or signing with a
+  # private RSA key). jsonwebtoken uses `rsa` only to *verify* RS256 ID tokens with
+  # the identity provider's public key; the server never holds an RSA private key.
+  # The alternative backend (aws-lc-rs) brings OpenSSL-licensed code, which is
+  # incompatible with AGPL. Revisit when a fixed `rsa` release ships.
+  { id = "RUSTSEC-2023-0071", reason = "public-key signature verification only; no private RSA key is ever used" },
+]

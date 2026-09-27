@@ -2,7 +2,7 @@
 
 ## Setup
 
-- Rust stable (1.88 or later) and Node 22.
+- Rust stable (1.88 or later), Node 22, and Postgres for tests (`docker compose up -d db`, then set `ANARCHY_TEST_DATABASE_URL`).
 - The desktop app on Linux also needs WebKitGTK: `sudo apt-get install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev`.
 
 ## Everyday commands
@@ -10,7 +10,7 @@
 | What | Command |
 |---|---|
 | Build and test core and server | `cargo test` |
-| Run the server (port 8080) | `cargo run -p anarchy-server` |
+| Run the server | `cargo run -p anarchy-server` (configuration: `docs/SELF-HOSTING.md`) |
 | Run the desktop app | `cargo run -p anarchy-desktop` |
 | Regenerate CSS after editing `design-system/tokens.json` or `components/bundle.css` | `node design-system/build.mjs` |
 | Lint | `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings` |

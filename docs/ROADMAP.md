@@ -15,11 +15,17 @@ Done:
 - [x] **Exit test:** two devices exchange E2EE messages in one channel and stay in sync offline and online (`crates/anarchy-core/tests/two_devices.rs`).
 
 Remaining:
-- [ ] Persistence: Postgres for the server (`Store` trait), SQLCipher local store on the device (MLS state survives restarts).
+- [x] Postgres for the server: migrations, per-channel row lock for ordering, idempotent appends, paging (ARCHITECTURE D4).
+- [ ] SQLCipher local store on the device (MLS state survives restarts).
 - [ ] WebSocket subscriptions (live push instead of polling `sync`).
-- [ ] Directory and OIDC login (Keycloak for development); authenticate every request (today any caller can read any channel's ciphertext and post to any inbox).
+- [x] OIDC sign-in (ID token verified against the provider's keys), hashed server sessions, device registration, membership checks on every endpoint (D5). Tests cover forged, expired and wrong-audience tokens, non-members and spoofed devices.
+- [ ] Desktop sign-in flow (system browser, authorization code + PKCE).
+- [ ] Device proof of possession at registration; member removal and device revocation.
 - [ ] Bundle Instrument Sans and IBM Plex Mono (both OFL) in the app instead of relying on system fallbacks. The build already strips the Google Fonts import.
 - [ ] Clean-room process note: how reference reading of Anytype and Filen docs is recorded.
+
+Pulled forward from phase 4:
+- [x] `anarchy-brain`: the Brain as a member device, ingest with cursors, Postgres full-text index, audience-scoped search (D6).
 
 ## Phase 1: Company chat MVP (≈ 8 weeks)
 
@@ -48,7 +54,7 @@ Remaining:
 
 ## Phase 4: Company Brain and Company MCP (≈ 8 weeks)
 
-- The Brain as an MLS member: ingest, ACL-tagged index, deletion propagation.
+- The Brain as an MLS member: ingest and audience-scoped search are done; still to do: deletion propagation, pgvector embeddings, triage, cooldowns.
 - Company MCP server: `search`, `get_thread`, `get_file`, `propose_action`; OAuth 2.1 clients, scopes, audit.
 - In-app agents (scribe: summaries, catch-up, meeting notes via call transcription).
 - AgentApproval flow, and model policy (local vs external, per channel class).

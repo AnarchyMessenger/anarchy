@@ -70,6 +70,11 @@ impl Device {
         self.id
     }
 
+    /// The Ed25519 public key this device signs MLS messages with.
+    pub fn signature_public_key(&self) -> Vec<u8> {
+        self.signer.to_public_vec()
+    }
+
     /// Single-use key packages that let other devices add this one to a channel.
     pub fn key_packages(&self, count: usize) -> Result<Vec<Vec<u8>>, Error> {
         (0..count)

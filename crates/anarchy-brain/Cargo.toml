@@ -1,0 +1,19 @@
+[package]
+name = "anarchy-brain"
+description = "Company Brain: an MLS member that indexes the channels it was added to and answers audience-scoped searches"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+anarchy-core.workspace = true
+anarchy-proto.workspace = true
+sqlx.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+anarchy-testkit.workspace = true
+tokio.workspace = true

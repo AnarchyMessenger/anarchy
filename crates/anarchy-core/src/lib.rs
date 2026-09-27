@@ -21,6 +21,8 @@ pub enum Error {
     NoKeyPackage(DeviceId),
     #[error("channel {channel} moved to epoch {current_epoch}; sync and retry")]
     StaleEpoch { channel: ChannelId, current_epoch: u64 },
+    #[error("server refused the request ({status}): {message}")]
+    Api { status: u16, message: String },
     #[error("network error: {0}")]
     Http(#[from] reqwest::Error),
 }

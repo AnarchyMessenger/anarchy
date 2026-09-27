@@ -1,8 +1,21 @@
 [workspace]
 resolver = "3"
-members = ["crates/anarchy-proto", "crates/anarchy-core", "crates/anarchy-server", "apps/desktop/src-tauri"]
+members = [
+  "crates/anarchy-proto",
+  "crates/anarchy-core",
+  "crates/anarchy-server",
+  "crates/anarchy-brain",
+  "crates/anarchy-testkit",
+  "apps/desktop/src-tauri",
+]
 # The desktop app needs WebKitGTK on Linux; build it explicitly with `-p anarchy-desktop`.
-default-members = ["crates/anarchy-proto", "crates/anarchy-core", "crates/anarchy-server"]
+default-members = [
+  "crates/anarchy-proto",
+  "crates/anarchy-core",
+  "crates/anarchy-server",
+  "crates/anarchy-brain",
+  "crates/anarchy-testkit",
+]
 
 [workspace.package]
 version = "0.0.1"
@@ -16,6 +29,8 @@ publish = false
 anarchy-proto = { path = "crates/anarchy-proto" }
 anarchy-core = { path = "crates/anarchy-core" }
 anarchy-server = { path = "crates/anarchy-server" }
+anarchy-brain = { path = "crates/anarchy-brain" }
+anarchy-testkit = { path = "crates/anarchy-testkit" }
 openmls = "0.9"
 openmls_rust_crypto = "0.6"
 openmls_basic_credential = "0.6"
@@ -31,3 +46,8 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync"]
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls-ring-webpki", "migrate", "macros", "uuid"] }
+jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
+sha2 = "0.10"
+getrandom = "0.3"
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }

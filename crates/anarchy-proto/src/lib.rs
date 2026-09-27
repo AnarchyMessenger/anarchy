@@ -38,16 +38,67 @@ impl<'de> Deserialize<'de> for Blob {
     }
 }
 
-/// `POST /v1/channels/{channel}/events`
+pub type UserId = Uuid;
+pub type OrgId = Uuid;
+
+/// Header naming the device a request acts for. It must belong to the session's user.
+pub const DEVICE_HEADER: &str = "x-anarchy-device";
+
+/// `POST /v1/auth/oidc`: exchange an ID token from the org's identity provider for a session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OidcLogin {
+    pub id_token: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Session {
+    /// Bearer token for `Authorization: Bearer …`. The server stores only its hash.
+    pub token: String,
+    pub user_id: UserId,
+    pub org_id: OrgId,
+    pub expires_at_ms: u64,
+}
+
+/// `POST /v1/devices`: register a device under the signed-in user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterDevice {
+    pub device_id: DeviceId,
+    /// The device's MLS signature public key (Ed25519).
+    pub signature_key: Blob,
+}
+
+/// `POST /v1/channels`: register a new channel; the calling device becomes its first member.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateChannel {
+    pub channel: ChannelId,
+}
+
+/// `GET /v1/channels/{channel}/members`
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Member {
+    pub device_id: DeviceId,
+    pub user_id: UserId,
+}
+
+/// `POST /v1/channels/{channel}/events`. The sender is the authenticated device.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppendRequest {
-    pub sender_device: DeviceId,
     /// The MLS epoch the sender was in when producing `payload`.
     pub epoch: u64,
     pub kind: EventKind,
     /// Retries with the same key return the original sequence number.
     pub idempotency_key: Uuid,
     pub payload: Blob,
+    /// Devices this commit adds. The server can't read the commit, so it trusts this
+    /// list for routing access only; MLS still decides who can decrypt.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adds: Vec<DeviceId>,
+}
+
+/// Error body for every non-2xx response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiError {
+    pub error: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

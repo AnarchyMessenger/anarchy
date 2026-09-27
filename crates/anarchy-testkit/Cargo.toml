@@ -1,0 +1,20 @@
+[package]
+name = "anarchy-testkit"
+description = "Test helpers: a local OIDC identity provider, throwaway Postgres databases, a running server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+anarchy-server.workspace = true
+axum.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+jsonwebtoken.workspace = true
+p256.workspace = true
+base64.workspace = true
+getrandom.workspace = true
+uuid.workspace = true

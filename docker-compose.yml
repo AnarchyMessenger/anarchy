@@ -1,0 +1,22 @@
+# Local development: Postgres for the server and tests, Keycloak as the identity provider.
+#   docker compose up -d
+#   export ANARCHY_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres
+#   cargo test
+# Keycloak admin console: http://localhost:8081 (admin / admin). Create a realm
+# "anarchy" and a public client "anarchy-desktop" to sign in against it.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev --http-port 8081
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    ports: ["8081:8081"]
+volumes:
+  pgdata:
