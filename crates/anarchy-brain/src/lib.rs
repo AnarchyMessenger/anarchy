@@ -53,6 +53,8 @@ pub struct Hit {
 pub struct IngestReport {
     pub joined: Vec<ChannelId>,
     pub messages: usize,
+    /// Channels the Brain was removed from. Their index has been purged.
+    pub removed_from: Vec<ChannelId>,
 }
 
 pub struct Brain {
@@ -61,7 +63,8 @@ pub struct Brain {
 }
 
 impl Brain {
-    /// `client` is signed in as the Brain's service account. `db` is the Brain's own database.
+    /// `client` is signed in as the Brain's service account, on a persistent
+    /// device (see [`anarchy_core::Device::open_or_create`]). `db` is the Brain's own database.
     pub async fn new(client: Client, db: PgPool) -> Result<Self, Error> {
         MIGRATOR.run(&db).await.map_err(sqlx::Error::from)?;
         Ok(Self { client, db })
@@ -72,32 +75,45 @@ impl Brain {
     }
 
     /// Joins channels the Brain was added to, pulls new messages from every
-    /// channel it's in, and refreshes membership.
+    /// channel it's in, refreshes membership, and purges channels it was removed from.
     pub async fn ingest(&mut self) -> Result<IngestReport, Error> {
         let mut report = IngestReport {
             joined: self.client.accept_invites().await?,
             ..Default::default()
         };
         for channel in &report.joined {
-            sqlx::query("INSERT INTO brain_channels (channel_id) VALUES ($1) ON CONFLICT DO NOTHING")
+            // A re-invite after removal starts from a clean index.
+            sqlx::query("DELETE FROM brain_channels WHERE channel_id = $1")
+                .bind(channel)
+                .execute(&self.db)
+                .await?;
+            sqlx::query("INSERT INTO brain_channels (channel_id) VALUES ($1)")
                 .bind(channel)
                 .execute(&self.db)
                 .await?;
         }
 
-        let channels: Vec<(ChannelId, i64)> = sqlx::query_as("SELECT channel_id, cursor FROM brain_channels")
-            .fetch_all(&self.db)
-            .await?;
-        for (channel, cursor) in channels {
+        let channels: Vec<ChannelId> =
+            sqlx::query_scalar("SELECT channel_id FROM brain_channels ORDER BY channel_id")
+                .fetch_all(&self.db)
+                .await?;
+        for channel in channels {
+            let delivered = if self.client.device().has_channel(channel) {
+                self.client.sync(channel).await?
+            } else {
+                vec![]
+            };
             if !self.client.device().has_channel(channel) {
-                // MLS state is in memory until device persistence lands (ROADMAP phase 0);
-                // after a restart the Brain must be re-added to read new messages.
+                // Removed from the channel (or its MLS state is gone): forget everything
+                // the Brain learned there, including what it read before the removal.
+                self.purge(channel).await?;
+                report.removed_from.push(channel);
                 continue;
             }
             self.refresh_members(channel).await?;
-            self.client.set_cursor(channel, cursor as u64);
-            let delivered = self.client.sync(channel).await?;
 
+            // Known gap: the device cursor advanced inside `sync`. A crash before this
+            // write drops these messages from the index (not from the channel).
             let mut tx = self.db.begin().await?;
             for msg in &delivered {
                 // Non-UTF-8 payloads (future attachments, reactions) aren't text to index.
@@ -116,14 +132,19 @@ impl Brain {
                 .await?;
                 report.messages += 1;
             }
-            sqlx::query("UPDATE brain_channels SET cursor = $2 WHERE channel_id = $1")
-                .bind(channel)
-                .bind(self.client.cursor(channel) as i64)
-                .execute(&mut *tx)
-                .await?;
             tx.commit().await?;
         }
         Ok(report)
+    }
+
+    /// Deletes everything indexed from a channel.
+    async fn purge(&self, channel: ChannelId) -> Result<(), Error> {
+        // Chunks and members go with it (ON DELETE CASCADE).
+        sqlx::query("DELETE FROM brain_channels WHERE channel_id = $1")
+            .bind(channel)
+            .execute(&self.db)
+            .await?;
+        Ok(())
     }
 
     async fn refresh_members(&self, channel: ChannelId) -> Result<(), Error> {

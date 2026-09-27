@@ -4,8 +4,6 @@
 //! after being offline and receiving live updates are the same operation:
 //! fetch events after the cursor and apply them in order.
 
-use std::collections::HashMap;
-
 use anarchy_proto::{
     AppendRequest, AppendResponse, Blob, ChannelId, CreateChannel, DEVICE_HEADER, DeviceId, EventKind,
     EventsPage, InboxItem, KeyPackageUpload, Member, OidcLogin, OrgId, RegisterDevice, Session, UserId,
@@ -15,7 +13,7 @@ use serde::de::DeserializeOwned;
 use uuid::Uuid;
 
 use crate::Error;
-use crate::device::{Device, Incoming};
+use crate::device::{Device, Incoming, PendingCommit};
 
 /// A decrypted message delivered to the application.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,7 +29,6 @@ pub struct Client {
     base: String,
     session: Session,
     device: Device,
-    cursors: HashMap<ChannelId, u64>,
 }
 
 /// Turns non-2xx responses into [`Error::Api`] with the server's message.
@@ -70,7 +67,6 @@ impl Client {
             base,
             session,
             device,
-            cursors: HashMap::new(),
         };
         let register = RegisterDevice {
             device_id: client.device.id(),
@@ -106,13 +102,9 @@ impl Client {
         &self.session.token
     }
 
-    pub fn cursor(&self, channel: ChannelId) -> u64 {
-        self.cursors.get(&channel).copied().unwrap_or(0)
-    }
-
-    /// Restores a cursor saved by the application (for example after a restart).
-    pub fn set_cursor(&mut self, channel: ChannelId, seq: u64) {
-        self.cursors.insert(channel, seq);
+    /// Last sequence number applied in `channel`, stored in the device database.
+    pub fn cursor(&self, channel: ChannelId) -> Result<u64, Error> {
+        self.device.cursor(channel)
     }
 
     fn authed(&self, req: RequestBuilder) -> RequestBuilder {
@@ -167,36 +159,12 @@ impl Client {
             Err(Error::Api { status: 404, .. }) => return Err(Error::NoKeyPackage(device)),
             Err(e) => return Err(e),
         };
-
         let pending = self.device.add_member(channel, &key_package.0)?;
-        let req = AppendRequest {
-            epoch: pending.epoch,
-            kind: EventKind::Commit,
-            idempotency_key: Uuid::new_v4(),
-            payload: Blob(pending.commit),
-            adds: vec![device],
-        };
-        match self.post(&format!("/v1/channels/{channel}/events"), &req).await {
-            Ok(resp) => match resp.json().await? {
-                AppendResponse::Accepted { seq } => {
-                    self.device.confirm_commit(channel)?;
-                    // Our own commit is already applied; don't process it again on sync.
-                    self.cursors.insert(channel, seq);
-                }
-                AppendResponse::StaleEpoch { current_epoch } => {
-                    self.device.discard_commit(channel)?;
-                    return Err(Error::StaleEpoch {
-                        channel,
-                        current_epoch,
-                    });
-                }
-            },
-            Err(e) => {
-                self.device.discard_commit(channel)?;
-                return Err(e);
-            }
-        }
-        let welcome = pending.welcome.expect("add_member always produces a Welcome");
+        let welcome = pending
+            .welcome
+            .clone()
+            .expect("add_member always produces a Welcome");
+        self.commit(pending, vec![device], vec![]).await?;
         self.post(
             &format!("/v1/devices/{device}/inbox"),
             &InboxItem {
@@ -206,6 +174,101 @@ impl Client {
         )
         .await?;
         Ok(())
+    }
+
+    /// Removes devices from a channel. The commit rotates the channel's keys, so
+    /// they can't read anything sent afterwards, and the server stops serving
+    /// them the channel after that commit.
+    pub async fn remove_devices(&mut self, channel: ChannelId, devices: &[DeviceId]) -> Result<(), Error> {
+        self.sync(channel).await?;
+        let pending = self.device.remove_members(channel, devices)?;
+        self.commit(pending, vec![], devices.to_vec()).await
+    }
+
+    /// Removes every device of `user` from a channel.
+    pub async fn remove_user(&mut self, channel: ChannelId, user: UserId) -> Result<(), Error> {
+        let devices: Vec<DeviceId> = self
+            .members(channel)
+            .await?
+            .into_iter()
+            .filter(|m| m.user_id == user)
+            .map(|m| m.device_id)
+            .collect();
+        if devices.is_empty() {
+            return Ok(());
+        }
+        self.remove_devices(channel, &devices).await
+    }
+
+    /// Removes devices that are still in the channel's MLS group but that the
+    /// server no longer lists (revoked, e.g. a lost laptop). Any member can run
+    /// this; if two do at once, one wins and the other finds nothing left to do.
+    /// Returns the devices removed.
+    pub async fn remove_revoked(&mut self, channel: ChannelId) -> Result<Vec<DeviceId>, Error> {
+        self.sync(channel).await?;
+        let listed: Vec<DeviceId> = self
+            .members(channel)
+            .await?
+            .into_iter()
+            .map(|m| m.device_id)
+            .collect();
+        let stale: Vec<DeviceId> = self
+            .device
+            .member_devices(channel)?
+            .into_iter()
+            .filter(|d| !listed.contains(d))
+            .collect();
+        if stale.is_empty() {
+            return Ok(stale);
+        }
+        let pending = self.device.remove_members(channel, &stale)?;
+        self.commit(pending, vec![], stale.clone()).await?;
+        Ok(stale)
+    }
+
+    /// Revokes one of this user's devices (lost or retired). It can no longer
+    /// authenticate; members then remove it from channels with [`Client::remove_revoked`].
+    pub async fn revoke_device(&self, device: DeviceId) -> Result<(), Error> {
+        self.post(&format!("/v1/devices/{device}/revoke"), &()).await?;
+        Ok(())
+    }
+
+    /// Posts a staged commit and applies it locally if the server accepts it.
+    async fn commit(
+        &mut self,
+        pending: PendingCommit,
+        adds: Vec<DeviceId>,
+        removes: Vec<DeviceId>,
+    ) -> Result<(), Error> {
+        let channel = pending.channel;
+        let req = AppendRequest {
+            epoch: pending.epoch,
+            kind: EventKind::Commit,
+            idempotency_key: Uuid::new_v4(),
+            payload: Blob(pending.commit),
+            adds,
+            removes,
+        };
+        match self.post(&format!("/v1/channels/{channel}/events"), &req).await {
+            Ok(resp) => match resp.json().await? {
+                AppendResponse::Accepted { seq } => {
+                    self.device.confirm_commit(channel)?;
+                    // Our own commit is already applied; don't process it again on sync.
+                    self.device.set_cursor(channel, seq)
+                }
+                AppendResponse::StaleEpoch { current_epoch } => {
+                    self.device.discard_commit(channel)?;
+                    Err(Error::StaleEpoch {
+                        channel,
+                        current_epoch,
+                    })
+                }
+            },
+            Err(e) => {
+                self.device.discard_commit(channel)?;
+                Err(e)
+            }
+        }
     }
 
     /// Joins every channel this device was added to since the last call.
@@ -235,6 +298,7 @@ impl Client {
             idempotency_key: Uuid::new_v4(),
             payload: Blob(ciphertext),
             adds: vec![],
+            removes: vec![],
         };
         match self
             .post(&format!("/v1/channels/{channel}/events"), &req)
@@ -251,10 +315,13 @@ impl Client {
     }
 
     /// Fetches every event after the cursor, applies them in order and returns the new messages.
+    ///
+    /// If one of the events removes this device, the channel is deleted locally
+    /// and sync stops there: afterwards `device().has_channel(channel)` is false.
     pub async fn sync(&mut self, channel: ChannelId) -> Result<Vec<Delivered>, Error> {
         let mut delivered = Vec::new();
         loop {
-            let after = self.cursor(channel);
+            let after = self.cursor(channel)?;
             let page: EventsPage = self
                 .get(&format!("/v1/channels/{channel}/events"), &[("after", after)])
                 .await?;
@@ -267,18 +334,19 @@ impl Client {
                 // them) and events from before we joined.
                 let own = event.sender_device == self.device.id();
                 let before_join = event.epoch < self.device.epoch(channel)?;
-                if !own
-                    && !before_join
-                    && let Incoming::Message(body) = self.device.receive(channel, &event.payload.0)?
-                {
-                    delivered.push(Delivered {
-                        channel,
-                        seq: event.seq,
-                        sender: event.sender_device,
-                        body,
-                    });
+                if !own && !before_join {
+                    match self.device.receive(channel, &event.payload.0)? {
+                        Incoming::Message(body) => delivered.push(Delivered {
+                            channel,
+                            seq: event.seq,
+                            sender: event.sender_device,
+                            body,
+                        }),
+                        Incoming::EpochAdvanced => {}
+                        Incoming::Removed => return Ok(delivered),
+                    }
                 }
-                self.cursors.insert(channel, event.seq);
+                self.device.set_cursor(channel, event.seq)?;
             }
             if last >= page.head {
                 break;

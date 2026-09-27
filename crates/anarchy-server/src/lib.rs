@@ -67,6 +67,7 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(|| async { "ok" }))
         .route("/v1/auth/oidc", post(login))
         .route("/v1/devices", post(register_device))
+        .route("/v1/devices/{device}/revoke", post(revoke_device))
         .route("/v1/channels", post(create_channel))
         .route("/v1/channels/{channel}/events", post(append).get(events))
         .route("/v1/channels/{channel}/members", get(members))
@@ -199,15 +200,39 @@ async fn register_device(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Revokes one of the caller's own devices (lost or retired). It can no longer
+/// authenticate and drops out of every channel's member list; remaining members
+/// then commit its removal from the MLS groups.
+async fn revoke_device(
+    State(s): State<AppState>,
+    user: AuthUser,
+    Path(device): Path<DeviceId>,
+) -> ApiResult<StatusCode> {
+    let updated = sqlx::query(
+        "UPDATE devices SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL",
+    )
+    .bind(device)
+    .bind(user.user_id)
+    .execute(&s.db)
+    .await?
+    .rows_affected();
+    if updated == 0 {
+        return Err(ApiError::not_found("no such active device"));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
 // ---------- channels ----------
 
+/// A current member: added and not removed since.
 async fn is_member(db: &PgPool, channel: ChannelId, device: DeviceId) -> ApiResult<bool> {
-    let row: Option<(i32,)> =
-        sqlx::query_as("SELECT 1 FROM channel_members WHERE channel_id = $1 AND device_id = $2")
-            .bind(channel)
-            .bind(device)
-            .fetch_optional(db)
-            .await?;
+    let row: Option<(i32,)> = sqlx::query_as(
+        "SELECT 1 FROM channel_members WHERE channel_id = $1 AND device_id = $2 AND removed_seq IS NULL",
+    )
+    .bind(channel)
+    .bind(device)
+    .fetch_optional(db)
+    .await?;
     Ok(row.is_some())
 }
 
@@ -253,8 +278,13 @@ async fn append(
     Path(channel): Path<ChannelId>,
     Json(req): Json<AppendRequest>,
 ) -> ApiResult<Json<AppendResponse>> {
-    if !req.adds.is_empty() && req.kind != EventKind::Commit {
-        return Err(ApiError::bad_request("only commits can add devices"));
+    if (!req.adds.is_empty() || !req.removes.is_empty()) && req.kind != EventKind::Commit {
+        return Err(ApiError::bad_request("only commits can add or remove devices"));
+    }
+    if req.removes.contains(&dev.device_id) {
+        return Err(ApiError::bad_request(
+            "a device can't remove itself; another member must",
+        ));
     }
     let mut tx = s.db.begin().await?;
     // Lock the channel row: appends to one channel are serialised, which is what
@@ -266,12 +296,13 @@ async fn append(
     let Some((epoch, head)) = row else {
         return Err(ApiError::not_found("no such channel"));
     };
-    let member: Option<(i32,)> =
-        sqlx::query_as("SELECT 1 FROM channel_members WHERE channel_id = $1 AND device_id = $2")
-            .bind(channel)
-            .bind(dev.device_id)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let member: Option<(i32,)> = sqlx::query_as(
+        "SELECT 1 FROM channel_members WHERE channel_id = $1 AND device_id = $2 AND removed_seq IS NULL",
+    )
+    .bind(channel)
+    .bind(dev.device_id)
+    .fetch_optional(&mut *tx)
+    .await?;
     if member.is_none() {
         return Err(ApiError::not_found("no such channel"));
     }
@@ -326,15 +357,35 @@ async fn append(
                 "device {added} is not in this organisation"
             )));
         }
+        // Re-adding a removed device reactivates it. It can then fetch the
+        // ciphertext sent while it was out, but has no keys for those epochs.
         sqlx::query(
             "INSERT INTO channel_members (channel_id, device_id, added_seq) VALUES ($1, $2, $3)
-             ON CONFLICT DO NOTHING",
+             ON CONFLICT (channel_id, device_id) DO UPDATE SET added_seq = EXCLUDED.added_seq, removed_seq = NULL",
         )
         .bind(channel)
         .bind(added)
         .bind(seq)
         .execute(&mut *tx)
         .await?;
+    }
+
+    for removed in &req.removes {
+        let updated = sqlx::query(
+            "UPDATE channel_members SET removed_seq = $3
+             WHERE channel_id = $1 AND device_id = $2 AND removed_seq IS NULL",
+        )
+        .bind(channel)
+        .bind(removed)
+        .bind(seq)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+        if updated == 0 {
+            return Err(ApiError::bad_request(format!(
+                "device {removed} is not a member of this channel"
+            )));
+        }
     }
 
     let new_epoch = if req.kind == EventKind::Commit {
@@ -370,20 +421,33 @@ async fn events(
     Path(channel): Path<ChannelId>,
     Query(q): Query<EventsQuery>,
 ) -> ApiResult<Json<EventsPage>> {
-    require_member(&s.db, channel, dev.device_id).await?;
+    // Current members read everything; a removed device reads up to the commit
+    // that removed it, so it can learn it was removed, and nothing after.
+    let access: Option<(Option<i64>,)> =
+        sqlx::query_as("SELECT removed_seq FROM channel_members WHERE channel_id = $1 AND device_id = $2")
+            .bind(channel)
+            .bind(dev.device_id)
+            .fetch_optional(&s.db)
+            .await?;
+    let Some((removed_seq,)) = access else {
+        return Err(ApiError::not_found("no such channel"));
+    };
+    let visible_to = removed_seq.unwrap_or(i64::MAX);
     let rows: Vec<(i64, i64, String, Uuid, i64, Vec<u8>)> = sqlx::query_as(
         "SELECT seq, epoch, kind, sender_device, ts_ms, payload FROM channel_events
-         WHERE channel_id = $1 AND seq > $2 ORDER BY seq LIMIT $3",
+         WHERE channel_id = $1 AND seq > $2 AND seq <= $4 ORDER BY seq LIMIT $3",
     )
     .bind(channel)
     .bind(q.after as i64)
     .bind(q.limit.clamp(1, 1000) as i64)
+    .bind(visible_to)
     .fetch_all(&s.db)
     .await?;
     let (head,): (i64,) = sqlx::query_as("SELECT head FROM channels WHERE id = $1")
         .bind(channel)
         .fetch_one(&s.db)
         .await?;
+    let head = head.min(visible_to);
     let events = rows
         .into_iter()
         .map(|(seq, epoch, kind, sender_device, ts_ms, payload)| Event {
@@ -413,7 +477,8 @@ async fn members(
     require_member(&s.db, channel, dev.device_id).await?;
     let rows: Vec<(Uuid, Uuid)> = sqlx::query_as(
         "SELECT d.id, d.user_id FROM channel_members m JOIN devices d ON d.id = m.device_id
-         WHERE m.channel_id = $1 AND d.revoked_at IS NULL ORDER BY m.added_seq, d.id",
+         WHERE m.channel_id = $1 AND m.removed_seq IS NULL AND d.revoked_at IS NULL
+         ORDER BY m.added_seq, d.id",
     )
     .bind(channel)
     .fetch_all(&s.db)

@@ -14,3 +14,7 @@ tauri-build = { version = "2", features = [] }
 anarchy-core.workspace = true
 tauri = { version = "2", features = [] }
 serde.workspace = true
+getrandom.workspace = true
+# OS keychain for the device database key: macOS Keychain, Windows Credential Manager,
+# Secret Service (GNOME Keyring, KWallet) on Linux.
+keyring = { version = "3.6", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }

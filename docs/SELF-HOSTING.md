@@ -29,6 +29,6 @@ Users (issuer, subject, name, email), hashed session tokens, device public keys,
 ## Not safe yet (phase 0)
 
 - The desktop app doesn't yet run the browser sign-in flow; only the API and tests do.
-- Device keys and MLS state live in memory, so restarting a client or the Brain loses access to existing channels.
 - Devices aren't asked to prove they hold their private key when registering.
-- There is no way to remove a member from a channel or revoke a device yet.
+- Any channel member can remove any other member; channel roles come later.
+- The Brain's device key (32 bytes) must be supplied by you from a secret store; there is no Brain binary yet, only the library.

@@ -35,9 +35,15 @@
       <span class="topic">Phase 0 shell</span>
     </header>
     <section class="ax-transcript transcript" aria-live="polite">
-      <div class="ax-notice">This device generated its MLS keys on start</div>
+      <div class="ax-notice">Device keys ready</div>
       <div class="ax-banner sealed">
         <span>Device <code id="device-id">…</code> · <span id="suite"></span>. Keys stay on this device; the server only relays ciphertext.</span>
+      </div>
+      <div class="ax-banner info" id="storage-saved" hidden>
+        <span>Saved on this computer, encrypted. The key is in your system keychain.</span>
+      </div>
+      <div class="ax-banner danger" id="storage-temporary" hidden>
+        <span><strong>Nothing will be kept when you quit.</strong> <span id="storage-reason"></span></span>
       </div>
     </section>
     <form class="ax-composer composer" id="composer">

@@ -2,8 +2,8 @@
 
 ## Setup
 
-- Rust stable (1.88 or later), Node 22, and Postgres for tests (`docker compose up -d db`, then set `ANARCHY_TEST_DATABASE_URL`).
-- The desktop app on Linux also needs WebKitGTK: `sudo apt-get install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev`.
+- Rust stable (1.91 or later), Node 22, and Postgres for tests (`docker compose up -d db`, then set `ANARCHY_TEST_DATABASE_URL`).
+- The desktop app on Linux also needs WebKitGTK: `sudo apt-get install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev pkg-config`.
 
 ## Everyday commands
 

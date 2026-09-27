@@ -97,6 +97,7 @@ async fn only_members_can_read_or_write_a_channel() {
             idempotency_key: uuid::Uuid::new_v4(),
             payload: anarchy_proto::Blob(b"spoofed".to_vec()),
             adds: vec![],
+            removes: vec![],
         })
         .send()
         .await

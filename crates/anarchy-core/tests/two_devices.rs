@@ -59,7 +59,7 @@ async fn two_devices_exchange_encrypted_messages_and_catch_up() {
     bob.send(channel, b"hi alice").await.unwrap();
     let got = alice.sync(channel).await.unwrap();
     assert_eq!(bodies(&got), vec![b"hi alice".as_slice()]);
-    assert_eq!(alice.cursor(channel), bob.cursor(channel) + 1);
+    assert_eq!(alice.cursor(channel).unwrap(), bob.cursor(channel).unwrap() + 1);
 
     // The server holds ciphertext only.
     let payloads = server.payloads(channel).await;
@@ -160,6 +160,7 @@ async fn server_rejects_a_commit_built_on_an_old_epoch_and_the_device_recovers()
             idempotency_key: uuid::Uuid::new_v4(),
             payload: Blob(pending.commit),
             adds: vec![],
+            removes: vec![],
         })
         .send()
         .await

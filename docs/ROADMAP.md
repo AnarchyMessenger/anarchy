@@ -16,11 +16,16 @@ Done:
 
 Remaining:
 - [x] Postgres for the server: migrations, per-channel row lock for ordering, idempotent appends, paging (ARCHITECTURE D4).
-- [ ] SQLCipher local store on the device (MLS state survives restarts).
+- [x] Encrypted device storage: MLS state, key packages, channel list and sync cursors in one SQLCipher file; desktop keeps its key in the OS keychain and falls back to a clearly labelled temporary device when there is none (D7).
 - [ ] WebSocket subscriptions (live push instead of polling `sync`).
 - [x] OIDC sign-in (ID token verified against the provider's keys), hashed server sessions, device registration, membership checks on every endpoint (D5). Tests cover forged, expired and wrong-audience tokens, non-members and spoofed devices.
 - [ ] Desktop sign-in flow (system browser, authorization code + PKCE).
-- [ ] Device proof of possession at registration; member removal and device revocation.
+- [x] Member removal (keys rotate; removed devices read up to their removal, then delete the channel), re-adding, device revocation with `remove_revoked` clean-up (D8).
+- [x] Brain purges a channel's index when removed from it; survives restarts.
+- [ ] Device proof of possession at registration.
+- [ ] Leaving a channel yourself (MLS: propose, another member commits).
+- [ ] Channel roles: today any member can remove any other member.
+- [ ] Brain: write index rows in the same step as advancing the cursor (a crash in between drops those messages from the index).
 - [ ] Bundle Instrument Sans and IBM Plex Mono (both OFL) in the app instead of relying on system fallbacks. The build already strips the Google Fonts import.
 - [ ] Clean-room process note: how reference reading of Anytype and Filen docs is recorded.
 

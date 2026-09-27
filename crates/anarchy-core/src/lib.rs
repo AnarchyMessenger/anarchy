@@ -15,6 +15,10 @@ use anarchy_proto::{ChannelId, DeviceId};
 pub enum Error {
     #[error("MLS error: {0}")]
     Mls(String),
+    #[error("local storage error: {0}")]
+    Storage(String),
+    #[error("the key does not open this device's database")]
+    WrongKey,
     #[error("this device is not in channel {0}")]
     UnknownChannel(ChannelId),
     #[error("device {0} has no key packages left; it must publish more before it can be added")]

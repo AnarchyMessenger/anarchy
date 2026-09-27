@@ -93,6 +93,10 @@ pub struct AppendRequest {
     /// list for routing access only; MLS still decides who can decrypt.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub adds: Vec<DeviceId>,
+    /// Devices this commit removes. Same trust model as `adds`: a member who lies
+    /// here can lock a device out of the server, but can't grant anyone access.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removes: Vec<DeviceId>,
 }
 
 /// Error body for every non-2xx response.

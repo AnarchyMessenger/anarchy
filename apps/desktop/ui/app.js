@@ -37,5 +37,12 @@ async function loadDevice() {
   const info = await invoke("device_info");
   document.getElementById("device-id").textContent = info.id;
   document.getElementById("suite").textContent = info.ciphersuite;
+  if (info.storage.kind === "saved") {
+    document.getElementById("storage-saved").hidden = false;
+  } else {
+    document.getElementById("storage-reason").textContent =
+      `Anarchy couldn't save this device: ${info.storage.reason}.`;
+    document.getElementById("storage-temporary").hidden = false;
+  }
 }
 loadDevice();
