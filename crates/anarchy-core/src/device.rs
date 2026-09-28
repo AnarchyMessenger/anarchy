@@ -138,7 +138,25 @@ CREATE TABLE IF NOT EXISTS anarchy_channels (
 CREATE TABLE IF NOT EXISTS anarchy_settings (
     key    TEXT PRIMARY KEY,
     value  BLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS anarchy_messages (
+    channel_id  BLOB NOT NULL,
+    seq         INTEGER NOT NULL,
+    sender      BLOB NOT NULL,
+    ts_ms       INTEGER NOT NULL,
+    content     BLOB NOT NULL,
+    PRIMARY KEY (channel_id, seq)
 );";
+
+/// A decrypted message kept in local history.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredMessage {
+    pub seq: u64,
+    pub sender: DeviceId,
+    pub ts_ms: u64,
+    /// Encoded [`crate::Content`].
+    pub content: Vec<u8>,
+}
 
 impl Device {
     /// A throwaway device held in memory (tests, previews). Nothing survives the process.
@@ -264,6 +282,58 @@ impl Device {
         c
     }
 
+    /// Keeps a decrypted message in local history (idempotent per sequence number).
+    pub fn store_message(&self, channel: ChannelId, message: &StoredMessage) -> Result<(), Error> {
+        self.meta
+            .execute(
+                "INSERT INTO anarchy_messages (channel_id, seq, sender, ts_ms, content) VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT DO NOTHING",
+                params![
+                    channel.as_bytes().as_slice(),
+                    message.seq as i64,
+                    message.sender.as_bytes().as_slice(),
+                    message.ts_ms as i64,
+                    message.content
+                ],
+            )
+            .map_err(db)?;
+        Ok(())
+    }
+
+    /// The latest `limit` messages in a channel, oldest first.
+    pub fn messages(&self, channel: ChannelId, limit: u32) -> Result<Vec<StoredMessage>, Error> {
+        let mut stmt = self
+            .meta
+            .prepare(
+                "SELECT seq, sender, ts_ms, content FROM
+                   (SELECT * FROM anarchy_messages WHERE channel_id = ?1 ORDER BY seq DESC LIMIT ?2)
+                 ORDER BY seq",
+            )
+            .map_err(db)?;
+        let rows = stmt
+            .query_map(params![channel.as_bytes().as_slice(), limit as i64], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, Vec<u8>>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, Vec<u8>>(3)?,
+                ))
+            })
+            .map_err(db)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (seq, sender, ts_ms, content) = row.map_err(db)?;
+            let sender = Uuid::from_slice(&sender).map_err(|e| Error::Storage(e.to_string()))?;
+            out.push(StoredMessage {
+                seq: seq as u64,
+                sender,
+                ts_ms: ts_ms as u64,
+                content,
+            });
+        }
+        Ok(out)
+    }
+
     /// Reads an app setting (session, theme, …) from the encrypted database.
     pub fn setting(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
         self.meta
@@ -364,6 +434,13 @@ impl Device {
         if let Some(mut group) = self.channels.remove(&channel) {
             group.delete(self.provider.storage()).map_err(mls)?;
         }
+        // Removal means losing access, history included (the Brain purges the same way).
+        self.meta
+            .execute(
+                "DELETE FROM anarchy_messages WHERE channel_id = ?1",
+                [channel.as_bytes()],
+            )
+            .map_err(db)?;
         self.meta
             .execute(
                 "DELETE FROM anarchy_channels WHERE channel_id = ?1",

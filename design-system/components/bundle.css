@@ -7,7 +7,7 @@
 
 .ax { font-family: var(--font-ui); font-size: var(--fs-body); line-height: 1.45; color: var(--ink); }
 .ax *, .ax *::before, .ax *::after { box-sizing: border-box; }
-.ax button, .ax input, .ax textarea, .ax select { font: inherit; color: inherit; }
+:where(.ax) :where(button, input, textarea, select) { font: inherit; color: inherit; }
 .ax :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .ax code, .ax pre, .ax kbd, .ax .mono { font-family: var(--font-mono); font-size: var(--fs-code); }
 .ax .muted { color: var(--ink-muted); } .ax .faint { color: var(--ink-faint); font-size: var(--fs-caption); }

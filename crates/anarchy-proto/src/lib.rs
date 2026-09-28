@@ -66,12 +66,47 @@ pub struct Session {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuthConfig {
     pub org_name: String,
-    /// OpenID Connect issuer; clients discover its endpoints from it.
-    pub issuer: String,
+    /// OpenID Connect issuer, when the organisation signs in with an identity provider.
+    pub issuer: Option<String>,
     /// The public client ID registered for Anarchy at the identity provider.
-    pub client_id: String,
+    pub client_id: Option<String>,
+    /// Whether people can sign in with a one-time code sent to their work email.
+    #[serde(default)]
+    pub email_enabled: bool,
     /// Whether people can join with an invite code instead of an account.
     pub guests_enabled: bool,
+}
+
+/// `POST /v1/auth/email/start`: send a one-time code to a work address.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailStart {
+    pub email: String,
+}
+
+/// `POST /v1/auth/email/verify`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailVerify {
+    pub email: String,
+    pub code: String,
+}
+
+/// `GET /v1/directory`: people in the organisation (members only).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirectoryEntry {
+    pub user_id: UserId,
+    pub display_name: Option<String>,
+    pub email: Option<String>,
+    pub is_guest: bool,
+    /// Active devices; adding a person to a channel adds each of these.
+    pub devices: Vec<DeviceId>,
+}
+
+/// `GET /v1/devices`: the caller's own devices.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceSummary {
+    pub device_id: DeviceId,
+    pub created_at_ms: u64,
+    pub revoked: bool,
 }
 
 /// `POST /v1/auth/guest`
@@ -125,6 +160,10 @@ pub struct CreateChannel {
 pub struct Member {
     pub device_id: DeviceId,
     pub user_id: UserId,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub is_guest: bool,
 }
 
 /// `POST /v1/channels/{channel}/events`. The sender is the authenticated device.

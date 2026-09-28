@@ -116,10 +116,9 @@ impl Brain {
             // write drops these messages from the index (not from the channel).
             let mut tx = self.db.begin().await?;
             for msg in &delivered {
-                // Non-UTF-8 payloads (future attachments, reactions) aren't text to index.
-                let Ok(body) = std::str::from_utf8(&msg.body) else {
-                    continue;
-                };
+                // Only text is indexed; channel info and future kinds (reactions, files) aren't.
+                let content = anarchy_core::Content::decode(&msg.body);
+                let Some(body) = content.text_body() else { continue };
                 sqlx::query(
                     "INSERT INTO brain_chunks (channel_id, seq, sender_device, body) VALUES ($1, $2, $3, $4)
                      ON CONFLICT DO NOTHING",

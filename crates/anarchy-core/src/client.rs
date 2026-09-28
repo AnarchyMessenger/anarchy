@@ -6,15 +6,16 @@
 
 use anarchy_proto::{
     AppendRequest, AppendResponse, Blob, ChannelId, CreateChannel, CreateInvite, DEVICE_HEADER, DeviceId,
-    EventKind, EventsPage, GuestJoin, InboxItem, Invite, KeyPackageUpload, Member, OidcLogin, OrgId,
-    RegisterDevice, Session, UserId,
+    DeviceSummary, DirectoryEntry, EmailStart, EmailVerify, EventKind, EventsPage, GuestJoin, InboxItem,
+    Invite, KeyPackageUpload, Member, OidcLogin, OrgId, RegisterDevice, Session, UserId,
 };
 use reqwest::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use uuid::Uuid;
 
 use crate::Error;
-use crate::device::{Device, Incoming, PendingCommit};
+use crate::content::{Content, Trust};
+use crate::device::{Device, Incoming, PendingCommit, StoredMessage};
 
 /// A decrypted message delivered to the application.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +23,8 @@ pub struct Delivered {
     pub channel: ChannelId,
     pub seq: u64,
     pub sender: DeviceId,
+    /// Server receive time, milliseconds since the Unix epoch.
+    pub ts_ms: u64,
     pub body: Vec<u8>,
 }
 
@@ -78,6 +81,34 @@ impl Client {
         let resp = reqwest::Client::new()
             .post(format!("{base}/v1/auth/guest"))
             .json(&body)
+            .send()
+            .await?;
+        Ok(check(resp).await?.json().await?)
+    }
+
+    /// Asks the server to email a one-time sign-in code to a work address.
+    pub async fn request_email_code(base_url: &str, email: &str) -> Result<(), Error> {
+        let base = base_url.trim_end_matches('/');
+        let resp = reqwest::Client::new()
+            .post(format!("{base}/v1/auth/email/start"))
+            .json(&EmailStart {
+                email: email.to_owned(),
+            })
+            .send()
+            .await?;
+        check(resp).await?;
+        Ok(())
+    }
+
+    /// Trades an emailed one-time code for a session.
+    pub async fn login_with_email_code(base_url: &str, email: &str, code: &str) -> Result<Session, Error> {
+        let base = base_url.trim_end_matches('/');
+        let resp = reqwest::Client::new()
+            .post(format!("{base}/v1/auth/email/verify"))
+            .json(&EmailVerify {
+                email: email.to_owned(),
+                code: code.to_owned(),
+            })
             .send()
             .await?;
         Ok(check(resp).await?.json().await?)
@@ -239,6 +270,16 @@ impl Client {
         self.post("/v1/channels", &CreateChannel { channel }).await?;
         self.device.create_channel(channel)?;
         Ok(channel)
+    }
+
+    /// People in the organisation and their devices (members only; guests get 403).
+    pub async fn directory(&self) -> Result<Vec<DirectoryEntry>, Error> {
+        self.get("/v1/directory", &[]).await
+    }
+
+    /// This user's devices, including revoked ones.
+    pub async fn my_devices(&self) -> Result<Vec<DeviceSummary>, Error> {
+        self.get("/v1/devices", &[]).await
     }
 
     pub async fn members(&self, channel: ChannelId) -> Result<Vec<Member>, Error> {
@@ -412,6 +453,103 @@ impl Client {
         }
     }
 
+    /// Creates a channel and sets its (encrypted) name, topic and trust state.
+    pub async fn create_named_channel(
+        &mut self,
+        name: &str,
+        topic: &str,
+        trust: Trust,
+    ) -> Result<ChannelId, Error> {
+        let channel = self.create_channel().await?;
+        let info = Content::ChannelInfo {
+            name: name.to_owned(),
+            topic: topic.to_owned(),
+            trust,
+        };
+        self.send_content(channel, &info).await?;
+        Ok(channel)
+    }
+
+    /// Sends a message and keeps it in local history (MLS can't decrypt our own messages later).
+    pub async fn send_content(&mut self, channel: ChannelId, content: &Content) -> Result<u64, Error> {
+        let bytes = content.encode();
+        let seq = self.send(channel, &bytes).await?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64);
+        self.device.store_message(
+            channel,
+            &StoredMessage {
+                seq,
+                sender: self.device.id(),
+                ts_ms: now.unwrap_or(0),
+                content: bytes,
+            },
+        )?;
+        Ok(seq)
+    }
+
+    /// Syncs a channel and keeps what arrived in local history.
+    pub async fn sync_and_store(&mut self, channel: ChannelId) -> Result<Vec<Delivered>, Error> {
+        let delivered = self.sync(channel).await?;
+        if self.device.has_channel(channel) {
+            for m in &delivered {
+                self.device.store_message(
+                    channel,
+                    &StoredMessage {
+                        seq: m.seq,
+                        sender: m.sender,
+                        ts_ms: m.ts_ms,
+                        content: m.body.clone(),
+                    },
+                )?;
+            }
+        }
+        Ok(delivered)
+    }
+
+    /// The channel's latest name, topic and trust state, from local history.
+    pub fn channel_info(&self, channel: ChannelId) -> Result<Option<(String, String, Trust)>, Error> {
+        let history = self.device.messages(channel, u32::MAX)?;
+        Ok(history
+            .iter()
+            .rev()
+            .find_map(|m| match Content::decode(&m.content) {
+                Content::ChannelInfo { name, topic, trust } => Some((name, topic, trust)),
+                _ => None,
+            }))
+    }
+
+    /// Adds every active device of a person to a channel. Devices without key
+    /// packages are skipped and returned, so the caller can say who couldn't be added yet.
+    pub async fn add_user(&mut self, channel: ChannelId, user: UserId) -> Result<Vec<DeviceId>, Error> {
+        let person = self
+            .directory()
+            .await?
+            .into_iter()
+            .find(|p| p.user_id == user)
+            .ok_or_else(|| Error::Api {
+                status: 404,
+                message: "no such person".into(),
+            })?;
+        let already: Vec<DeviceId> = self.device.member_devices(channel)?;
+        let mut skipped = Vec::new();
+        for device in person.devices.into_iter().filter(|d| !already.contains(d)) {
+            match self.add_device(channel, device).await {
+                Ok(()) => {}
+                Err(Error::NoKeyPackage(d)) => skipped.push(d),
+                Err(e) => return Err(e),
+            }
+        }
+        // Newcomers can't read anything from before they joined, the channel's name
+        // included, so say it again in the new epoch.
+        if let Some((name, topic, trust)) = self.channel_info(channel)? {
+            self.send_content(channel, &Content::ChannelInfo { name, topic, trust })
+                .await?;
+        }
+        Ok(skipped)
+    }
+
     /// Fetches every event after the cursor, applies them in order and returns the new messages.
     ///
     /// If one of the events removes this device, the channel is deleted locally
@@ -438,6 +576,7 @@ impl Client {
                             channel,
                             seq: event.seq,
                             sender: event.sender_device,
+                            ts_ms: event.ts_ms,
                             body,
                         }),
                         Incoming::EpochAdvanced => {}

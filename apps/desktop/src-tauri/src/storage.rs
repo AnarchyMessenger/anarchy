@@ -3,12 +3,17 @@
 //! Service on Linux). The key never touches the disk.
 
 use std::path::Path;
+use std::sync::mpsc;
+use std::time::Duration;
 
 use anarchy_core::Device;
 use serde::Serialize;
 
 const KEYCHAIN_SERVICE: &str = "org.anarchymessenger.desktop";
 const KEYCHAIN_ACCOUNT: &str = "device-database-key";
+/// A keychain that hasn't answered by now isn't going to (a locked or missing
+/// Secret Service can hang for many seconds). Better a clear message than a frozen app.
+const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -46,13 +51,32 @@ fn from_hex(s: &str) -> Option<[u8; 32]> {
     Some(out)
 }
 
+/// Runs a keychain call on its own thread and gives up after [`KEYCHAIN_TIMEOUT`].
+fn with_timeout<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Result<T, String> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.recv_timeout(KEYCHAIN_TIMEOUT).map_err(|_| {
+        format!(
+            "the system keychain didn't answer within {} seconds",
+            KEYCHAIN_TIMEOUT.as_secs()
+        )
+    })
+}
+
 fn open_saved_device(dir: &Path) -> Result<(Device, String), String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("can't create {}: {e}", dir.display()))?;
     let path = dir.join("device.db");
-    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-        .map_err(|e| format!("the system keychain is unavailable ({e})"))?;
+    let (entry, found) = with_timeout(|| match keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT) {
+        Ok(entry) => {
+            let found = entry.get_password();
+            (Some(entry), found)
+        }
+        Err(e) => (None, Err(e)),
+    })?;
 
-    let device = match entry.get_password() {
+    let device = match found {
         Ok(hex) => {
             let key = from_hex(&hex).ok_or("the keychain entry for this device is corrupted")?;
             Device::open_or_create(&path, &key).map_err(|e| e.to_string())?
@@ -67,8 +91,9 @@ fn open_saved_device(dir: &Path) -> Result<(Device, String), String> {
             }
             let mut key = [0u8; 32];
             getrandom::fill(&mut key).map_err(|e| e.to_string())?;
-            entry
-                .set_password(&to_hex(&key))
+            let hex = to_hex(&key);
+            let entry = entry.expect("a NoEntry answer comes from an entry that exists");
+            with_timeout(move || entry.set_password(&hex))?
                 .map_err(|e| format!("can't save the key to the keychain ({e})"))?;
             Device::create(&path, &key).map_err(|e| e.to_string())?
         }

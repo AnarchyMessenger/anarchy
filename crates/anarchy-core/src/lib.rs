@@ -4,11 +4,13 @@
 //! against a server. Desktop (Tauri), mobile and web clients all build on this crate.
 
 pub mod client;
+pub mod content;
 pub mod device;
 pub mod oidc;
 
 pub use client::{Client, Delivered};
-pub use device::{Device, Incoming, PendingCommit};
+pub use content::{Content, Trust};
+pub use device::{Device, Incoming, PendingCommit, StoredMessage};
 
 use anarchy_proto::{ChannelId, DeviceId};
 

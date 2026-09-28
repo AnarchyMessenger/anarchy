@@ -14,17 +14,23 @@ The Community edition (Discord-style servers plus public forums) comes later. Se
 
 ## Screens
 
-Onboarding: sign in with your organisation, or join as a guest with an invite code; then pick a frame colour.
+Sign in with SSO, an emailed code, or an invite code as a guest; then pick a frame colour.
 
-| Join | Guest | Look |
-|---|---|---|
-| ![Join a workspace](docs/screens/onboarding-join.png) | ![Join as a guest](docs/screens/onboarding-guest.png) | ![Pick a frame colour](docs/screens/onboarding-look.png) |
-
-| App (Spring, guest) | Settings (Dark, Ocean) |
+| Sign in | Look |
 |---|---|
-| ![App shell](docs/screens/app-guest-spring.png) | ![Appearance settings](docs/screens/settings-dark-ocean.png) |
+| ![Sign in](docs/screens/sign-in.png) | ![Pick a frame colour](docs/screens/look.png) |
 
-Rendered by `apps/desktop/ui-preview.mjs` with a mocked backend.
+| Chat | Add people |
+|---|---|
+| ![Chat](docs/screens/chat.png) | ![Add people](docs/screens/add-people.png) |
+
+| Devices | Dark, Ocean |
+|---|---|
+| ![Devices](docs/screens/devices.png) | ![Chat in dark mode](docs/screens/chat-dark.png) |
+
+These are rendered by `apps/desktop/ui-preview.mjs` with a mocked backend. The screenshot below is the real app instead: two desktop instances against a real server, taken under Xvfb.
+
+![Real app, two people](docs/screens/real-app-two-people.png)
 
 ## Repository layout
 

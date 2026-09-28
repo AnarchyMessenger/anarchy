@@ -5,6 +5,7 @@
 //! to be a member of that channel.
 
 pub mod auth;
+pub mod email;
 
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -24,11 +25,15 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 pub use auth::{AuthDevice, AuthUser, Oidc, OidcConfig};
+pub use email::{EmailConfig, LogMailer, Mailer, SmtpMailer};
 
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 pub struct Config {
-    pub oidc: OidcConfig,
+    /// Sign-in with the organisation's identity provider. `None` if it has none.
+    pub oidc: Option<OidcConfig>,
+    /// Sign-in with a one-time code by email, for allowed domains. `None` turns it off.
+    pub email: Option<EmailConfig>,
     /// This server hosts one organisation (self-hosted, single tenant).
     pub org_name: String,
     pub session_ttl: Duration,
@@ -39,7 +44,8 @@ pub struct Config {
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
-    pub oidc: Arc<Oidc>,
+    pub oidc: Option<Arc<Oidc>>,
+    pub email: Option<Arc<EmailConfig>>,
     pub org_id: OrgId,
     pub org_name: String,
     pub session_ttl: Duration,
@@ -60,7 +66,8 @@ impl AppState {
         .await?;
         Ok(Self {
             db,
-            oidc: Arc::new(Oidc::new(config.oidc)),
+            oidc: config.oidc.map(|c| Arc::new(Oidc::new(c))),
+            email: config.email.map(Arc::new),
             org_id,
             org_name: config.org_name,
             session_ttl: config.session_ttl,
@@ -75,9 +82,12 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/auth/config", get(auth_config))
         .route("/v1/auth/oidc", post(login))
         .route("/v1/auth/guest", post(join_as_guest))
+        .route("/v1/auth/email/start", post(email::start))
+        .route("/v1/auth/email/verify", post(email::verify))
+        .route("/v1/directory", get(directory))
         .route("/v1/invites", post(create_invite))
         .route("/v1/invites/{invite}/revoke", post(revoke_invite))
-        .route("/v1/devices", post(register_device))
+        .route("/v1/devices", post(register_device).get(my_devices))
         .route("/v1/devices/{device}/revoke", post(revoke_device))
         .route("/v1/channels", post(create_channel))
         .route("/v1/channels/{channel}/events", post(append).get(events))
@@ -121,6 +131,12 @@ impl ApiError {
     pub fn unavailable(message: impl Into<String>) -> Self {
         Self::new(StatusCode::SERVICE_UNAVAILABLE, message)
     }
+    pub fn too_many(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::TOO_MANY_REQUESTS, message)
+    }
+    pub fn unauthorized_msg(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::UNAUTHORIZED, message)
+    }
 }
 
 impl From<sqlx::Error> for ApiError {
@@ -136,7 +152,37 @@ impl IntoResponse for ApiError {
     }
 }
 
-type ApiResult<T> = Result<T, ApiError>;
+pub(crate) type ApiResult<T> = Result<T, ApiError>;
+
+/// Issues a session for `user_id`. `cap_ms` shortens it (guests end with their invite).
+pub(crate) async fn create_session(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    s: &AppState,
+    user_id: Uuid,
+    cap_ms: Option<u64>,
+    is_guest: bool,
+) -> ApiResult<Session> {
+    let (token, hash) = auth::new_session_token();
+    let mut expires_at_ms = now_ms() + s.session_ttl.as_millis() as u64;
+    if let Some(cap) = cap_ms {
+        expires_at_ms = expires_at_ms.min(cap);
+    }
+    sqlx::query(
+        "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, to_timestamp($3 / 1000.0))",
+    )
+    .bind(hash)
+    .bind(user_id)
+    .bind(expires_at_ms as f64)
+    .execute(&mut **tx)
+    .await?;
+    Ok(Session {
+        token,
+        user_id,
+        org_id: s.org_id,
+        expires_at_ms,
+        is_guest,
+    })
+}
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -148,7 +194,12 @@ fn now_ms() -> u64 {
 // ---------- sign-in and devices ----------
 
 async fn login(State(s): State<AppState>, Json(req): Json<OidcLogin>) -> ApiResult<Json<Session>> {
-    let claims = s.oidc.verify(&req.id_token).await?;
+    let oidc = s
+        .oidc
+        .as_ref()
+        .ok_or_else(|| ApiError::forbidden("this workspace doesn't use an identity provider"))?;
+    let claims = oidc.verify(&req.id_token).await?;
+    let mut tx = s.db.begin().await?;
     let (user_id,): (Uuid,) = sqlx::query_as(
         "INSERT INTO users (id, org_id, oidc_issuer, oidc_subject, display_name, email)
          VALUES ($1, $2, $3, $4, $5, $6)
@@ -158,39 +209,82 @@ async fn login(State(s): State<AppState>, Json(req): Json<OidcLogin>) -> ApiResu
     )
     .bind(Uuid::new_v4())
     .bind(s.org_id)
-    .bind(s.oidc.issuer())
+    .bind(oidc.issuer())
     .bind(&claims.sub)
     .bind(&claims.name)
     .bind(&claims.email)
-    .fetch_one(&s.db)
+    .fetch_one(&mut *tx)
     .await?;
-
-    let (token, hash) = auth::new_session_token();
-    let expires_at_ms = now_ms() + s.session_ttl.as_millis() as u64;
-    sqlx::query(
-        "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, to_timestamp($3 / 1000.0))",
-    )
-    .bind(hash)
-    .bind(user_id)
-    .bind(expires_at_ms as f64)
-    .execute(&s.db)
-    .await?;
-    Ok(Json(Session {
-        token,
-        user_id,
-        org_id: s.org_id,
-        expires_at_ms,
-        is_guest: false,
-    }))
+    let session = create_session(&mut tx, &s, user_id, None, false).await?;
+    tx.commit().await?;
+    Ok(Json(session))
 }
 
 async fn auth_config(State(s): State<AppState>) -> Json<AuthConfig> {
     Json(AuthConfig {
         org_name: s.org_name.clone(),
-        issuer: s.oidc.issuer().to_owned(),
-        client_id: s.oidc.audience().to_owned(),
+        issuer: s.oidc.as_ref().map(|o| o.issuer().to_owned()),
+        client_id: s.oidc.as_ref().map(|o| o.audience().to_owned()),
+        email_enabled: s.email.is_some(),
         guests_enabled: s.guests_enabled,
     })
+}
+
+/// People in the organisation, with their active devices. Guests can't browse it.
+async fn directory(
+    State(s): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<anarchy_proto::DirectoryEntry>>> {
+    if user.is_guest {
+        return Err(ApiError::forbidden("guests can't browse the directory"));
+    }
+    /// user id, display name, email, is guest, active device ids
+    type Row = (Uuid, Option<String>, Option<String>, bool, Vec<Uuid>);
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT u.id, u.display_name, u.email, u.is_guest,
+                coalesce(array_agg(d.id ORDER BY d.created_at) FILTER (WHERE d.id IS NOT NULL), '{}')
+         FROM users u LEFT JOIN devices d ON d.user_id = u.id AND d.revoked_at IS NULL
+         WHERE u.org_id = $1 AND (u.expires_at IS NULL OR u.expires_at > now())
+         GROUP BY u.id ORDER BY lower(coalesce(u.display_name, u.email, u.id::text))",
+    )
+    .bind(user.org_id)
+    .fetch_all(&s.db)
+    .await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(
+                |(user_id, display_name, email, is_guest, devices)| anarchy_proto::DirectoryEntry {
+                    user_id,
+                    display_name,
+                    email,
+                    is_guest,
+                    devices,
+                },
+            )
+            .collect(),
+    ))
+}
+
+async fn my_devices(
+    State(s): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<anarchy_proto::DeviceSummary>>> {
+    let rows: Vec<(Uuid, f64, bool)> = sqlx::query_as(
+        "SELECT id, extract(epoch FROM created_at)::float8 * 1000, revoked_at IS NOT NULL
+         FROM devices WHERE user_id = $1 ORDER BY created_at",
+    )
+    .bind(user.user_id)
+    .fetch_all(&s.db)
+    .await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|(device_id, created, revoked)| anarchy_proto::DeviceSummary {
+                device_id,
+                created_at_ms: created as u64,
+                revoked,
+            })
+            .collect(),
+    ))
 }
 
 /// Creates a guest account from an invite code. The guest's access, and every
@@ -236,24 +330,9 @@ async fn join_as_guest(State(s): State<AppState>, Json(req): Json<GuestJoin>) ->
     .execute(&mut *tx)
     .await?;
 
-    let (token, hash) = auth::new_session_token();
-    let expires_at_ms = (now_ms() + s.session_ttl.as_millis() as u64).min((invite_expiry * 1000.0) as u64);
-    sqlx::query(
-        "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, to_timestamp($3 / 1000.0))",
-    )
-    .bind(hash)
-    .bind(user_id)
-    .bind(expires_at_ms as f64)
-    .execute(&mut *tx)
-    .await?;
+    let session = create_session(&mut tx, &s, user_id, Some((invite_expiry * 1000.0) as u64), true).await?;
     tx.commit().await?;
-    Ok(Json(Session {
-        token,
-        user_id,
-        org_id: s.org_id,
-        expires_at_ms,
-        is_guest: true,
-    }))
+    Ok(Json(session))
 }
 
 const MAX_INVITE_SECS: u64 = 30 * 24 * 3600;
@@ -623,8 +702,8 @@ async fn members(
     Path(channel): Path<ChannelId>,
 ) -> ApiResult<Json<Vec<Member>>> {
     require_member(&s.db, channel, dev.device_id).await?;
-    let rows: Vec<(Uuid, Uuid)> = sqlx::query_as(
-        "SELECT d.id, d.user_id FROM channel_members m
+    let rows: Vec<(Uuid, Uuid, Option<String>, bool)> = sqlx::query_as(
+        "SELECT d.id, d.user_id, u.display_name, u.is_guest FROM channel_members m
          JOIN devices d ON d.id = m.device_id JOIN users u ON u.id = d.user_id
          WHERE m.channel_id = $1 AND m.removed_seq IS NULL AND d.revoked_at IS NULL
            AND (u.expires_at IS NULL OR u.expires_at > now())
@@ -635,7 +714,12 @@ async fn members(
     .await?;
     Ok(Json(
         rows.into_iter()
-            .map(|(device_id, user_id)| Member { device_id, user_id })
+            .map(|(device_id, user_id, display_name, is_guest)| Member {
+                device_id,
+                user_id,
+                display_name,
+                is_guest,
+            })
             .collect(),
     ))
 }

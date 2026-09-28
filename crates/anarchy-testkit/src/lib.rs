@@ -8,7 +8,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use anarchy_server::{AppState, Config, OidcConfig, router};
+use anarchy_server::email::MailFuture;
+use anarchy_server::{AppState, Config, EmailConfig, Mailer, OidcConfig, router};
 use axum::Json;
 use axum::extract::{Form, Query, State};
 use axum::http::{StatusCode, header};
@@ -191,8 +192,31 @@ pub async fn fresh_database() -> PgPool {
          e.g. postgres://postgres@127.0.0.1:5432/postgres (docker compose up db)",
     );
     let admin: PgConnectOptions = url.parse().expect("invalid ANARCHY_TEST_DATABASE_URL");
-    let name = format!("anarchy_t_{}", Uuid::new_v4().simple());
+    let now = now_secs();
+    let name = format!("anarchy_t_{now}_{}", Uuid::new_v4().simple());
     let mut conn = admin.connect().await.expect("cannot reach test Postgres");
+    // Tests never drop their databases (pools are still open when they end), so clear
+    // out ones older than ten minutes: no test runs that long.
+    let old: Vec<String> =
+        sqlx::query_scalar("SELECT datname FROM pg_database WHERE datname LIKE 'anarchy_t_%'")
+            .fetch_all(&mut conn)
+            .await
+            .unwrap_or_default();
+    for db in old {
+        let created = db
+            .split('_')
+            .nth(2)
+            .and_then(|t| t.parse::<u64>().ok())
+            .unwrap_or(0);
+        if created + 600 < now {
+            // Names come from pg_database and match our own pattern, never from input.
+            let _ = conn
+                .execute(sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+                    "DROP DATABASE IF EXISTS \"{db}\" WITH (FORCE)"
+                ))))
+                .await;
+        }
+    }
     // `name` is generated above from a UUID, never from input.
     conn.execute(sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
         "CREATE DATABASE \"{name}\""
@@ -211,6 +235,53 @@ pub struct TestServer {
     pub url: String,
     pub idp: TestIdp,
     pub db: PgPool,
+    /// Emails the server "sent". Email sign-in accepts `@northwind.org` addresses.
+    pub mailbox: Arc<Mailbox>,
+}
+
+/// Which sign-in methods a test server offers. All on by default.
+pub struct TestOptions {
+    pub sso: bool,
+    pub email: bool,
+    pub guests: bool,
+}
+
+impl Default for TestOptions {
+    fn default() -> Self {
+        Self {
+            sso: true,
+            email: true,
+            guests: true,
+        }
+    }
+}
+
+/// Captures sign-in emails instead of sending them.
+#[derive(Default)]
+pub struct Mailbox {
+    sent: Mutex<Vec<(String, String)>>,
+}
+
+impl Mailbox {
+    /// The newest 6-digit code sent to `to`.
+    pub fn last_code(&self, to: &str) -> Option<String> {
+        let sent = self.sent.lock().unwrap();
+        let (_, body) = sent.iter().rev().find(|(addr, _)| addr == to)?;
+        body.split_whitespace()
+            .find(|w| w.len() == 6 && w.chars().all(|c| c.is_ascii_digit()))
+            .map(str::to_owned)
+    }
+
+    pub fn count(&self) -> usize {
+        self.sent.lock().unwrap().len()
+    }
+}
+
+impl Mailer for Mailbox {
+    fn send<'a>(&'a self, to: &'a str, _subject: &'a str, body: &'a str) -> MailFuture<'a> {
+        self.sent.lock().unwrap().push((to.to_owned(), body.to_owned()));
+        Box::pin(async { Ok(()) })
+    }
 }
 
 impl TestServer {
@@ -219,18 +290,32 @@ impl TestServer {
     }
 
     pub async fn start_with_guests(guests_enabled: bool) -> Self {
+        Self::start_with(TestOptions {
+            guests: guests_enabled,
+            ..TestOptions::default()
+        })
+        .await
+    }
+
+    pub async fn start_with(options: TestOptions) -> Self {
+        let guests_enabled = options.guests;
         let idp = TestIdp::start().await;
         let db = fresh_database().await;
+        let mailbox = Arc::new(Mailbox::default());
         let state = AppState::new(
             db.clone(),
             Config {
-                oidc: OidcConfig {
+                oidc: options.sso.then(|| OidcConfig {
                     issuer: idp.issuer.clone(),
                     audience: AUDIENCE.into(),
                     jwks_url: None,
-                },
+                }),
                 org_name: "Northwind".into(),
                 guests_enabled,
+                email: options.email.then(|| EmailConfig {
+                    allowed_domains: vec!["northwind.org".into()],
+                    mailer: mailbox.clone(),
+                }),
                 session_ttl: Duration::from_secs(3600),
             },
         )
@@ -240,7 +325,12 @@ impl TestServer {
         let url = format!("http://{}", listener.local_addr().unwrap());
         let app = router(state);
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        Self { url, idp, db }
+        Self {
+            url,
+            idp,
+            db,
+            mailbox,
+        }
     }
 
     /// Every payload stored for a channel, for asserting the server holds no plaintext.

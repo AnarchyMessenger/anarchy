@@ -66,10 +66,16 @@ pub async fn workspace_config(server_url: &str) -> Result<AuthConfig, Error> {
 
 /// Starts a sign-in against the workspace's identity provider.
 pub async fn begin(config: &AuthConfig) -> Result<PendingSignIn, Error> {
+    let (Some(issuer), Some(client_id)) = (&config.issuer, &config.client_id) else {
+        return Err(oidc_error(format!(
+            "{} doesn't sign in with an identity provider",
+            config.org_name
+        )));
+    };
     let http = reqwest::Client::new();
     let discovery_url = format!(
         "{}/.well-known/openid-configuration",
-        config.issuer.trim_end_matches('/')
+        issuer.trim_end_matches('/')
     );
     let discovery: Discovery = http
         .get(&discovery_url)
@@ -98,7 +104,7 @@ pub async fn begin(config: &AuthConfig) -> Result<PendingSignIn, Error> {
         .map_err(|e| oidc_error(format!("bad authorization endpoint: {e}")))?;
     url.query_pairs_mut()
         .append_pair("response_type", "code")
-        .append_pair("client_id", &config.client_id)
+        .append_pair("client_id", client_id)
         .append_pair("redirect_uri", &redirect_uri)
         .append_pair("scope", "openid profile email")
         .append_pair("state", &state)
@@ -112,7 +118,7 @@ pub async fn begin(config: &AuthConfig) -> Result<PendingSignIn, Error> {
         verifier,
         state,
         token_endpoint: discovery.token_endpoint,
-        client_id: config.client_id.clone(),
+        client_id: client_id.clone(),
         http,
     })
 }
