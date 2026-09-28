@@ -91,7 +91,8 @@ Pulled forward from phase 4:
 
 ## Later / parking lot
 
-- **Solo spaces** (personal ERP and agent teams): see SOLO-PLAN.md.
+- **Desks** (purpose-built workspaces generated from a workflow): see DESKS-PLAN.md.
+- **Solo spaces** (personal ERP, one human with desks): see SOLO-PLAN.md.
 
 - Branded frame themes extracted from an organisation's brand guidelines (colours from a PDF), as in the Deel reference: an Enterprise feature for the Brain.
 

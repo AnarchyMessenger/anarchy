@@ -1,6 +1,10 @@
 # Solo plan: a personal workspace with an agent team
 
-> Status: idea, not scheduled. It depends on the Company edition's chat,
+> Status: idea, not scheduled. Agents, desks and workflows are now specified in
+> DESKS-PLAN.md; this file keeps the Solo-specific parts (one human, personal
+> ERP, joining other spaces).
+>
+> Earlier status: idea, not scheduled. It depends on the Company edition's chat,
 > Brain and Company MCP (ROADMAP phases 1 and 4). Nothing here is built yet.
 
 ## The idea
