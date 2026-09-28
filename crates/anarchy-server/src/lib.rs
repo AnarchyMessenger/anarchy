@@ -4,6 +4,7 @@
 //! sign-in needs a session, and every channel endpoint needs the calling device
 //! to be a member of that channel.
 
+pub mod accounts;
 pub mod auth;
 pub mod email;
 
@@ -39,6 +40,11 @@ pub struct Config {
     pub session_ttl: Duration,
     /// Let members invite guests (people without an account). Off by default.
     pub guests_enabled: bool,
+    /// A public server: anyone may create an account (including anonymous ones)
+    /// and there's no organisation-wide space. Off for company servers.
+    pub open_signup: bool,
+    /// Sent to clients for providers (Google) that want one from installed apps.
+    pub oidc_client_secret: Option<String>,
 }
 
 #[derive(Clone)]
@@ -50,6 +56,10 @@ pub struct AppState {
     pub org_name: String,
     pub session_ttl: Duration,
     pub guests_enabled: bool,
+    pub open_signup: bool,
+    pub oidc_client_secret: Option<String>,
+    /// The organisation's space on a company server; everyone is a member.
+    pub default_space: Option<Uuid>,
 }
 
 impl AppState {
@@ -64,6 +74,11 @@ impl AppState {
         .bind(&config.org_name)
         .fetch_one(&db)
         .await?;
+        let default_space = if config.open_signup {
+            None
+        } else {
+            Some(ensure_default_space(&db, org_id, &config.org_name).await?)
+        };
         Ok(Self {
             db,
             oidc: config.oidc.map(|c| Arc::new(Oidc::new(c))),
@@ -72,8 +87,51 @@ impl AppState {
             org_name: config.org_name,
             session_ttl: config.session_ttl,
             guests_enabled: config.guests_enabled,
+            open_signup: config.open_signup,
+            oidc_client_secret: config.oidc_client_secret,
+            default_space,
         })
     }
+}
+
+/// Creates the organisation's space and moves everything from before spaces
+/// existed into it: every account, and every channel that isn't a DM.
+async fn ensure_default_space(db: &PgPool, org_id: Uuid, name: &str) -> Result<Uuid, sqlx::Error> {
+    let mut tx = db.begin().await?;
+    let existing: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM spaces WHERE org_id = $1 AND is_default")
+        .bind(org_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let id = match existing {
+        Some((id,)) => id,
+        None => {
+            let id = Uuid::new_v4();
+            sqlx::query("INSERT INTO spaces (id, org_id, name, kind, is_default) VALUES ($1, $2, $3, 'company', true)")
+                .bind(id)
+                .bind(org_id)
+                .bind(name)
+                .execute(&mut *tx)
+                .await?;
+            id
+        }
+    };
+    sqlx::query(
+        "INSERT INTO space_members (space_id, user_id, role)
+         SELECT $1, id, 'member' FROM users WHERE org_id = $2 ON CONFLICT DO NOTHING",
+    )
+    .bind(id)
+    .bind(org_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE channels SET space_id = $1 WHERE org_id = $2 AND space_id IS NULL AND kind = 'channel'",
+    )
+    .bind(id)
+    .bind(org_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(id)
 }
 
 pub fn router(state: AppState) -> Router {
@@ -84,12 +142,21 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/auth/guest", post(join_as_guest))
         .route("/v1/auth/email/start", post(email::start))
         .route("/v1/auth/email/verify", post(email::verify))
-        .route("/v1/directory", get(directory))
+        .route("/v1/auth/anonymous", post(accounts::anonymous))
+        .route("/v1/me", get(accounts::me).put(accounts::update_me))
+        .route("/v1/directory", get(accounts::directory))
+        .route(
+            "/v1/spaces",
+            post(accounts::create_space).get(accounts::my_spaces),
+        )
+        .route("/v1/spaces/join", post(accounts::join_space))
+        .route("/v1/spaces/{space}/invites", post(accounts::create_space_invite))
+        .route("/v1/dms", post(accounts::start_dm))
         .route("/v1/invites", post(create_invite))
         .route("/v1/invites/{invite}/revoke", post(revoke_invite))
         .route("/v1/devices", post(register_device).get(my_devices))
         .route("/v1/devices/{device}/revoke", post(revoke_device))
-        .route("/v1/channels", post(create_channel))
+        .route("/v1/channels", post(create_channel).get(accounts::my_channels))
         .route("/v1/channels/{channel}/events", post(append).get(events))
         .route("/v1/channels/{channel}/members", get(members))
         .route("/v1/devices/{device}/key_packages", post(upload_key_packages))
@@ -184,7 +251,7 @@ pub(crate) async fn create_session(
     })
 }
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -215,6 +282,8 @@ async fn login(State(s): State<AppState>, Json(req): Json<OidcLogin>) -> ApiResu
     .bind(&claims.email)
     .fetch_one(&mut *tx)
     .await?;
+    let hint = claims.name.clone().or(claims.email.clone()).unwrap_or_default();
+    accounts::ensure_account(&mut tx, &s, user_id, &hint).await?;
     let session = create_session(&mut tx, &s, user_id, None, false).await?;
     tx.commit().await?;
     Ok(Json(session))
@@ -227,42 +296,10 @@ async fn auth_config(State(s): State<AppState>) -> Json<AuthConfig> {
         client_id: s.oidc.as_ref().map(|o| o.audience().to_owned()),
         email_enabled: s.email.is_some(),
         guests_enabled: s.guests_enabled,
+        open_signup: s.open_signup,
+        anonymous_enabled: s.open_signup,
+        client_secret: s.oidc_client_secret.clone(),
     })
-}
-
-/// People in the organisation, with their active devices. Guests can't browse it.
-async fn directory(
-    State(s): State<AppState>,
-    user: AuthUser,
-) -> ApiResult<Json<Vec<anarchy_proto::DirectoryEntry>>> {
-    if user.is_guest {
-        return Err(ApiError::forbidden("guests can't browse the directory"));
-    }
-    /// user id, display name, email, is guest, active device ids
-    type Row = (Uuid, Option<String>, Option<String>, bool, Vec<Uuid>);
-    let rows: Vec<Row> = sqlx::query_as(
-        "SELECT u.id, u.display_name, u.email, u.is_guest,
-                coalesce(array_agg(d.id ORDER BY d.created_at) FILTER (WHERE d.id IS NOT NULL), '{}')
-         FROM users u LEFT JOIN devices d ON d.user_id = u.id AND d.revoked_at IS NULL
-         WHERE u.org_id = $1 AND (u.expires_at IS NULL OR u.expires_at > now())
-         GROUP BY u.id ORDER BY lower(coalesce(u.display_name, u.email, u.id::text))",
-    )
-    .bind(user.org_id)
-    .fetch_all(&s.db)
-    .await?;
-    Ok(Json(
-        rows.into_iter()
-            .map(
-                |(user_id, display_name, email, is_guest, devices)| anarchy_proto::DirectoryEntry {
-                    user_id,
-                    display_name,
-                    email,
-                    is_guest,
-                    devices,
-                },
-            )
-            .collect(),
-    ))
 }
 
 async fn my_devices(
@@ -300,7 +337,7 @@ async fn join_as_guest(State(s): State<AppState>, Json(req): Json<GuestJoin>) ->
     let mut tx = s.db.begin().await?;
     let invite: Option<(Uuid, f64)> = sqlx::query_as(
         "SELECT id, extract(epoch FROM expires_at)::float8 FROM invites
-         WHERE code_hash = $1 AND org_id = $2 AND revoked_at IS NULL
+         WHERE code_hash = $1 AND org_id = $2 AND space_id IS NULL AND revoked_at IS NULL
            AND expires_at > now() AND uses < max_uses
          FOR UPDATE",
     )
@@ -329,13 +366,14 @@ async fn join_as_guest(State(s): State<AppState>, Json(req): Json<GuestJoin>) ->
     .bind(invite_id)
     .execute(&mut *tx)
     .await?;
+    accounts::ensure_account(&mut tx, &s, user_id, name).await?;
 
     let session = create_session(&mut tx, &s, user_id, Some((invite_expiry * 1000.0) as u64), true).await?;
     tx.commit().await?;
     Ok(Json(session))
 }
 
-const MAX_INVITE_SECS: u64 = 30 * 24 * 3600;
+pub(crate) const MAX_INVITE_SECS: u64 = 30 * 24 * 3600;
 
 async fn create_invite(
     State(s): State<AppState>,
@@ -476,13 +514,20 @@ async fn create_channel(
     dev: AuthDevice,
     Json(req): Json<CreateChannel>,
 ) -> ApiResult<StatusCode> {
+    let space = req
+        .space
+        .or(s.default_space)
+        .ok_or_else(|| ApiError::bad_request("say which space the channel is in"))?;
+    accounts::require_space_member(&s.db, space, dev.user_id).await?;
     let mut tx = s.db.begin().await?;
     let created = sqlx::query(
-        "INSERT INTO channels (id, org_id, created_by_device) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING",
+        "INSERT INTO channels (id, org_id, created_by_device, space_id) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (id) DO NOTHING",
     )
     .bind(req.channel)
     .bind(dev.org_id)
     .bind(dev.device_id)
+    .bind(space)
     .execute(&mut *tx)
     .await?
     .rows_affected();
@@ -515,11 +560,13 @@ async fn append(
     let mut tx = s.db.begin().await?;
     // Lock the channel row: appends to one channel are serialised, which is what
     // gives every member the same order and settles concurrent commits.
-    let row: Option<(i64, i64)> = sqlx::query_as("SELECT epoch, head FROM channels WHERE id = $1 FOR UPDATE")
-        .bind(channel)
-        .fetch_optional(&mut *tx)
-        .await?;
-    let Some((epoch, head)) = row else {
+    type ChannelRow = (i64, i64, Option<Uuid>, Option<Uuid>, Option<Uuid>);
+    let row: Option<ChannelRow> =
+        sqlx::query_as("SELECT epoch, head, space_id, dm_a, dm_b FROM channels WHERE id = $1 FOR UPDATE")
+            .bind(channel)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let Some((epoch, head, space, dm_a, dm_b)) = row else {
         return Err(ApiError::not_found("no such channel"));
     };
     let member: Option<(i32,)> = sqlx::query_as(
@@ -570,8 +617,10 @@ async fn append(
     .await?;
 
     for added in &req.adds {
-        let same_org: Option<(i32,)> = sqlx::query_as(
-            "SELECT 1 FROM devices d JOIN users u ON u.id = d.user_id
+        // Who may be added: members of the channel's space, or for a direct
+        // conversation, the two people in it (any of their devices).
+        let owner: Option<(Uuid,)> = sqlx::query_as(
+            "SELECT u.id FROM devices d JOIN users u ON u.id = d.user_id
              WHERE d.id = $1 AND u.org_id = $2 AND d.revoked_at IS NULL
                AND (u.expires_at IS NULL OR u.expires_at > now())",
         )
@@ -579,9 +628,21 @@ async fn append(
         .bind(dev.org_id)
         .fetch_optional(&mut *tx)
         .await?;
-        if same_org.is_none() {
+        let allowed = match (owner, space) {
+            (None, _) => false,
+            (Some((user,)), Some(space)) => sqlx::query_as::<_, (i32,)>(
+                "SELECT 1 FROM space_members WHERE space_id = $1 AND user_id = $2",
+            )
+            .bind(space)
+            .bind(user)
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some(),
+            (Some((user,)), None) => Some(user) == dm_a || Some(user) == dm_b,
+        };
+        if !allowed {
             return Err(ApiError::bad_request(format!(
-                "device {added} is not in this organisation"
+                "device {added} can't be added here: its owner isn't in this space or conversation"
             )));
         }
         // Re-adding a removed device reactivates it. It can then fetch the
@@ -702,8 +763,17 @@ async fn members(
     Path(channel): Path<ChannelId>,
 ) -> ApiResult<Json<Vec<Member>>> {
     require_member(&s.db, channel, dev.device_id).await?;
-    let rows: Vec<(Uuid, Uuid, Option<String>, bool)> = sqlx::query_as(
-        "SELECT d.id, d.user_id, u.display_name, u.is_guest FROM channel_members m
+    type Row = (
+        Uuid,
+        Uuid,
+        Option<String>,
+        bool,
+        Option<String>,
+        Option<i32>,
+        bool,
+    );
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT d.id, d.user_id, u.display_name, u.is_guest, u.username, u.tag, u.is_agent FROM channel_members m
          JOIN devices d ON d.id = m.device_id JOIN users u ON u.id = d.user_id
          WHERE m.channel_id = $1 AND m.removed_seq IS NULL AND d.revoked_at IS NULL
            AND (u.expires_at IS NULL OR u.expires_at > now())
@@ -714,12 +784,17 @@ async fn members(
     .await?;
     Ok(Json(
         rows.into_iter()
-            .map(|(device_id, user_id, display_name, is_guest)| Member {
-                device_id,
-                user_id,
-                display_name,
-                is_guest,
-            })
+            .map(
+                |(device_id, user_id, display_name, is_guest, username, tag, is_agent)| Member {
+                    device_id,
+                    user_id,
+                    display_name,
+                    is_guest,
+                    username,
+                    tag: tag.map(|t| t as u16),
+                    is_agent,
+                },
+            )
             .collect(),
     ))
 }

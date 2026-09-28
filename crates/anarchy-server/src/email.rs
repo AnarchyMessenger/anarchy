@@ -38,6 +38,13 @@ pub struct EmailConfig {
     pub mailer: Arc<dyn Mailer>,
 }
 
+impl EmailConfig {
+    /// `*` in the list lets any address sign in (public servers).
+    pub fn allows(&self, domain: &str) -> bool {
+        self.allowed_domains.iter().any(|d| d == "*" || d == domain)
+    }
+}
+
 /// Sends through an SMTP relay (`smtps://user:pass@smtp.example.org`).
 pub struct SmtpMailer {
     transport: lettre::AsyncSmtpTransport<lettre::Tokio1Executor>,
@@ -125,7 +132,7 @@ pub async fn start(State(s): State<AppState>, Json(req): Json<EmailStart>) -> Ap
     let cfg = config(&s)?;
     let (email, domain) =
         normalize_email(&req.email).ok_or_else(|| ApiError::bad_request("enter a valid email address"))?;
-    if !cfg.allowed_domains.iter().any(|d| d == &domain) {
+    if !cfg.allows(&domain) {
         return Err(ApiError::forbidden(format!(
             "{} only accepts work addresses at {}",
             s.org_name,
@@ -175,7 +182,7 @@ pub async fn verify(State(s): State<AppState>, Json(req): Json<EmailVerify>) -> 
     let cfg = config(&s)?;
     let (email, domain) =
         normalize_email(&req.email).ok_or_else(|| ApiError::bad_request("enter a valid email address"))?;
-    if !cfg.allowed_domains.iter().any(|d| d == &domain) {
+    if !cfg.allows(&domain) {
         return Err(ApiError::forbidden("this address can't sign in here"));
     }
     let failed_today: i64 = sqlx::query_scalar(
@@ -234,6 +241,7 @@ pub async fn verify(State(s): State<AppState>, Json(req): Json<EmailVerify>) -> 
     .bind(&name)
     .fetch_one(&mut *tx)
     .await?;
+    crate::accounts::ensure_account(&mut tx, &s, user_id, &name).await?;
     let session = crate::create_session(&mut tx, &s, user_id, None, false).await?;
     tx.commit().await?;
     Ok(Json(session))

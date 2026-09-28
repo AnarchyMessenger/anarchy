@@ -36,6 +36,7 @@ pub struct PendingSignIn {
     state: String,
     token_endpoint: String,
     client_id: String,
+    client_secret: Option<String>,
     http: reqwest::Client,
 }
 
@@ -119,6 +120,7 @@ pub async fn begin(config: &AuthConfig) -> Result<PendingSignIn, Error> {
         state,
         token_endpoint: discovery.token_endpoint,
         client_id: client_id.clone(),
+        client_secret: config.client_secret.clone(),
         http,
     })
 }
@@ -145,18 +147,18 @@ impl PendingSignIn {
         struct TokenResponse {
             id_token: Option<String>,
         }
-        let resp = self
-            .http
-            .post(&self.token_endpoint)
-            .form(&[
-                ("grant_type", "authorization_code"),
-                ("code", code.as_str()),
-                ("redirect_uri", self.redirect_uri.as_str()),
-                ("client_id", self.client_id.as_str()),
-                ("code_verifier", self.verifier.as_str()),
-            ])
-            .send()
-            .await?;
+        let mut form = vec![
+            ("grant_type", "authorization_code"),
+            ("code", code.as_str()),
+            ("redirect_uri", self.redirect_uri.as_str()),
+            ("client_id", self.client_id.as_str()),
+            ("code_verifier", self.verifier.as_str()),
+        ];
+        // Google's installed-app clients require their (public) secret too.
+        if let Some(secret) = &self.client_secret {
+            form.push(("client_secret", secret.as_str()));
+        }
+        let resp = self.http.post(&self.token_endpoint).form(&form).send().await?;
         if !resp.status().is_success() {
             return Err(oidc_error(format!(
                 "identity provider refused the sign-in ({})",

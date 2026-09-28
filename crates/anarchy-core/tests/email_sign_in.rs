@@ -113,6 +113,7 @@ async fn sign_in_methods_can_be_turned_off() {
         sso: false,
         email: false,
         guests: false,
+        open: false,
     })
     .await;
     let config = oidc::workspace_config(&server.url).await.unwrap();

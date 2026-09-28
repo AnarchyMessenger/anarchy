@@ -5,9 +5,11 @@
 //! fetch events after the cursor and apply them in order.
 
 use anarchy_proto::{
-    AppendRequest, AppendResponse, Blob, ChannelId, CreateChannel, CreateInvite, DEVICE_HEADER, DeviceId,
-    DeviceSummary, DirectoryEntry, EmailStart, EmailVerify, EventKind, EventsPage, GuestJoin, InboxItem,
-    Invite, KeyPackageUpload, Member, OidcLogin, OrgId, RegisterDevice, Session, UserId,
+    AnonymousSignup, AppendRequest, AppendResponse, Blob, ChannelId, ChannelMeta, CreateChannel,
+    CreateInvite, CreateSpace, DEVICE_HEADER, DeviceId, DeviceSummary, DirectoryEntry, DmStarted, EmailStart,
+    EmailVerify, EventKind, EventsPage, GuestJoin, InboxItem, Invite, JoinSpace, KeyPackageUpload, Member,
+    OidcLogin, OrgId, Profile, ProfileUpdate, RegisterDevice, Session, SpaceId, SpaceKind, SpaceSummary,
+    StartDm, UserId,
 };
 use reqwest::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
@@ -101,6 +103,20 @@ impl Client {
     }
 
     /// Trades an emailed one-time code for a session.
+    /// Creates an anonymous account (open servers only). It can't be signed back
+    /// into: the session returned is the only key to it.
+    pub async fn login_anonymously(base_url: &str, display_name: Option<&str>) -> Result<Session, Error> {
+        let base = base_url.trim_end_matches('/');
+        let resp = reqwest::Client::new()
+            .post(format!("{base}/v1/auth/anonymous"))
+            .json(&AnonymousSignup {
+                display_name: display_name.map(str::to_owned),
+            })
+            .send()
+            .await?;
+        Ok(check(resp).await?.json().await?)
+    }
+
     pub async fn login_with_email_code(base_url: &str, email: &str, code: &str) -> Result<Session, Error> {
         let base = base_url.trim_end_matches('/');
         let resp = reqwest::Client::new()
@@ -255,6 +271,106 @@ impl Client {
         check(req.send().await?).await
     }
 
+    async fn put<B: serde::Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T, Error> {
+        let req = self
+            .authed(self.http.put(format!("{}{path}", self.base)))
+            .json(body);
+        Ok(check(req.send().await?).await?.json().await?)
+    }
+
+    // ---------- profile, spaces, direct conversations ----------
+
+    pub async fn me(&self) -> Result<Profile, Error> {
+        self.get("/v1/me", &[]).await
+    }
+
+    pub async fn update_me(&self, update: &ProfileUpdate) -> Result<Profile, Error> {
+        self.put("/v1/me", update).await
+    }
+
+    pub async fn spaces(&self) -> Result<Vec<SpaceSummary>, Error> {
+        self.get("/v1/spaces", &[]).await
+    }
+
+    pub async fn create_space(&self, name: &str, kind: SpaceKind) -> Result<SpaceSummary, Error> {
+        let body = CreateSpace {
+            name: name.to_owned(),
+            kind,
+        };
+        Ok(self.post("/v1/spaces", &body).await?.json().await?)
+    }
+
+    pub async fn create_space_invite(
+        &self,
+        space: SpaceId,
+        expires_in: std::time::Duration,
+        max_uses: u32,
+    ) -> Result<Invite, Error> {
+        let body = CreateInvite {
+            expires_in_secs: expires_in.as_secs(),
+            max_uses,
+        };
+        Ok(self
+            .post(&format!("/v1/spaces/{space}/invites"), &body)
+            .await?
+            .json()
+            .await?)
+    }
+
+    pub async fn join_space(&self, invite_code: &str) -> Result<SpaceSummary, Error> {
+        let body = JoinSpace {
+            invite_code: invite_code.to_owned(),
+        };
+        Ok(self.post("/v1/spaces/join", &body).await?.json().await?)
+    }
+
+    /// Server-side facts about this device's channels: space, or the DM peer.
+    pub async fn channel_metas(&self) -> Result<Vec<ChannelMeta>, Error> {
+        self.get("/v1/channels", &[]).await
+    }
+
+    /// People in one space (who share it with you).
+    pub async fn directory_in(&self, space: SpaceId) -> Result<Vec<DirectoryEntry>, Error> {
+        let req = self
+            .authed(self.http.get(format!("{}/v1/directory", self.base)))
+            .query(&[("space", space.to_string())]);
+        Ok(check(req.send().await?).await?.json().await?)
+    }
+
+    /// Opens a direct conversation with `username#tag`, or returns the existing
+    /// one. Returns the channel, the other person, and their devices that couldn't
+    /// be added yet (no key package).
+    pub async fn start_dm(
+        &mut self,
+        username: &str,
+        tag: u16,
+    ) -> Result<(ChannelId, DirectoryEntry, Vec<DeviceId>), Error> {
+        let channel = Uuid::new_v4();
+        self.device.create_channel(channel)?;
+        let started: Result<DmStarted, Error> = async {
+            let body = StartDm {
+                username: username.to_owned(),
+                tag,
+                channel,
+            };
+            Ok(self.post("/v1/dms", &body).await?.json().await?)
+        }
+        .await;
+        let started = match started {
+            Ok(s) => s,
+            Err(e) => {
+                self.device.forget_channel(channel)?;
+                return Err(e);
+            }
+        };
+        if !started.created {
+            self.device.forget_channel(channel)?;
+            return Ok((started.channel, started.peer, Vec::new()));
+        }
+        let skipped = self.add_person(channel, &started.peer).await?;
+        Ok((channel, started.peer, skipped))
+    }
+
     pub async fn publish_key_packages(&self, count: usize) -> Result<(), Error> {
         let body = KeyPackageUpload {
             key_packages: self.device.key_packages(count)?.into_iter().map(Blob).collect(),
@@ -265,9 +381,15 @@ impl Client {
     }
 
     /// Creates a channel on the server and its MLS group on this device.
+    /// Creates a channel in the default space (company servers).
     pub async fn create_channel(&mut self) -> Result<ChannelId, Error> {
+        self.create_channel_in(None).await
+    }
+
+    pub async fn create_channel_in(&mut self, space: Option<SpaceId>) -> Result<ChannelId, Error> {
         let channel = Uuid::new_v4();
-        self.post("/v1/channels", &CreateChannel { channel }).await?;
+        self.post("/v1/channels", &CreateChannel { channel, space })
+            .await?;
         self.device.create_channel(channel)?;
         Ok(channel)
     }
@@ -460,7 +582,17 @@ impl Client {
         topic: &str,
         trust: Trust,
     ) -> Result<ChannelId, Error> {
-        let channel = self.create_channel().await?;
+        self.create_named_channel_in(None, name, topic, trust).await
+    }
+
+    pub async fn create_named_channel_in(
+        &mut self,
+        space: Option<SpaceId>,
+        name: &str,
+        topic: &str,
+        trust: Trust,
+    ) -> Result<ChannelId, Error> {
+        let channel = self.create_channel_in(space).await?;
         let info = Content::ChannelInfo {
             name: name.to_owned(),
             topic: topic.to_owned(),
@@ -532,9 +664,18 @@ impl Client {
                 status: 404,
                 message: "no such person".into(),
             })?;
+        self.add_person(channel, &person).await
+    }
+
+    /// Adds every active device of `person`; returns those without a key package.
+    async fn add_person(
+        &mut self,
+        channel: ChannelId,
+        person: &DirectoryEntry,
+    ) -> Result<Vec<DeviceId>, Error> {
         let already: Vec<DeviceId> = self.device.member_devices(channel)?;
         let mut skipped = Vec::new();
-        for device in person.devices.into_iter().filter(|d| !already.contains(d)) {
+        for &device in person.devices.iter().filter(|d| !already.contains(d)) {
             match self.add_device(channel, device).await {
                 Ok(()) => {}
                 Err(Error::NoKeyPackage(d)) => skipped.push(d),

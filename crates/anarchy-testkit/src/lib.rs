@@ -244,6 +244,8 @@ pub struct TestOptions {
     pub sso: bool,
     pub email: bool,
     pub guests: bool,
+    /// A public server: any email domain, anonymous accounts, no default space.
+    pub open: bool,
 }
 
 impl Default for TestOptions {
@@ -252,6 +254,7 @@ impl Default for TestOptions {
             sso: true,
             email: true,
             guests: true,
+            open: false,
         }
     }
 }
@@ -313,10 +316,12 @@ impl TestServer {
                 org_name: "Northwind".into(),
                 guests_enabled,
                 email: options.email.then(|| EmailConfig {
-                    allowed_domains: vec!["northwind.org".into()],
+                    allowed_domains: vec![if options.open { "*" } else { "northwind.org" }.into()],
                     mailer: mailbox.clone(),
                 }),
                 session_ttl: Duration::from_secs(3600),
+                open_signup: options.open,
+                oidc_client_secret: None,
             },
         )
         .await

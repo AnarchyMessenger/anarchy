@@ -65,6 +65,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         email: email_config(),
         org_name: env("ANARCHY_ORG_NAME"),
         guests_enabled: flag("ANARCHY_GUESTS_ENABLED"),
+        open_signup: flag("ANARCHY_OPEN_SIGNUP"),
+        oidc_client_secret: std::env::var("ANARCHY_OIDC_CLIENT_SECRET").ok(),
         session_ttl: Duration::from_secs(
             std::env::var("ANARCHY_SESSION_TTL_SECS")
                 .ok()

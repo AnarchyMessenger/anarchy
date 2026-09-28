@@ -75,6 +75,168 @@ pub struct AuthConfig {
     pub email_enabled: bool,
     /// Whether people can join with an invite code instead of an account.
     pub guests_enabled: bool,
+    /// Public server: anyone may create an account, and there is no default space.
+    #[serde(default)]
+    pub open_signup: bool,
+    /// Whether "Continue anonymously" is offered (open servers only).
+    #[serde(default)]
+    pub anonymous_enabled: bool,
+    /// For providers such as Google that require one from installed apps. Not a
+    /// secret in that case: every copy of the app carries it (RFC 8252 §8.5).
+    #[serde(default)]
+    pub client_secret: Option<String>,
+}
+
+/// `POST /v1/auth/anonymous`: an account with no email and no provider. It lives
+/// only in the session on the device that made it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnonymousSignup {
+    pub display_name: Option<String>,
+}
+
+/// Who may start a direct conversation with you.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DmPolicy {
+    /// Anyone who knows your handle.
+    Anyone,
+    /// Only people who share a space with you.
+    #[default]
+    Spaces,
+}
+
+/// What someone plans to use Anarchy for; picks sensible defaults.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Usage {
+    Work,
+    Freelance,
+    Personal,
+    Community,
+}
+
+/// `GET /v1/me` and the body of `PUT /v1/me`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Profile {
+    pub user_id: UserId,
+    pub display_name: String,
+    /// Lowercase, 2 to 32 characters of a-z, 0-9, `_` and `.`.
+    pub username: String,
+    /// Four digits, shown as `#0427`. With the username it identifies the person.
+    pub tag: u16,
+    /// A frame colour name, e.g. `ember`.
+    pub color: String,
+    /// One emoji or symbol, or `None` for initials.
+    pub avatar: Option<String>,
+    pub usage: Option<Usage>,
+    pub dm_policy: DmPolicy,
+    /// Refuse direct conversations from accounts marked as AI agents.
+    pub dm_humans_only: bool,
+    pub email: Option<String>,
+    pub is_guest: bool,
+    pub is_anonymous: bool,
+    /// False until the person has finished onboarding.
+    pub onboarded: bool,
+}
+
+/// `PUT /v1/me`: the fields a person can change. Missing fields stay as they are.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProfileUpdate {
+    pub display_name: Option<String>,
+    pub username: Option<String>,
+    pub color: Option<String>,
+    /// `Some("")` clears it back to initials.
+    pub avatar: Option<String>,
+    pub usage: Option<Usage>,
+    pub dm_policy: Option<DmPolicy>,
+    pub dm_humans_only: Option<bool>,
+    pub onboarded: Option<bool>,
+}
+
+/// Formats a handle the way people read it: `maya#0427`.
+pub fn format_handle(username: &str, tag: u16) -> String {
+    format!("{username}#{tag:04}")
+}
+
+/// Parses `@maya#0427`, `maya#427` or `Maya#0427` into `("maya", 427)`.
+pub fn parse_handle(input: &str) -> Option<(String, u16)> {
+    let s = input.trim().trim_start_matches('@');
+    let (name, tag) = s.rsplit_once('#')?;
+    let tag: u16 = tag.trim().parse().ok()?;
+    let name = name.trim().to_lowercase();
+    (!name.is_empty() && (1..=9999).contains(&tag)).then_some((name, tag))
+}
+
+pub type SpaceId = Uuid;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpaceKind {
+    Company,
+    Community,
+    Personal,
+    Freelance,
+}
+
+/// `POST /v1/spaces`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateSpace {
+    pub name: String,
+    pub kind: SpaceKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SpaceSummary {
+    pub id: SpaceId,
+    pub name: String,
+    pub kind: SpaceKind,
+    /// `owner` or `member`.
+    pub role: String,
+    pub members: u32,
+    /// The organisation's own space on a company server; everyone is in it.
+    pub is_default: bool,
+}
+
+/// `POST /v1/spaces/join`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JoinSpace {
+    pub invite_code: String,
+}
+
+/// `POST /v1/dms`: start (or find) a direct conversation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StartDm {
+    pub username: String,
+    pub tag: u16,
+    /// ID for the new conversation if none exists yet. The client has already
+    /// created an MLS group with it.
+    pub channel: ChannelId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DmStarted {
+    /// The new ID, or an existing conversation's.
+    pub channel: ChannelId,
+    pub created: bool,
+    pub peer: DirectoryEntry,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChannelKind {
+    Channel,
+    Dm,
+}
+
+/// `GET /v1/channels`: routing facts about the caller's channels. Names and
+/// topics are encrypted and not here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChannelMeta {
+    pub id: ChannelId,
+    pub kind: ChannelKind,
+    pub space: Option<SpaceId>,
+    /// For a direct conversation: the other person.
+    pub peer: Option<DirectoryEntry>,
 }
 
 /// `POST /v1/auth/email/start`: send a one-time code to a work address.
@@ -99,6 +261,16 @@ pub struct DirectoryEntry {
     pub is_guest: bool,
     /// Active devices; adding a person to a channel adds each of these.
     pub devices: Vec<DeviceId>,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub tag: Option<u16>,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub avatar: Option<String>,
+    #[serde(default)]
+    pub is_agent: bool,
 }
 
 /// `GET /v1/devices`: the caller's own devices.
@@ -153,6 +325,9 @@ pub struct RegisterDevice {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateChannel {
     pub channel: ChannelId,
+    /// The space it belongs to. On a company server, `None` means the default space.
+    #[serde(default)]
+    pub space: Option<SpaceId>,
 }
 
 /// `GET /v1/channels/{channel}/members`
@@ -164,6 +339,12 @@ pub struct Member {
     pub display_name: Option<String>,
     #[serde(default)]
     pub is_guest: bool,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub tag: Option<u16>,
+    #[serde(default)]
+    pub is_agent: bool,
 }
 
 /// `POST /v1/channels/{channel}/events`. The sender is the authenticated device.
@@ -234,4 +415,19 @@ pub struct KeyPackageUpload {
 pub struct InboxItem {
     pub channel: ChannelId,
     pub welcome: Blob,
+}
+
+#[cfg(test)]
+mod handle_tests {
+    use super::*;
+
+    #[test]
+    fn handles_round_trip() {
+        assert_eq!(format_handle("maya", 427), "maya#0427");
+        assert_eq!(parse_handle("@Maya#0427"), Some(("maya".into(), 427)));
+        assert_eq!(parse_handle("maya#427"), Some(("maya".into(), 427)));
+        assert_eq!(parse_handle("maya"), None);
+        assert_eq!(parse_handle("maya#0"), None);
+        assert_eq!(parse_handle("#0427"), None);
+    }
 }
