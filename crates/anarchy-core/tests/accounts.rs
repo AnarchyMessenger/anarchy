@@ -17,7 +17,8 @@ fn status<T: std::fmt::Debug>(r: Result<T, Error>) -> u16 {
 async fn open_server() -> TestServer {
     TestServer::start_with(TestOptions {
         open: true,
-        guests: false,
+        // Asked for, but an open server turns guests off (they'd belong to no space).
+        guests: true,
         ..TestOptions::default()
     })
     .await
@@ -111,6 +112,9 @@ async fn anonymous_accounts_only_on_open_servers() {
     assert!(me.is_anonymous);
     assert_eq!(me.display_name, "Ghost");
     assert_eq!(me.email, None);
+
+    let config = anarchy_core::oidc::workspace_config(&open.url).await.unwrap();
+    assert!(config.open_signup && config.anonymous_enabled && !config.guests_enabled);
 
     let company = TestServer::start().await;
     assert_eq!(status(Client::login_anonymously(&company.url, None).await), 403);

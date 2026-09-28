@@ -28,249 +28,438 @@
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
   <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
   <symbol id="i-cursor" viewBox="0 0 24 24"><path d="M5 3l14 7-6 2-2 6z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-at" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-4 7.5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8.5 7 10 4-1.5 7-5.5 7-10V6z"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-briefcase" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M3 13h18"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 6l3 3"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.5 5.7 3.5 9s-1 6.3-3.5 9c-2.5-2.7-3.5-5.7-3.5-9s1-6.3 3.5-9z"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></symbol>
+  <symbol id="i-google" viewBox="0 0 24 24"><path d="M21 12.2c0-.7-.1-1.3-.2-1.9H12v3.6h5a4.3 4.3 0 0 1-1.9 2.8v2.3h3c1.8-1.6 2.9-4 2.9-6.8z" fill="#4285F4" stroke="none"/><path d="M12 21c2.5 0 4.6-.8 6.1-2.2l-3-2.3c-.8.6-1.9.9-3.1.9-2.4 0-4.4-1.6-5.1-3.8H3.8v2.4A9 9 0 0 0 12 21z" fill="#34A853" stroke="none"/><path d="M6.9 13.6a5.4 5.4 0 0 1 0-3.5V7.7H3.8a9 9 0 0 0 0 8.2z" fill="#FBBC05" stroke="none"/><path d="M12 6.6c1.3 0 2.5.5 3.5 1.4l2.6-2.6A9 9 0 0 0 3.8 7.7l3.1 2.4C7.6 8.1 9.6 6.6 12 6.6z" fill="#EA4335" stroke="none"/></symbol>
 </svg>
 
 <div class="frame" id="frame">
 
-  <!-- ============ Starting ============ -->
-  <div class="starting" id="starting" aria-live="polite"><span class="pulse"></span><span>Unlocking this device…</span></div>
+  <!-- ============ Starting / locked ============ -->
+  <div class="starting" id="starting" aria-live="polite"><span class="pulse"></span><span>Opening Anarchy…</span></div>
 
-  <!-- ============ Sign-in ============ -->
+  <section class="lock panel" id="lock" hidden>
+    <form class="lock-card" id="lock-form" novalidate>
+      <span class="mark mark-lg" aria-hidden="true">A</span>
+      <h1>Anarchy is locked</h1>
+      <p class="sub">Enter this device's passphrase. It never leaves this computer.</p>
+      <input class="text-input" id="lock-pass" type="password" autocomplete="current-password" placeholder="Passphrase" aria-label="Passphrase">
+      <button class="btn-ink" id="lock-submit" type="submit">Unlock</button>
+      <p class="error" id="lock-error" role="alert" hidden></p>
+    </form>
+  </section>
+
+  <!-- ============ Sign-in and onboarding ============ -->
   <section class="auth" id="auth" hidden>
     <div class="auth-panel panel">
-      <div class="brand"><span class="brand-mark" aria-hidden="true"></span>Anarchy</div>
+      <header class="auth-brand"><span class="mark" aria-hidden="true">A</span>Anarchy<span class="steps" id="steps" aria-hidden="true"></span></header>
 
       <div class="auth-body">
-        <!-- Workspace -->
-        <form class="auth-step" id="s-workspace" novalidate>
+        <!-- 1. server -->
+        <form class="auth-step" id="s-server" novalidate>
           <h1>Welcome to Anarchy</h1>
-          <p class="lede">Sign in to your team's workspace.</p>
-          <input class="text-input" id="server" aria-label="Workspace address" autocomplete="url" spellcheck="false" placeholder="Workspace address, e.g. chat.northwind.org">
+          <p class="sub">Your messages are encrypted on this computer before they leave it. Start with the server you use.</p>
+          <label class="field" for="server">Server
+            <input class="text-input" id="server" placeholder="chat.northwind.org" autocomplete="url" spellcheck="false"></label>
           <button class="btn-ink" id="server-continue" type="submit">Continue</button>
           <p class="error" id="server-error" role="alert" hidden></p>
-          <p class="fine">Your IT team, or whoever invited you, has this address.</p>
+          <p class="fine">A company gives you its address. Self-hosting? See the setup guide.</p>
         </form>
 
-        <!-- Sign in -->
-        <div class="auth-step" id="s-signin" hidden>
-          <span class="org-tile" id="org-initials" aria-hidden="true">NW</span>
-          <h1>Sign in to <span id="org-name">Northwind</span></h1>
-          <p class="lede"><span id="org-server">chat.northwind.org</span> · <button class="link" id="change-workspace" type="button">Change</button></p>
-
-          <button class="btn-outline" id="sso" type="button" hidden><svg class="i"><use href="#i-key"/></svg><span>Continue with <span id="sso-org">Northwind</span> SSO</span></button>
-          <div class="or" id="or" hidden><span>or</span></div>
-
-          <form id="email-form" class="stack" novalidate hidden>
-            <input class="text-input" id="email" type="email" aria-label="Work email" autocomplete="email" placeholder="you@northwind.org">
-            <button class="btn-ink" id="email-send" type="submit">Email me a code</button>
-          </form>
-
-          <form id="code-form" class="stack" novalidate hidden>
-            <p class="sent">We sent a 6-digit code to <strong id="sent-to"></strong>. It works for 10 minutes.</p>
-            <input class="text-input code-input" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" aria-label="Sign-in code" placeholder="123 456">
-            <button class="btn-ink" id="code-submit" type="submit">Sign in</button>
-            <p class="row-links"><button class="link" id="code-resend" type="button">Send a new code</button> · <button class="link" id="code-other" type="button">Use a different email</button></p>
-          </form>
-
-          <div class="waiting" id="sso-waiting" hidden aria-live="polite">
-            <span class="pulse" aria-hidden="true"></span>
-            <div><strong>Finish signing in in your browser</strong>
-              <p>Come back here when it says you're signed in.</p>
-              <p class="link-fallback" id="sso-link-box" hidden>Your browser didn't open. Open this link: <code id="sso-link"></code>
-                <button class="btn-outline sm" id="sso-copy" type="button">Copy link</button></p></div>
-            <button class="link" id="sso-cancel" type="button">Cancel</button>
+        <!-- 2. account -->
+        <div class="auth-step" id="s-account" hidden>
+          <h1 id="account-title">Create your account</h1>
+          <p class="sub"><span id="org-server"></span> · <button class="link" id="change-server" type="button">Change</button></p>
+          <div class="stack">
+            <button class="btn-outline" id="sso" type="button" hidden><svg class="i" id="sso-icon"><use href="#i-key"/></svg><span id="sso-label">Continue with SSO</span></button>
+            <div class="or" id="or" hidden><span>or</span></div>
+            <form id="email-form" class="stack" novalidate hidden>
+              <input class="text-input" id="email" type="email" autocomplete="email" placeholder="you@example.com" aria-label="Email">
+              <button class="btn-ink" id="email-send" type="submit">Continue with email</button>
+            </form>
+            <form id="code-form" class="stack" novalidate hidden>
+              <p class="note">We sent a 6-digit code to <strong id="sent-to"></strong>. It works for 10 minutes.</p>
+              <input class="text-input code-input" id="code" inputmode="numeric" autocomplete="one-time-code" placeholder="000 000" maxlength="7" aria-label="Code">
+              <button class="btn-ink" id="code-submit" type="submit">Continue</button>
+              <p class="fine"><button class="link" id="code-resend" type="button">Send a new code</button> · <button class="link" id="code-other" type="button">Use another email</button></p>
+            </form>
+            <div class="waiting" id="sso-waiting" hidden>
+              <span class="pulse"></span>
+              <div><strong>Finish in your browser</strong><p class="fine">Come back here when it says you're signed in.</p>
+                <div id="sso-link-box" hidden><p class="fine">The browser didn't open. Open this link:</p><code id="sso-link"></code>
+                <button class="btn-outline sm" id="sso-copy" type="button">Copy link</button></div></div>
+              <button class="link" id="sso-cancel" type="button">Cancel</button>
+            </div>
           </div>
-
-          <p class="error" id="signin-error" role="alert" hidden></p>
-          <p class="fine" id="guest-link-row" hidden>Have an invite code? <button class="link" id="to-guest" type="button">Join as a guest</button></p>
-          <p class="fine" id="no-method" hidden>This workspace only accepts invited guests.</p>
+          <p class="error" id="account-error" role="alert" hidden></p>
+          <div class="alt-routes">
+            <button class="alt" id="to-anon" type="button" hidden><svg class="i"><use href="#i-user"/></svg><span><strong>Continue anonymously</strong><small>No email. Only this device can get back in.</small></span></button>
+            <button class="alt" id="to-guest" type="button" hidden><svg class="i"><use href="#i-ticket"/></svg><span><strong>I have a guest invite</strong><small>Join <span id="guest-org"></span> for a limited time.</small></span></button>
+          </div>
+          <p class="error" id="no-method" hidden>This server has no sign-in method turned on. Ask whoever runs it.</p>
         </div>
 
-        <!-- Guest -->
+        <!-- 2b. anonymous -->
+        <form class="auth-step" id="s-anon" novalidate hidden>
+          <h1>Stay anonymous</h1>
+          <p class="sub">No email, no provider. You get a handle; people find you only if you share it.</p>
+          <label class="field" for="anon-name">What should people call you? <span class="optional">· optional</span>
+            <input class="text-input" id="anon-name" maxlength="64" autocomplete="off" placeholder="Anonymous"></label>
+          <div class="callout warn"><svg class="i"><use href="#i-shield"/></svg><p>There's no way to recover an anonymous account. Sign out or lose this device, and it's gone. You can add an email later.</p></div>
+          <button class="btn-ink" id="anon-go" type="submit">Create anonymous account</button>
+          <p class="error" id="anon-error" role="alert" hidden></p>
+          <button class="link back" id="anon-back" type="button"><svg class="i"><use href="#i-arrow-left"/></svg>Back</button>
+        </form>
+
+        <!-- 2c. guest -->
         <form class="auth-step" id="s-guest" novalidate hidden>
           <h1>Join as a guest</h1>
-          <p class="lede">No account or email needed. Your access ends when the invite does.</p>
-          <input class="text-input mono" id="invite-code" aria-label="Invite code" autocomplete="off" spellcheck="false" placeholder="Invite code, e.g. 7qk2-mx9f-…">
-          <input class="text-input" id="guest-name" aria-label="Your name" autocomplete="nickname" maxlength="64" placeholder="Your name, as others will see it">
-          <button class="btn-ink" id="guest-join" type="submit"><span>Join <span id="guest-org">Northwind</span></span></button>
+          <p class="sub">No account needed. Your access ends when the invite does.</p>
+          <label class="field" for="invite-code">Invite code
+            <input class="text-input mono" id="invite-code" autocomplete="off" spellcheck="false" placeholder="7QK2-MX9F-…"></label>
+          <label class="field" for="guest-name">Your name
+            <input class="text-input" id="guest-name" maxlength="64" autocomplete="name"></label>
+          <button class="btn-ink" id="guest-join" type="submit">Join</button>
           <p class="error" id="guest-error" role="alert" hidden></p>
-          <p class="fine"><button class="link" id="guest-back" type="button"><svg class="i"><use href="#i-arrow-left"/></svg>Back to sign in</button></p>
+          <button class="link back" id="guest-back" type="button"><svg class="i"><use href="#i-arrow-left"/></svg>Back</button>
         </form>
 
-        <!-- Look (first sign-in only) -->
-        <div class="auth-step" id="s-look" hidden>
-          <h1>Make it yours</h1>
-          <p class="lede">Pick a colour for the window frame. You can change it any time in Settings.</p>
-          <div class="appearance compact" id="auth-appearance"></div>
-          <button class="btn-ink" id="look-done" type="button">Open Anarchy</button>
+        <!-- 3. usage -->
+        <div class="auth-step" id="s-usage" hidden>
+          <h1>What's Anarchy for, for you?</h1>
+          <p class="sub">This sets up your first space. You can do all of it later.</p>
+          <div class="usage-grid" role="radiogroup" aria-label="Usage">
+            <button type="button" class="usage" role="radio" data-usage="work"><svg class="i"><use href="#i-building"/></svg><strong>Work</strong><small>A company or team</small></button>
+            <button type="button" class="usage" role="radio" data-usage="freelance"><svg class="i"><use href="#i-briefcase"/></svg><strong>Freelance</strong><small>Clients and projects</small></button>
+            <button type="button" class="usage" role="radio" data-usage="personal"><svg class="i"><use href="#i-heart"/></svg><strong>Personal</strong><small>Friends and family</small></button>
+            <button type="button" class="usage" role="radio" data-usage="community"><svg class="i"><use href="#i-globe"/></svg><strong>Community</strong><small>A group, club or server</small></button>
+          </div>
+          <button class="btn-ink" id="usage-next" type="button" disabled>Continue</button>
+        </div>
+
+        <!-- 4. passphrase -->
+        <form class="auth-step" id="s-lock" novalidate hidden>
+          <h1>Lock this device</h1>
+          <p class="sub" id="lock-why">Your keys and history live on this computer, encrypted. A passphrase means nobody opens Anarchy here without you.</p>
+          <label class="field" for="pass1">Passphrase
+            <input class="text-input" id="pass1" type="password" autocomplete="new-password" placeholder="At least 8 characters"></label>
+          <div class="meter" aria-hidden="true"><span id="meter-bar"></span></div>
+          <p class="fine" id="meter-text">Three or four unrelated words work well.</p>
+          <label class="field" for="pass2">Type it again
+            <input class="text-input" id="pass2" type="password" autocomplete="new-password"></label>
+          <button class="btn-ink" id="lock-set" type="submit">Set passphrase</button>
+          <p class="error" id="pass-error" role="alert" hidden></p>
+          <p class="fine">It never leaves this computer, and we can't reset it. <button class="link" id="lock-skip" type="button">Skip for now</button></p>
+        </form>
+
+        <!-- 5. card -->
+        <form class="auth-step wide" id="s-card" novalidate hidden>
+          <h1>Here's your card</h1>
+          <p class="sub">This is how people see you. Your handle is how they find you.</p>
+          <label class="field" for="card-name">Name
+            <input class="text-input" id="card-name" maxlength="64" autocomplete="name"></label>
+          <label class="field" for="card-user">Username
+            <span class="handle-input"><span class="at">@</span><input class="text-input mono" id="card-user" maxlength="32" autocomplete="username" spellcheck="false"><span class="tagnum mono" id="card-tag">#0000</span></span></label>
+          <p class="fine">The number keeps two people called <span class="mono">maya</span> apart. It stays when you rename, if it's free.</p>
+          <div class="field"><span>Picture</span><div class="avatar-picker" id="avatar-picker" role="radiogroup" aria-label="Picture"></div></div>
+          <div class="field"><span>Colour</span><div class="color-picker" id="color-picker" role="radiogroup" aria-label="Colour"></div></div>
+          <button class="btn-ink" id="card-save" type="submit">Looks good</button>
+          <p class="error" id="card-error" role="alert" hidden></p>
+        </form>
+      </div>
+
+      <p class="auth-foot">Open source · end-to-end encrypted · <span id="auth-version">v0.0.1</span></p>
+    </div>
+
+    <!-- Right side: the product, not decoration. Before sign-in a preview card;
+         during onboarding, the person's own card, live. -->
+    <aside class="auth-art" aria-hidden="true">
+      <div class="art-stack">
+        <div class="id-card" id="art-card" data-color="ember">
+          <div class="id-top"><span class="id-brand">ANARCHY</span><span class="id-kind" id="art-card-kind">MEMBER</span></div>
+          <div class="id-avatar" id="art-card-avatar">A</div>
+          <div class="id-name" id="art-card-name">You</div>
+          <div class="id-handle mono" id="art-card-handle">@you<span>#0000</span></div>
+          <div class="id-foot"><span id="art-card-since">Since 2026</span><span class="id-chip"><svg class="i"><use href="#i-lock"/></svg>E2EE</span></div>
+        </div>
+        <div class="art-note" id="art-note">
+          <span class="dot"></span><span id="art-note-text">Messages are encrypted on your device. The server only relays them.</span>
         </div>
       </div>
-
-      <p class="auth-foot">Self-hosted · end-to-end encrypted · <span id="auth-version">v0.0.1</span></p>
-    </div>
-
-    <div class="auth-art" aria-hidden="true">
-      <div class="glass">
-        <div class="glass-bar"><i></i><i></i><i></i><span class="live"></span><span>Waiting for you</span></div>
-        <p class="glass-now">Now</p>
-        <p class="glass-title" id="art-title">Your workspace is ready</p>
-        <p class="glass-sub" id="art-sub">Sign in and your channels pick up where you left off.</p>
-        <span class="cursor c1"><svg class="i"><use href="#i-cursor"/></svg><b>scribe · agent</b></span>
-        <span class="cursor c2"><svg class="i"><use href="#i-cursor"/></svg><b>You</b></span>
-      </div>
-    </div>
+    </aside>
   </section>
 
   <!-- ============ App ============ -->
-  <div class="shell" id="app" hidden>
-    <nav class="rail" aria-label="Navigation">
-      <span class="rail-mark" id="rail-org" title="Workspace">NW</span>
-      <button class="rail-btn active" data-view="chat" aria-label="Chat" title="Chat"><svg class="i"><use href="#i-chat"/></svg></button>
-      <span class="rail-spacer"></span>
-      <button class="rail-btn" data-view="settings" aria-label="Settings" title="Settings"><svg class="i"><use href="#i-settings"/></svg></button>
+  <section class="shell" id="app" hidden>
+    <nav class="rail" aria-label="Spaces">
+      <button class="rail-btn home active" id="rail-home" title="Chats" aria-label="Chats"><svg class="i"><use href="#i-chat"/></svg><span class="rail-dot" id="home-dot" hidden></span></button>
+      <div class="rail-sep"></div>
+      <div class="rail-spaces" id="rail-spaces"></div>
+      <button class="rail-btn add" id="rail-add" title="Create or join a space" aria-label="Create or join a space"><svg class="i"><use href="#i-plus"/></svg></button>
+      <div class="rail-spacer"></div>
+      <button class="rail-btn" id="rail-settings" title="Settings" aria-label="Settings"><svg class="i"><use href="#i-settings"/></svg></button>
+      <button class="rail-me" id="rail-me" title="Your profile" aria-label="Your profile"></button>
     </nav>
 
-    <div class="panel workspace">
+    <div class="workspace panel">
+      <!-- Sidebar -->
       <aside class="sidebar">
-        <div class="sidebar-head">
-          <strong id="sidebar-title">Northwind</strong>
-          <span class="guest-chip" id="guest-chip" hidden>Guest</span>
+        <!-- Home: chats -->
+        <div class="side" id="side-home">
+          <header class="side-head"><h2>Chats</h2><button class="icon-btn" id="new-dm" title="New message" aria-label="New message"><svg class="i"><use href="#i-pen"/></svg></button></header>
+          <div class="side-list" id="dm-list"></div>
+          <p class="side-empty" id="no-dms">No conversations yet.</p>
         </div>
-
-        <nav class="side-nav" id="side-chat">
-          <div class="side-group"><span>Channels</span><button class="icon-btn" id="new-channel" aria-label="New channel" title="New channel"><svg class="i"><use href="#i-plus"/></svg></button></div>
-          <div id="channel-list"></div>
-          <p class="side-empty" id="no-channels" hidden>No channels yet.</p>
-        </nav>
-
-        <nav class="side-nav" id="side-settings" hidden>
-          <button class="side-item" data-page="account">Account</button>
-          <button class="side-item" data-page="appearance">Appearance</button>
-          <button class="side-item" data-page="notifications">Notifications</button>
-          <button class="side-item" data-page="devices">Devices</button>
-          <button class="side-item" data-page="invites" id="nav-invites">Invite guests</button>
-        </nav>
-
-        <div class="account">
-          <span class="avatar" id="account-avatar">A</span>
-          <span class="account-text"><strong id="account-name">Signed in</strong><small id="account-server"></small></span>
+        <!-- Space: channels -->
+        <div class="side" id="side-space" hidden>
+          <header class="side-head"><h2 id="space-name"></h2><button class="icon-btn" id="space-invite" title="Invite people" aria-label="Invite people"><svg class="i"><use href="#i-users"/></svg></button></header>
+          <div class="side-group"><span>Channels</span><button class="icon-btn sm" id="new-channel" aria-label="New channel" title="New channel"><svg class="i"><use href="#i-plus"/></svg></button></div>
+          <div class="side-list" id="channel-list"></div>
+          <p class="side-empty" id="no-channels">No channels yet.</p>
         </div>
+        <!-- Settings -->
+        <div class="side" id="side-settings" hidden>
+          <header class="side-head"><h2>Settings</h2></header>
+          <div class="side-list">
+            <button class="side-item" data-page="profile">Profile</button>
+            <button class="side-item" data-page="privacy">Privacy</button>
+            <button class="side-item" data-page="account">Account &amp; device</button>
+            <button class="side-item" data-page="appearance">Appearance</button>
+            <button class="side-item" data-page="notifications">Notifications</button>
+            <button class="side-item" data-page="devices">Devices</button>
+            <button class="side-item" data-page="invites" id="nav-invites">Guest invites</button>
+          </div>
+        </div>
+        <footer class="side-foot" id="side-foot"><span class="avatar sm" id="foot-avatar"></span><span class="who"><strong id="foot-name"></strong><small class="mono" id="foot-handle"></small></span><button class="icon-btn" id="copy-handle" title="Copy your handle" aria-label="Copy your handle"><svg class="i"><use href="#i-copy"/></svg></button></footer>
       </aside>
 
-      <main class="main">
-        <!-- Chat -->
-        <section class="view chat" id="view-chat">
-          <div class="chat-empty" id="chat-empty" hidden>
-            <h1 class="page-title">Start a channel</h1>
-            <p class="page-sub" id="chat-empty-sub">Channels are where your team talks. Everything in them is end-to-end encrypted, names included.</p>
-            <button class="btn-ink inline" id="empty-new-channel"><svg class="i"><use href="#i-plus"/></svg>New channel</button>
+      <!-- Main -->
+      <main class="main" id="main">
+        <!-- Home start panel -->
+        <div class="view start" id="view-start">
+          <div class="start-inner">
+            <p class="eyebrow">Home</p>
+            <h1>Start somewhere</h1>
+            <p class="sub">Talk to someone directly, or make a space for a team, clients or friends.</p>
+            <div class="start-grid">
+              <form class="start-card" id="start-dm-form" novalidate>
+                <svg class="i"><use href="#i-at"/></svg>
+                <strong>Message someone</strong>
+                <small>By their handle, like <span class="mono">maya#0427</span>.</small>
+                <span class="inline-field"><input class="text-input mono" id="start-dm" placeholder="username#0000" spellcheck="false" aria-label="Handle"><button class="btn-ink sm" type="submit">Open</button></span>
+                <p class="error" id="start-dm-error" hidden></p>
+              </form>
+              <button class="start-card" id="start-create" type="button"><svg class="i"><use href="#i-plus"/></svg><strong>Create a space</strong><small id="start-create-sub">Channels, people and later desks, for one purpose.</small></button>
+              <button class="start-card" id="start-join" type="button"><svg class="i"><use href="#i-ticket"/></svg><strong>Join with a code</strong><small>Someone sent you an invite code.</small></button>
+            </div>
+            <div class="share-row"><span>Your handle</span><code id="share-handle"></code><button class="btn-outline sm" id="share-copy" type="button"><svg class="i"><use href="#i-copy"/></svg>Copy</button><span class="fine" id="share-policy"></span></div>
+          </div>
+        </div>
+
+        <!-- Conversation (DM or channel) -->
+        <div class="view convo" id="view-convo" hidden>
+          <header class="convo-head">
+            <span class="avatar sm" id="convo-avatar" hidden></span>
+            <h1 id="convo-name"></h1>
+            <span class="ax-seal" id="convo-trust"></span>
+            <span class="convo-topic" id="convo-topic"></span>
+            <span class="spacer"></span>
+            <button class="btn-ghost sm" id="convo-members" title="People here"><svg class="i"><use href="#i-users"/></svg><span id="convo-count">1</span></button>
+            <button class="btn-outline sm" id="convo-add"><svg class="i"><use href="#i-plus"/></svg>Add people</button>
+          </header>
+          <div class="transcript" id="transcript" role="log" aria-live="polite"></div>
+          <form class="composer" id="composer">
+            <textarea id="message" rows="1" placeholder="Message" aria-label="Message"></textarea>
+            <button class="send" id="send" type="submit" aria-label="Send" disabled><svg class="i"><use href="#i-send"/></svg></button>
+          </form>
+        </div>
+
+        <!-- Space with no channel open -->
+        <div class="view start" id="view-space-empty" hidden>
+          <div class="start-inner narrow">
+            <p class="eyebrow" id="space-empty-kind">Space</p>
+            <h1 id="space-empty-title"></h1>
+            <p class="sub">Channels hold the conversation. Make one for each topic, client or project.</p>
+            <div class="row-actions"><button class="btn-ink inline" id="space-empty-channel" type="button"><svg class="i"><use href="#i-plus"/></svg>New channel</button><button class="btn-outline" id="space-empty-invite" type="button"><svg class="i"><use href="#i-users"/></svg>Invite people</button></div>
+          </div>
+        </div>
+
+        <!-- Settings pages -->
+        <div class="view settings" id="view-settings" hidden>
+          <div class="page" data-page="profile">
+            <h1 class="page-title">Profile</h1>
+            <p class="page-sub">Your card: what people see next to your messages.</p>
+            <div class="profile-grid">
+              <form class="stack" id="profile-form" novalidate>
+                <label class="field" for="p-name">Name<input class="text-input" id="p-name" maxlength="64"></label>
+                <label class="field" for="p-user">Username<span class="handle-input"><span class="at">@</span><input class="text-input mono" id="p-user" maxlength="32" spellcheck="false"><span class="tagnum mono" id="p-tag"></span></span></label>
+                <div class="field"><span>Picture</span><div class="avatar-picker" id="p-avatar" role="radiogroup" aria-label="Picture"></div></div>
+                <div class="field"><span>Colour</span><div class="color-picker" id="p-color" role="radiogroup" aria-label="Colour"></div></div>
+                <div class="row-actions"><button class="btn-ink inline" id="p-save" type="submit">Save</button><span class="saved" id="p-saved" hidden>Saved</span></div>
+                <p class="error" id="p-error" hidden></p>
+              </form>
+              <div class="id-card" id="p-card" data-color="ember">
+                <div class="id-top"><span class="id-brand">ANARCHY</span><span class="id-kind" id="p-card-kind">MEMBER</span></div>
+                <div class="id-avatar" id="p-card-avatar"></div>
+                <div class="id-name" id="p-card-name"></div>
+                <div class="id-handle mono" id="p-card-handle"></div>
+                <div class="id-foot"><span id="p-card-since"></span><span class="id-chip"><svg class="i"><use href="#i-lock"/></svg>E2EE</span></div>
+              </div>
+            </div>
           </div>
 
-          <div class="channel" id="channel" hidden>
-            <header class="channel-head">
-              <div class="channel-title"><strong id="ch-name"># general</strong><span class="ax-seal sealed" id="ch-trust"><svg class="i"><use href="#i-lock"/></svg>Sealed</span></div>
-              <span class="channel-topic" id="ch-topic"></span>
-              <button class="btn-outline sm" id="ch-members"><svg class="i"><use href="#i-users"/></svg><span id="ch-count">1</span></button>
-              <button class="btn-outline sm" id="ch-add"><svg class="i"><use href="#i-plus"/></svg>Add people</button>
-            </header>
-            <div class="transcript" id="transcript" aria-live="polite"></div>
-            <form class="composer" id="composer">
-              <textarea id="message" rows="1" aria-label="Message" placeholder="Message #general"></textarea>
-              <button class="send" id="send" type="submit" aria-label="Send"><svg class="i"><use href="#i-send"/></svg></button>
-            </form>
+          <div class="page" data-page="privacy" hidden>
+            <h1 class="page-title">Privacy</h1>
+            <p class="page-sub">Who can start a conversation with you. People already talking to you aren't affected.</p>
+            <fieldset class="choice-list" id="privacy-who">
+              <legend class="block-label">Who can message you</legend>
+              <label class="choice"><input type="radio" name="dm-policy" value="anyone"><span><strong>Anyone with your handle</strong><small>Good for freelancers and public profiles. Strangers can write first.</small></span></label>
+              <label class="choice"><input type="radio" name="dm-policy" value="spaces"><span><strong>People in my spaces</strong><small>Only people you already share a space with.</small></span></label>
+            </fieldset>
+            <label class="choice single"><input type="checkbox" id="humans-only"><span><strong><svg class="i"><use href="#i-bot"/></svg>Only humans</strong><small>Refuse conversations from AI agent accounts. It can't stop a person who uses AI to write.</small></span></label>
+            <p class="saved" id="privacy-saved" hidden>Saved</p>
           </div>
-        </section>
 
-        <!-- Settings -->
-        <section class="view settings" id="view-settings" hidden>
-          <div class="page" data-page="account">
-            <h1 class="page-title">Account</h1>
-            <p class="page-sub">Who you are in this workspace.</p>
+          <div class="page" data-page="account" hidden>
+            <h1 class="page-title">Account &amp; device</h1>
+            <p class="page-sub">How you sign in, and how this computer keeps your keys.</p>
             <dl class="facts-list">
-              <div><dt>Name</dt><dd id="acc-name"></dd></div>
-              <div><dt>Email</dt><dd id="acc-email"></dd></div>
-              <div><dt>Workspace</dt><dd id="acc-workspace"></dd></div>
-              <div id="acc-guest-row" hidden><dt>Guest access ends</dt><dd id="acc-guest-until"></dd></div>
+              <div><dt>Signed in with</dt><dd id="acc-method"></dd></div>
+              <div><dt>Server</dt><dd id="acc-server"></dd></div>
+              <div id="acc-guest-row" hidden><dt>Guest access until</dt><dd id="acc-guest-until"></dd></div>
+              <div><dt>This device</dt><dd id="acc-lock"></dd></div>
             </dl>
-            <div class="ax-banner info" id="storage-saved" hidden><svg class="i"><use href="#i-lock"/></svg><span>This device is saved on this computer, encrypted, with its key in your system keychain.</span></div>
-            <div class="ax-banner danger" id="storage-temporary" hidden><span><strong>Nothing will be kept when you quit.</strong> <span id="storage-reason"></span></span></div>
-            <button class="btn-outline" id="sign-out">Sign out</button>
-            <p class="fine">Signing out keeps this device's keys and history here, so signing back in picks up where you left off.</p>
+            <div class="callout" id="acc-anon" hidden><svg class="i"><use href="#i-shield"/></svg><p>This is an anonymous account. Signing out deletes your only way back in.</p></div>
+            <form class="stack narrow" id="acc-pass-form" novalidate hidden>
+              <label class="field" for="acc-pass1">Set a passphrase<input class="text-input" id="acc-pass1" type="password" autocomplete="new-password" placeholder="At least 8 characters"></label>
+              <label class="field" for="acc-pass2">Type it again<input class="text-input" id="acc-pass2" type="password" autocomplete="new-password"></label>
+              <button class="btn-ink inline" type="submit">Lock this device</button>
+              <p class="error" id="acc-pass-error" hidden></p>
+            </form>
+            <div class="row-actions"><button class="btn-outline" id="sign-out" type="button">Sign out</button></div>
+            <p class="fine" id="sign-out-note">Signing out keeps this device's keys and history here, so signing back in picks up where you left off.</p>
           </div>
 
           <div class="page" data-page="appearance" hidden>
             <h1 class="page-title">Appearance</h1>
-            <p class="page-sub">Manage how your workspace looks and feels.</p>
-            <div class="appearance" id="settings-appearance"></div>
+            <p class="page-sub">Light, dark, or Luna, and the colour around the window.</p>
+            <div id="settings-appearance"></div>
           </div>
 
           <div class="page" data-page="notifications" hidden>
             <h1 class="page-title">Notifications</h1>
-            <p class="page-sub">Desktop notifications for channels you're not looking at.</p>
+            <p class="page-sub">Desktop notifications for conversations you're not looking at.</p>
             <div class="toggles">
-              <label class="toggle"><input type="checkbox" id="n-desktop"><span><strong>Desktop notifications</strong><small>Show a notification when a message arrives.</small></span></label>
-              <label class="toggle"><input type="checkbox" id="n-mentions"><span><strong>Only when I'm mentioned</strong><small>Messages that include @<span id="n-handle">you</span>.</small></span></label>
-              <label class="toggle"><input type="checkbox" id="n-previews"><span><strong>Show message text</strong><small>Off shows "New message from …" instead, useful on shared screens.</small></span></label>
+              <label class="toggle"><input type="checkbox" id="n-desktop"><span><strong>Desktop notifications</strong><small>Show one when a message arrives.</small></span></label>
+              <label class="toggle"><input type="checkbox" id="n-mentions"><span><strong>Only when I'm mentioned</strong><small>Messages that include @<span id="n-handle">you</span>. Direct messages always notify.</small></span></label>
+              <label class="toggle"><input type="checkbox" id="n-previews"><span><strong>Show message text</strong><small>Off shows "New message from …", for shared screens.</small></span></label>
             </div>
           </div>
 
           <div class="page" data-page="devices" hidden>
             <h1 class="page-title">Devices</h1>
-            <p class="page-sub">Every computer or phone signed in as you. Revoke one you've lost: it's signed out and removed from your channels.</p>
+            <p class="page-sub">Every computer or phone signed in as you. Revoke one you've lost: it's signed out and removed from your conversations.</p>
             <div class="list" id="device-list"></div>
-            <p class="error" id="device-error" role="alert" hidden></p>
+            <p class="error" id="device-error" hidden></p>
           </div>
 
           <div class="page" data-page="invites" hidden>
-            <h1 class="page-title">Invite guests</h1>
-            <p class="page-sub">A guest needs no account: they join with a code and a name, and lose access when the invite ends. Members can always see who's a guest.</p>
+            <h1 class="page-title">Guest invites</h1>
+            <p class="page-sub">A guest needs no account: they join with a code and a name, and lose access when the invite ends.</p>
             <form class="invite-form" id="invite-form">
-              <label class="field">Lasts
-                <select class="text-input" id="invite-hours"><option value="1">1 hour</option><option value="24" selected>1 day</option><option value="168">7 days</option><option value="720">30 days</option></select></label>
-              <label class="field">Can be used
-                <select class="text-input" id="invite-uses"><option value="1">once</option><option value="5">5 times</option><option value="25">25 times</option></select></label>
+              <label class="field">Lasts<select class="text-input" id="invite-hours"><option value="1">1 hour</option><option value="24" selected>1 day</option><option value="168">1 week</option><option value="720">30 days</option></select></label>
+              <label class="field">Can be used<select class="text-input" id="invite-uses"><option value="1" selected>once</option><option value="5">5 times</option><option value="25">25 times</option></select></label>
               <button class="btn-ink inline" type="submit">Create invite</button>
             </form>
-            <div class="invite-result" id="invite-result" hidden>
-              <p>Share this code with your guest. It's shown only once.</p>
-              <code id="invite-code-out"></code>
-              <p class="fine" id="invite-meta"></p>
-              <button class="btn-outline sm" id="invite-copy" type="button">Copy code</button>
-            </div>
-            <p class="error" id="invite-error" role="alert" hidden></p>
+            <div class="invite-result" id="invite-result" hidden><p>Share this code. It's shown only once.</p><code id="invite-code-out"></code><p class="fine" id="invite-meta"></p><button class="btn-outline sm" id="invite-copy" type="button"><svg class="i"><use href="#i-copy"/></svg>Copy code</button></div>
+            <p class="error" id="invite-error" hidden></p>
           </div>
-        </section>
+        </div>
       </main>
     </div>
-  </div>
-
-  <!-- ============ Dialogs ============ -->
-  <dialog class="modal panel" id="dlg-channel" aria-labelledby="dlg-channel-title">
-    <form method="dialog" id="channel-form" novalidate>
-      <h2 id="dlg-channel-title">New channel</h2>
-      <label class="field" for="ch-new-name">Name
-        <input class="text-input" id="ch-new-name" placeholder="design-crit" maxlength="64" autocomplete="off"></label>
-      <label class="field" for="ch-new-topic"><span>Topic <span class="optional">· optional</span></span>
-        <input class="text-input" id="ch-new-topic" placeholder="What it's for" autocomplete="off"></label>
-      <fieldset class="trust"><legend>Who can read this channel?</legend>
-        <label class="opt"><input type="radio" name="trust" value="sealed"><span><strong><svg class="i"><use href="#i-lock"/></svg>Sealed</strong><small>Only the people in the channel. Agents run on members' devices only.</small></span></label>
-        <label class="opt"><input type="radio" name="trust" value="company"><span><strong><svg class="i"><use href="#i-building"/></svg>Company</strong><small>Still end-to-end encrypted; the Company Brain may join as a visible member.</small></span></label>
-      </fieldset>
-      <p class="error" id="channel-error" role="alert" hidden></p>
-      <div class="modal-actions"><button class="btn-outline" type="button" id="channel-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="channel-create" disabled>Create channel</button></div>
-    </form>
-  </dialog>
-
-  <dialog class="modal panel" id="dlg-people" aria-labelledby="dlg-people-title">
-    <form method="dialog" id="people-form">
-      <h2 id="dlg-people-title">People in <span id="people-channel"></span></h2>
-      <label class="search-field"><svg class="i"><use href="#i-search"/></svg><input id="people-filter" placeholder="Find people" autocomplete="off"></label>
-      <div class="people" id="people-list"></div>
-      <p class="error" id="people-error" role="alert" hidden></p>
-      <div class="modal-actions"><button class="btn-outline" type="button" id="people-cancel">Close</button><button class="btn-ink inline" type="submit" id="people-add" disabled>Add</button></div>
-    </form>
-  </dialog>
+  </section>
 </div>
+
+<!-- ============ Dialogs ============ -->
+<dialog class="modal panel" id="dlg-channel" aria-labelledby="dlg-channel-title">
+  <form id="channel-form" novalidate>
+    <h2 id="dlg-channel-title">New channel</h2>
+    <label class="field" for="ch-new-name">Name
+      <span class="handle-input"><span class="at">#</span><input class="text-input" id="ch-new-name" placeholder="design-crit" maxlength="64" autocomplete="off"></span></label>
+    <label class="field" for="ch-new-topic"><span>Topic <span class="optional">· optional</span></span>
+      <input class="text-input" id="ch-new-topic" placeholder="What it's for" autocomplete="off"></label>
+    <fieldset class="choice-list"><legend class="block-label">Who can read it</legend>
+      <label class="choice"><input type="radio" name="trust" value="sealed"><span><strong><svg class="i"><use href="#i-lock"/></svg>Sealed</strong><small>Only the people in it. Agents run on members' devices only.</small></span></label>
+      <label class="choice"><input type="radio" name="trust" value="company"><span><strong><svg class="i"><use href="#i-building"/></svg>Company</strong><small>Still encrypted; the Company Brain may join as a visible member.</small></span></label>
+    </fieldset>
+    <p class="error" id="channel-error" hidden></p>
+    <div class="modal-actions"><button class="btn-outline" type="button" id="channel-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="channel-create" disabled>Create channel</button></div>
+  </form>
+</dialog>
+
+<dialog class="modal panel" id="dlg-space" aria-labelledby="dlg-space-title">
+  <form id="space-form" novalidate>
+    <div class="tabs" role="tablist"><button type="button" role="tab" class="tab" data-tab="create" aria-selected="true">Create</button><button type="button" role="tab" class="tab" data-tab="join" aria-selected="false">Join</button></div>
+    <div data-pane="create">
+      <h2 id="dlg-space-title">Create a space</h2>
+      <label class="field" for="space-new-name">Name<input class="text-input" id="space-new-name" maxlength="64" autocomplete="off" placeholder="Studio Chen"></label>
+      <fieldset class="choice-list compact"><legend class="block-label">It's for</legend>
+        <label class="choice"><input type="radio" name="space-kind" value="company"><span><strong>A company or team</strong></span></label>
+        <label class="choice"><input type="radio" name="space-kind" value="freelance"><span><strong>Clients and projects</strong></span></label>
+        <label class="choice"><input type="radio" name="space-kind" value="personal"><span><strong>Friends and family</strong></span></label>
+        <label class="choice"><input type="radio" name="space-kind" value="community"><span><strong>A community</strong></span></label>
+      </fieldset>
+    </div>
+    <div data-pane="join" hidden>
+      <h2>Join a space</h2>
+      <label class="field" for="space-code">Invite code<input class="text-input mono" id="space-code" autocomplete="off" spellcheck="false" placeholder="7QK2-MX9F-…"></label>
+    </div>
+    <p class="error" id="space-error" hidden></p>
+    <div class="modal-actions"><button class="btn-outline" type="button" id="space-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="space-submit">Create space</button></div>
+  </form>
+</dialog>
+
+<dialog class="modal panel" id="dlg-dm" aria-labelledby="dlg-dm-title">
+  <form id="dm-form" novalidate>
+    <h2 id="dlg-dm-title">New message</h2>
+    <label class="field" for="dm-handle">To<span class="handle-input"><span class="at">@</span><input class="text-input mono" id="dm-handle" placeholder="username#0000" spellcheck="false" autocomplete="off"></span></label>
+    <p class="fine">Handles are case-insensitive. The number is part of it.</p>
+    <p class="error" id="dm-error" hidden></p>
+    <div class="modal-actions"><button class="btn-outline" type="button" id="dm-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="dm-open">Open conversation</button></div>
+  </form>
+</dialog>
+
+<dialog class="modal panel" id="dlg-invite" aria-labelledby="dlg-invite-title">
+  <form id="space-invite-form" novalidate>
+    <h2 id="dlg-invite-title">Invite people to <span id="invite-space-name"></span></h2>
+    <p class="fine">Anyone with the code and an account can join. It's shown once.</p>
+    <div class="invite-form">
+      <label class="field">Lasts<select class="text-input" id="sp-hours"><option value="24">1 day</option><option value="168" selected>1 week</option><option value="720">30 days</option></select></label>
+      <label class="field">Can be used<select class="text-input" id="sp-uses"><option value="1">once</option><option value="10" selected>10 times</option><option value="100">100 times</option></select></label>
+    </div>
+    <div class="invite-result" id="sp-result" hidden><code id="sp-code"></code><p class="fine" id="sp-meta"></p></div>
+    <p class="error" id="sp-error" hidden></p>
+    <div class="modal-actions"><button class="btn-outline" type="button" id="sp-close">Close</button><button class="btn-outline" type="button" id="sp-copy" hidden><svg class="i"><use href="#i-copy"/></svg>Copy</button><button class="btn-ink inline" type="submit" id="sp-create">Create code</button></div>
+  </form>
+</dialog>
+
+<dialog class="modal panel" id="dlg-people" aria-labelledby="dlg-people-title">
+  <form id="people-form">
+    <h2 id="dlg-people-title">People in <span id="people-channel"></span></h2>
+    <label class="search"><svg class="i"><use href="#i-search"/></svg><input id="people-filter" placeholder="Find people" aria-label="Find people"></label>
+    <div class="people" id="people-list"></div>
+    <p class="error" id="people-error" hidden></p>
+    <div class="modal-actions"><button class="btn-outline" type="button" id="people-cancel">Close</button><button class="btn-ink inline" type="submit" id="people-add" disabled>Add</button></div>
+  </form>
+</dialog>
 
 <template id="appearance-template">
   <div class="block">
@@ -284,7 +473,7 @@
   </div>
   <div class="block frames" role="radiogroup" aria-label="Frame colour">
     <div class="block-label">Default</div>
-    <div class="swatches"><button type="button" class="swatch" role="radio" data-frame="cobalt"><span class="chip"></span><span class="name">Anarchy</span></button></div>
+    <div class="swatches"><button type="button" class="swatch" role="radio" data-frame="ember"><span class="chip"></span><span class="name">Ember</span></button><button type="button" class="swatch" role="radio" data-frame="cobalt"><span class="chip"></span><span class="name">Cobalt</span></button></div>
     <div class="block-label">Seasons</div>
     <div class="swatches">
       <button type="button" class="swatch" role="radio" data-frame="spring"><span class="chip"></span><span class="name">Spring</span></button>

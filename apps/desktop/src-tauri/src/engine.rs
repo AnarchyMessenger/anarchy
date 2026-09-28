@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 
 use anarchy_core::{Client, Device};
-use anarchy_proto::{ChannelId, DeviceId, Member, Session};
+use anarchy_proto::{ChannelId, ChannelMeta, DeviceId, Member, Profile, Session};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 
@@ -46,6 +46,13 @@ pub type Notifier = Box<dyn Fn(String, String) + Send>;
 pub struct Inner {
     pub account: Account,
     pub storage: Storage,
+    pub data_dir: PathBuf,
+    /// The device database key, kept so a passphrase can be set later.
+    pub key: Option<[u8; 32]>,
+    /// Space or DM peer per channel, from the server.
+    pub metas: HashMap<ChannelId, ChannelMeta>,
+    /// The signed-in person's profile, refreshed on sign-in and on change.
+    pub profile: Option<Profile>,
     /// Display names by device, per channel, from the server's member lists.
     pub members: HashMap<ChannelId, Vec<Member>>,
     /// The channel on screen: no notifications for it.
@@ -74,6 +81,18 @@ impl Inner {
             Account::SignedIn(_, s) => Some(s),
             _ => None,
         }
+    }
+
+    /// Waiting for the passphrase: only `status` and `unlock` make sense.
+    pub fn is_locked(&self) -> bool {
+        matches!(self.storage, Storage::Locked)
+    }
+
+    /// Replaces the placeholder with the real device after unlocking.
+    pub fn unlocked(&mut self, device: Device, storage: Storage, key: [u8; 32]) {
+        self.account = resume(device);
+        self.storage = storage;
+        self.key = Some(key);
     }
 
     pub fn my_device(&self) -> DeviceId {
@@ -120,11 +139,22 @@ impl Engine {
                     .build()
                     .expect("engine runtime");
                 runtime.block_on(async move {
-                    let (device, storage) = storage::open_device(&data_dir);
-                    let account = resume(device);
+                    let (account, storage, key) = match storage::open_device(&data_dir) {
+                        storage::Opened::Ready(device, storage, key) => (resume(device), storage, Some(key)),
+                        // A throwaway stand-in until the passphrase opens the real one.
+                        storage::Opened::Locked => (
+                            Account::SignedOut(Device::new().expect("in-memory device")),
+                            Storage::Locked,
+                            None,
+                        ),
+                    };
                     let mut inner = Inner {
                         account,
                         storage,
+                        data_dir,
+                        key,
+                        metas: HashMap::new(),
+                        profile: None,
                         members: HashMap::new(),
                         focused: None,
                         notify,

@@ -505,7 +505,9 @@ pub async fn start_dm(
 
 /// `GET /v1/channels`: the caller's channels with their space or DM peer.
 pub async fn my_channels(State(s): State<AppState>, dev: AuthDevice) -> ApiResult<Json<Vec<ChannelMeta>>> {
-    let rows: Vec<(Uuid, String, Option<Uuid>, Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
+    /// channel, kind, space, DM person a, DM person b
+    type Row = (Uuid, String, Option<Uuid>, Option<Uuid>, Option<Uuid>);
+    let rows: Vec<Row> = sqlx::query_as(
         "SELECT c.id, c.kind, c.space_id, c.dm_a, c.dm_b FROM channels c
          JOIN channel_members m ON m.channel_id = c.id
          WHERE m.device_id = $1 AND m.removed_seq IS NULL ORDER BY c.created_at",

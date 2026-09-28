@@ -86,7 +86,8 @@ impl AppState {
             org_id,
             org_name: config.org_name,
             session_ttl: config.session_ttl,
-            guests_enabled: config.guests_enabled,
+            // Guests belong to the organisation's space; an open server has none.
+            guests_enabled: config.guests_enabled && !config.open_signup,
             open_signup: config.open_signup,
             oidc_client_secret: config.oidc_client_secret,
             default_space,

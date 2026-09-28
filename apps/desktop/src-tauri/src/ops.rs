@@ -5,17 +5,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anarchy_core::{Client, Content, Trust, oidc};
-use anarchy_proto::{AuthConfig, ChannelId, DeviceId, Session, UserId};
+use anarchy_proto::{
+    AuthConfig, ChannelId, ChannelKind, DeviceId, DirectoryEntry, Profile, ProfileUpdate, Session, SpaceId,
+    SpaceKind, SpaceSummary, UserId, format_handle, parse_handle,
+};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
 
 use crate::engine::{Account, Inner, SavedSession, read_json, write_json};
-use crate::storage::Storage;
+use crate::storage::{self, Storage};
 
 const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(300);
 const KEY_PACKAGES_PER_SIGN_IN: usize = 5;
-pub const FRAMES: [&str; 9] = [
-    "cobalt", "spring", "summer", "autumn", "winter", "coral", "ocean", "forest", "dusk",
+pub const FRAMES: [&str; 10] = [
+    "ember", "cobalt", "spring", "summer", "autumn", "winter", "coral", "ocean", "forest", "dusk",
 ];
 
 fn err(e: anarchy_core::Error) -> String {
@@ -48,7 +51,7 @@ impl Default for Appearance {
     fn default() -> Self {
         Self {
             display: "system".into(),
-            frame: "cobalt".into(),
+            frame: "ember".into(),
             chosen: false,
         }
     }
@@ -78,6 +81,8 @@ impl Default for NotificationPrefs {
 
 #[derive(Serialize)]
 pub struct Status {
+    locked: bool,
+    profile: Option<Profile>,
     device_id: String,
     storage: Storage,
     appearance: Appearance,
@@ -98,8 +103,16 @@ pub struct SessionInfo {
 }
 
 pub async fn status(i: &mut Inner) -> Result<Status, String> {
+    if i.saved().is_some() && i.profile.is_none() {
+        // Offline is fine: the app works from the saved session and fills this in later.
+        if let Ok(p) = i.client()?.me().await {
+            i.profile = Some(p);
+        }
+    }
     let device = i.device();
     Ok(Status {
+        locked: i.is_locked(),
+        profile: i.profile.clone(),
         device_id: device.id().to_string(),
         storage: i.storage.clone(),
         appearance: read_json(device, "appearance").unwrap_or_default(),
@@ -134,6 +147,32 @@ pub async fn set_appearance(i: &mut Inner, display: String, frame: String) -> Re
 
 pub async fn set_notifications(i: &mut Inner, prefs: NotificationPrefs) -> Result<(), String> {
     write_json(i.device(), "notifications", &prefs)
+}
+
+// ---------- device lock ----------
+
+pub async fn unlock(i: &mut Inner, passphrase: String) -> Result<(), String> {
+    if !i.is_locked() {
+        return Ok(());
+    }
+    let dir = i.data_dir.clone();
+    // Argon2 is deliberately slow; keep the engine's runtime free while it runs.
+    let (device, storage, key) = tokio::task::spawn_blocking(move || storage::unlock(&dir, &passphrase))
+        .await
+        .map_err(|e| e.to_string())??;
+    i.unlocked(device, storage, key);
+    Ok(())
+}
+
+/// Protects this device with a passphrase (asked for at every start from now on).
+pub async fn set_passphrase(i: &mut Inner, passphrase: String) -> Result<(), String> {
+    let key = i.key.ok_or("This device can't be protected with a passphrase")?;
+    let dir = i.data_dir.clone();
+    let storage = tokio::task::spawn_blocking(move || storage::set_passphrase(&dir, &key, &passphrase))
+        .await
+        .map_err(|e| e.to_string())??;
+    i.storage = storage;
+    Ok(())
 }
 
 // ---------- sign-in ----------
@@ -243,6 +282,16 @@ pub async fn sign_in_email(i: &mut Inner, server: String, email: String, code: S
     .await
 }
 
+pub async fn sign_in_anonymous(i: &mut Inner, server: String, name: String) -> Result<(), String> {
+    let server = normalize_server(&server)?;
+    let config = oidc::workspace_config(&server).await.map_err(err)?;
+    let name = name.trim();
+    let session = Client::login_anonymously(&server, (!name.is_empty()).then_some(name))
+        .await
+        .map_err(err)?;
+    attach(i, server, config.org_name, session, None, None).await
+}
+
 pub async fn join_as_guest(i: &mut Inner, server: String, code: String, name: String) -> Result<(), String> {
     let server = normalize_server(&server)?;
     let config = oidc::workspace_config(&server).await.map_err(err)?;
@@ -280,12 +329,16 @@ async fn attach(
         client.publish_key_packages(KEY_PACKAGES_PER_SIGN_IN).await
     }
     .await;
+    let profile = match &registered {
+        Ok(()) => client.me().await.ok(),
+        Err(_) => None,
+    };
     let saved = SavedSession {
         server,
         org_name,
         session,
-        display_name,
-        email,
+        display_name: profile.as_ref().map(|p| p.display_name.clone()).or(display_name),
+        email: profile.as_ref().and_then(|p| p.email.clone()).or(email),
     };
     if let Err(e) = registered
         .map_err(err)
@@ -295,6 +348,8 @@ async fn attach(
         return Err(e);
     }
     i.members.clear();
+    i.metas.clear();
+    i.profile = profile;
     i.account = Account::SignedIn(Box::new(client), saved);
     Ok(())
 }
@@ -309,7 +364,109 @@ pub async fn sign_out(i: &mut Inner) -> Result<(), String> {
         signed_out => signed_out,
     };
     i.members.clear();
+    i.metas.clear();
+    i.profile = None;
     i.focused = None;
+    Ok(())
+}
+
+// ---------- profile ----------
+
+pub async fn me(i: &mut Inner) -> Result<Profile, String> {
+    let p = i.client()?.me().await.map_err(err)?;
+    i.profile = Some(p.clone());
+    Ok(p)
+}
+
+pub async fn update_profile(i: &mut Inner, update: ProfileUpdate) -> Result<Profile, String> {
+    let p = i.client()?.update_me(&update).await.map_err(err)?;
+    // Keep the saved session's name in step, for offline starts.
+    if let Account::SignedIn(client, saved) = &mut i.account {
+        saved.display_name = Some(p.display_name.clone());
+        write_json(client.device(), "session", &*saved)?;
+    }
+    i.profile = Some(p.clone());
+    Ok(p)
+}
+
+// ---------- spaces ----------
+
+pub async fn spaces(i: &mut Inner) -> Result<Vec<SpaceSummary>, String> {
+    i.client()?.spaces().await.map_err(err)
+}
+
+pub async fn create_space(i: &mut Inner, name: String, kind: SpaceKind) -> Result<SpaceSummary, String> {
+    i.client()?.create_space(name.trim(), kind).await.map_err(err)
+}
+
+pub async fn join_space(i: &mut Inner, code: String) -> Result<SpaceSummary, String> {
+    i.client()?.join_space(code.trim()).await.map_err(err)
+}
+
+pub async fn create_space_invite(
+    i: &mut Inner,
+    space: SpaceId,
+    hours: u64,
+    max_uses: u32,
+) -> Result<InviteView, String> {
+    let invite = i
+        .client()?
+        .create_space_invite(space, Duration::from_secs(hours * 3600), max_uses)
+        .await
+        .map_err(err)?;
+    Ok(InviteView {
+        code: invite.code,
+        expires_at_ms: invite.expires_at_ms,
+        max_uses: invite.max_uses,
+    })
+}
+
+// ---------- direct conversations ----------
+
+#[derive(Serialize, Clone)]
+pub struct PeerView {
+    user_id: UserId,
+    name: String,
+    handle: Option<String>,
+    color: String,
+    avatar: Option<String>,
+    is_guest: bool,
+    is_agent: bool,
+}
+
+fn peer_view(p: &DirectoryEntry) -> PeerView {
+    PeerView {
+        user_id: p.user_id,
+        name: p
+            .display_name
+            .clone()
+            .or(p.username.clone())
+            .unwrap_or_else(|| "Someone".into()),
+        handle: p.username.as_ref().zip(p.tag).map(|(u, t)| format_handle(u, t)),
+        color: p.color.clone().unwrap_or_else(|| "ember".into()),
+        avatar: p.avatar.clone(),
+        is_guest: p.is_guest,
+        is_agent: p.is_agent,
+    }
+}
+
+/// Opens (or finds) the conversation with `@username#tag`.
+pub async fn start_dm(i: &mut Inner, handle: String) -> Result<ChannelId, String> {
+    let (username, tag) = parse_handle(&handle)
+        .ok_or("Type the whole handle, like maya#0427 (the number is on their profile)")?;
+    let (channel, _peer, skipped) = i.client()?.start_dm(&username, tag).await.map_err(err)?;
+    i.metas.clear();
+    refresh_members(i, channel).await?;
+    if !skipped.is_empty() {
+        // They exist but have no device ready: the conversation waits for them.
+        eprintln!("anarchy: {} device(s) couldn't be added yet", skipped.len());
+    }
+    Ok(channel)
+}
+
+async fn refresh_metas(i: &mut Inner) -> Result<(), String> {
+    let metas = i.client()?.channel_metas().await.map_err(err)?;
+    i.metas = metas.into_iter().map(|m| (m.id, m)).collect();
     Ok(())
 }
 
@@ -318,6 +475,11 @@ pub async fn sign_out(i: &mut Inner) -> Result<(), String> {
 #[derive(Serialize)]
 pub struct ChannelView {
     id: ChannelId,
+    /// `channel` or `dm`.
+    kind: &'static str,
+    space: Option<SpaceId>,
+    /// For a DM: the other person.
+    peer: Option<PeerView>,
     name: String,
     topic: String,
     trust: Trust,
@@ -340,6 +502,12 @@ type ReadMarks = HashMap<ChannelId, u64>;
 
 pub async fn list_channels(i: &mut Inner) -> Result<Vec<ChannelView>, String> {
     let me = i.my_device();
+    let local = i.client()?.device().channels();
+    if local.iter().any(|c| !i.metas.contains_key(c)) {
+        // Offline: list what we have, without spaces.
+        let _ = refresh_metas(i).await;
+    }
+    let metas = i.metas.clone();
     let client = i.client()?;
     let marks: ReadMarks = read_json(client.device(), "read").unwrap_or_default();
     let mut out = Vec::new();
@@ -357,9 +525,18 @@ pub async fn list_channels(i: &mut Inner) -> Result<Vec<ChannelView>, String> {
         let unread = last
             .as_ref()
             .is_some_and(|(_, _, seq, sender)| *sender != me && *seq > marks.get(&id).copied().unwrap_or(0));
+        let meta = metas.get(&id);
+        let peer = meta.and_then(|m| m.peer.as_ref()).map(peer_view);
         out.push(ChannelView {
             id,
-            name,
+            kind: if meta.is_some_and(|m| m.kind == ChannelKind::Dm) {
+                "dm"
+            } else {
+                "channel"
+            },
+            space: meta.and_then(|m| m.space),
+            name: peer.as_ref().map_or(name, |p| p.name.clone()),
+            peer,
             topic,
             trust,
             last_ts: last.as_ref().map_or(0, |l| l.1),
@@ -367,7 +544,11 @@ pub async fn list_channels(i: &mut Inner) -> Result<Vec<ChannelView>, String> {
             unread,
         });
     }
-    out.sort_by_key(|a| a.name.to_lowercase());
+    // Channels by name; DMs by most recent activity.
+    out.sort_by(|a, b| match (a.kind, b.kind) {
+        ("dm", "dm") => b.last_ts.cmp(&a.last_ts),
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
     Ok(out)
 }
 
@@ -459,6 +640,7 @@ pub async fn send_message(i: &mut Inner, channel: ChannelId, text: String) -> Re
 
 pub async fn create_channel(
     i: &mut Inner,
+    space: Option<SpaceId>,
     name: String,
     topic: String,
     trust: Trust,
@@ -473,9 +655,10 @@ pub async fn create_channel(
     }
     let id = i
         .client()?
-        .create_named_channel(&name, topic.trim(), trust)
+        .create_named_channel_in(space, &name, topic.trim(), trust)
         .await
         .map_err(err)?;
+    i.metas.clear();
     refresh_members(i, id).await?;
     Ok(id)
 }
@@ -518,6 +701,9 @@ pub async fn sync_all(i: &mut Inner) -> Result<SyncReport, String> {
             }
         }
     }
+    if !joined.is_empty() {
+        i.metas.clear();
+    }
     for channel in joined {
         refresh_members(i, channel).await?;
     }
@@ -550,7 +736,11 @@ pub async fn sync_all(i: &mut Inner) -> Result<SyncReport, String> {
             } else {
                 format!("New message from {who}")
             };
-            (i.notify)(format!("#{name}"), body);
+            let title = match i.metas.get(&channel).and_then(|m| m.peer.as_ref()) {
+                Some(_) => who.clone(),
+                None => format!("#{name}"),
+            };
+            (i.notify)(title, body);
         }
     }
     Ok(report)
@@ -562,6 +752,7 @@ pub async fn sync_all(i: &mut Inner) -> Result<SyncReport, String> {
 pub struct Person {
     user_id: UserId,
     name: String,
+    handle: Option<String>,
     email: Option<String>,
     is_guest: bool,
     can_be_added: bool,
@@ -581,10 +772,16 @@ pub async fn people(i: &mut Inner, channel: Option<ChannelId>) -> Result<Vec<Per
         }
         None => vec![],
     };
-    let directory = i.client()?.directory().await.map_err(err)?;
+    let space = channel.and_then(|c| i.metas.get(&c)).and_then(|m| m.space);
+    let directory = match space {
+        Some(space) => i.client()?.directory_in(space).await,
+        None => i.client()?.directory().await,
+    }
+    .map_err(err)?;
     Ok(directory
         .into_iter()
         .map(|p| Person {
+            handle: p.username.as_ref().zip(p.tag).map(|(u, t)| format_handle(u, t)),
             name: p
                 .display_name
                 .clone()

@@ -8,7 +8,7 @@ mod storage;
 use std::sync::Arc;
 
 use anarchy_core::Trust;
-use anarchy_proto::{ChannelId, DeviceId, UserId};
+use anarchy_proto::{ChannelId, DeviceId, ProfileUpdate, SpaceId, SpaceKind, UserId};
 use engine::Engine;
 use tauri::{Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
@@ -22,16 +22,48 @@ struct AppState {
 type R<T> = Result<T, String>;
 
 /// Declares a Tauri command that runs an `ops` function on the engine thread.
+/// While the device is locked, only `status` and `unlock` run.
 macro_rules! op {
     ($name:ident ( $($arg:ident : $ty:ty),* ) -> $out:ty) => {
         #[tauri::command]
         async fn $name(state: tauri::State<'_, AppState> $(, $arg: $ty)*) -> R<$out> {
-            state.engine.run(move |i| Box::pin(ops::$name(i $(, $arg)*))).await
+            state
+                .engine
+                .run(move |i| {
+                    Box::pin(async move {
+                        if i.is_locked() {
+                            return Err("Unlock Anarchy first".to_string());
+                        }
+                        ops::$name(i $(, $arg)*).await
+                    })
+                })
+                .await
         }
     };
 }
 
-op!(status() -> ops::Status);
+#[tauri::command]
+async fn status(state: tauri::State<'_, AppState>) -> R<ops::Status> {
+    state.engine.run(|i| Box::pin(ops::status(i))).await
+}
+
+#[tauri::command]
+async fn unlock(state: tauri::State<'_, AppState>, passphrase: String) -> R<()> {
+    state
+        .engine
+        .run(move |i| Box::pin(ops::unlock(i, passphrase)))
+        .await
+}
+
+op!(set_passphrase(passphrase: String) -> ());
+op!(sign_in_anonymous(server: String, name: String) -> ());
+op!(me() -> anarchy_proto::Profile);
+op!(update_profile(update: ProfileUpdate) -> anarchy_proto::Profile);
+op!(spaces() -> Vec<anarchy_proto::SpaceSummary>);
+op!(create_space(name: String, kind: SpaceKind) -> anarchy_proto::SpaceSummary);
+op!(join_space(code: String) -> anarchy_proto::SpaceSummary);
+op!(create_space_invite(space: SpaceId, hours: u64, max_uses: u32) -> ops::InviteView);
+op!(start_dm(handle: String) -> ChannelId);
 op!(workspace_info(server: String) -> ops::Workspace);
 op!(request_email_code(server: String, email: String) -> ());
 op!(sign_in_email(server: String, email: String, code: String) -> ());
@@ -43,7 +75,7 @@ op!(list_channels() -> Vec<ops::ChannelView>);
 op!(open_channel(channel: ChannelId) -> Vec<ops::MessageView>);
 op!(blur() -> ());
 op!(send_message(channel: ChannelId, text: String) -> ());
-op!(create_channel(name: String, topic: String, trust: Trust) -> ChannelId);
+op!(create_channel(space: Option<SpaceId>, name: String, topic: String, trust: Trust) -> ChannelId);
 op!(sync_all() -> ops::SyncReport);
 op!(people(channel: Option<ChannelId>) -> Vec<ops::Person>);
 op!(channel_members(channel: ChannelId) -> Vec<ops::MemberView>);
@@ -94,6 +126,16 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             status,
+            unlock,
+            set_passphrase,
+            sign_in_anonymous,
+            me,
+            update_profile,
+            spaces,
+            create_space,
+            join_space,
+            create_space_invite,
+            start_dm,
             workspace_info,
             sign_in_sso,
             cancel_sign_in,
