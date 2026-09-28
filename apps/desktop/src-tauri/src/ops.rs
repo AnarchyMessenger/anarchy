@@ -734,7 +734,7 @@ pub async fn search(i: &mut Inner, query: String) -> Result<Vec<SearchHit>, Stri
             }
         }
     }
-    hits.sort_by(|a, b| b.ts_ms.cmp(&a.ts_ms));
+    hits.sort_by_key(|h| std::cmp::Reverse(h.ts_ms));
     hits.truncate(40);
     Ok(hits)
 }
