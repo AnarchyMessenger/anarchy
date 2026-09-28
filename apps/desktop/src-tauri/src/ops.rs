@@ -367,7 +367,7 @@ pub async fn list_channels(i: &mut Inner) -> Result<Vec<ChannelView>, String> {
             unread,
         });
     }
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|a| a.name.to_lowercase());
     Ok(out)
 }
 
