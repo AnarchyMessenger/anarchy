@@ -28,6 +28,10 @@ Sign up with Google, email or anonymously, then say what it's for, lock the devi
 |---|---|
 | ![Space overview](docs/screens/space-overview.png) | ![Search](docs/screens/search.png) |
 
+| Files | File preview |
+|---|---|
+| ![Drive](docs/screens/drive.png) | ![Preview](docs/screens/drive-preview.png) |
+
 | Desk (Collections) | Desk, bulk actions |
 |---|---|
 | ![Collections desk](docs/screens/desk.png) | ![Bulk actions](docs/screens/desk-bulk.png) |
@@ -47,6 +51,10 @@ These are rendered by `apps/desktop/ui-preview.mjs` with a mocked backend. The o
 The real app again, a Collections desk after a restart and unlock. The server's database holds none of the customer names, amounts or the desk's name in the clear.
 
 ![Real app, desk](docs/screens/real-app-desk.png)
+
+A file uploaded through the real picker, encrypted in chunks, then fetched and decrypted to preview:
+
+![Real app, drive](docs/screens/real-app-drive.png)
 
 And search in the real app (`Ctrl K`), over what this device decrypted:
 

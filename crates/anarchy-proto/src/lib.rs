@@ -431,3 +431,9 @@ mod handle_tests {
         assert_eq!(parse_handle("#0427"), None);
     }
 }
+
+/// `POST /v1/channels/{channel}/blobs` (raw encrypted bytes) answers with this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlobRef {
+    pub id: Uuid,
+}

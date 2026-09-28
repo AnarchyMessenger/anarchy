@@ -65,6 +65,21 @@ const mock = (startLocked) => {
       { sender: "Tomás Ruiz", ts: now - 2 * 60 * min, text: "Trendy Terra said the transfer goes out Friday." },
     ] },
   ];
+  channels.push({ id: "f1", kind: "channel", space: "sp1", desk: "files", name: "Files", topic: "", trust: "company", unread: false, messages: [] });
+  const fk = (size) => ({ key: "k", nonce: "n", sha256: "s", size });
+  const file = (id, name, folder, size, mime, by, daysAgo) => ({ id, kind: "file", seq: 1, updated_ms: now, data: { name, folder, mime, by, added: now - daysAgo * 864e5, file_key: fk(size), chunks: [] } });
+  let driveItems = [
+    { id: "d1", kind: "folder", seq: 1, updated_ms: now, data: { path: "/Clients" } },
+    { id: "d2", kind: "folder", seq: 1, updated_ms: now, data: { path: "/Clients/Acme" } },
+    { id: "d3", kind: "folder", seq: 1, updated_ms: now, data: { path: "/Brand" } },
+    file("x1", "Studio Chen - rate card 2026.pdf", "/", 412_000, "application/pdf", "Maya Chen", 2),
+    file("x2", "moodboard-direction-2.png", "/", 3_800_000, "image/png", "Ines Bauer", 1),
+    file("x3", "Kickoff notes.md", "/", 6_200, "text/plain", "Tomás Ruiz", 5),
+    file("x4", "Acme - master services agreement.pdf", "/Clients/Acme", 988_000, "application/pdf", "Maya Chen", 12),
+    file("x5", "Acme logo final.svg", "/Clients/Acme", 24_000, "image/svg+xml", "Ines Bauer", 3),
+    file("x6", "Invoices 2026.xlsx", "/Clients", 64_000, "application/vnd.ms-excel", "Maya Chen", 20),
+    file("x7", "Type specimen.pdf", "/Brand", 2_300_000, "application/pdf", "Ines Bauer", 30),
+  ];
   // Invoices on the Collections desk, dated relative to today.
   const iso = (days) => { const d = new Date(now + days * 864e5); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
   const inv = (n, customer, email, euros, issuedAgo, terms, status, paidAgo) => ({ id: `i${n}`, kind: "invoice", seq: n, updated_ms: now, data: {
@@ -151,7 +166,20 @@ const mock = (startLocked) => {
     send_message: async ({ channel, text }) => { await wait(120); channels.find((x) => x.id === channel).messages.push({ sender: "ME", ts: Date.now(), text }); },
     create_channel: async ({ space, name, topic, trust }) => { const id = `c${channels.length + 1}`; channels.push({ id, kind: "channel", space, name: name.trim().toLowerCase().replace(/\s+/g, "-"), topic, trust, unread: false, messages: [] }); return id; },
     create_desk: async ({ space, name }) => { const id = `k${channels.length + 1}`; channels.push({ id, kind: "channel", space, desk: "collections", name, trust: "company", unread: false, messages: [] }); return id; },
-    desk_items: async ({ channel }) => (channel === "k1" ? items : []),
+    desk_items: async ({ channel }) => (channel === "k1" ? items : channel === "f1" ? driveItems : []),
+    ensure_drive: async () => "f1",
+    pick_and_upload: async ({ folder }) => { driveItems.push(file(`x${driveItems.length + 10}`, "Q4 plan.pdf", folder, 540_000, "application/pdf", me(), 0)); return ["Q4 plan.pdf"]; },
+    upload_dropped: async () => [],
+    save_file_as: async () => true,
+    preview_file: async ({ id }) => {
+      const f = driveItems.find((i) => i.id === id);
+      if (f.data.mime === "text/plain") return { kind: "text", data: "# Kickoff\n\n- Scope: rebrand + launch deck\n- Owners: Maya (lead), Ines (design), Tomás (deck)\n- First review: Friday 10:00\n" };
+      if (f.data.mime.startsWith("image/")) {
+        const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#f6d8c4"/><stop offset="1" stop-color="#c2391a"/></linearGradient></defs><rect width="800" height="500" fill="url(#g)"/><circle cx="560" cy="220" r="120" fill="#fbeee3" opacity=".85"/><rect x="80" y="330" width="360" height="26" rx="6" fill="#1a1814" opacity=".85"/><rect x="80" y="370" width="240" height="18" rx="6" fill="#1a1814" opacity=".5"/></svg>';
+        return { kind: "image", data: `data:image/svg+xml;base64,${btoa(svg)}` };
+      }
+      return { kind: "none", data: "" };
+    },
     put_items: async ({ items: put }) => { for (const r of put) { const at = items.findIndex((i) => i.id === r.id); const item = { ...r, seq: 99, updated_ms: Date.now() }; if (at >= 0) items[at] = item; else items.unshift(item); } },
     compose_email: async () => { window.__drafted = (window.__drafted || 0) + 1; },
     space_members: async () => ["u1", "u2", "u3", "u4"].map(peer).map((p, k) => (k === 0 ? { ...p, name: me(), handle: `${profile.username}#${String(profile.tag).padStart(4, "0")}`, color: profile.color, avatar: profile.avatar } : p)),
@@ -159,6 +187,7 @@ const mock = (startLocked) => {
       const q = query.toLowerCase(); const out = [];
       for (const c of channels) for (const [k, m] of c.messages.entries()) if (m.text.toLowerCase().includes(q)) out.push({ channel: c.id, what: "message", seq: k + 1, ts_ms: m.ts, by: m.sender === "ME" ? "You" : m.sender, text: m.text });
       for (const i of items) if (JSON.stringify(i.data).toLowerCase().includes(q)) out.push({ channel: "k1", what: "record", seq: i.seq, ts_ms: i.updated_ms, by: "invoice", text: `${i.data.number} · ${i.data.customer}` });
+      for (const i of driveItems) if (i.kind === "file" && `${i.data.name} ${i.data.folder}`.toLowerCase().includes(q)) out.push({ channel: "f1", what: "record", seq: 1, ts_ms: i.data.added, by: "file", text: `${i.data.name} · ${i.data.folder}` });
       return out.sort((a, b) => b.ts_ms - a.ts_ms).slice(0, 40);
     },
     sync_all: async () => ({ new_messages: 0, joined: 0, removed: 0 }),
@@ -255,10 +284,26 @@ await page.click('.rail-btn.space[title="Studio Chen"]');
 await visible("#view-space-empty");
 await page.waitForTimeout(300);
 await shot("12-space-overview");
-await page.fill("#search", "trendy");
+await page.fill("#search", "acme");
 await visible("#search-results");
+await page.waitForTimeout(200);
 await shot("12b-search");
 await page.press("#search", "Escape");
+await page.click("#nav-files");
+await visible("#view-drive");
+await page.waitForTimeout(200);
+await shot("12c-drive");
+await page.click('#drive-rows tr >> text="Clients"');
+await page.click('#drive-rows tr >> text="Acme"');
+await shot("12d-drive-folder");
+await page.click('#drive-crumbs button >> text="Files"');
+await page.click('#drive-rows tr >> text="moodboard-direction-2.png"');
+await visible("#preview-body img");
+await shot("12e-drive-preview");
+await page.click("#preview-close");
+await page.fill("#drive-search", "pdf");
+await shot("12f-drive-search");
+await page.fill("#drive-search", "");
 await page.click('#channel-list .side-item >> text="acme-rebrand"');
 await visible("#view-convo");
 await page.fill("#message", "Deck cover looks great, shipping it to Acme today.");

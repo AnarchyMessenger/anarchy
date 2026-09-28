@@ -37,9 +37,13 @@ For SSO, register Anarchy in your identity provider as a **public client** using
 
 Set `ANARCHY_OIDC_ISSUER=https://accounts.google.com`, create a "Desktop app" OAuth client in Google Cloud, and put its client ID in `ANARCHY_OIDC_AUDIENCE` and its secret in `ANARCHY_OIDC_CLIENT_SECRET`. The app shows "Continue with Google". On a company server, anyone with a Google account can then sign in; combine it with `ANARCHY_OPEN_SIGNUP` only if that's what you want.
 
+### Files
+
+Drive chunks are stored in Postgres (`blobs` table) for now, up to 200 MB per file. They're encrypted before they reach the server. Plan database space for it, or wait for the object-storage backend if you expect large files. Deleted files keep their chunks until garbage collection is added.
+
 ## What the server stores
 
-Users (issuer, subject, name, email, handle, colour, avatar emoji, what they use Anarchy for, DM privacy setting), spaces and who's in them, hashed session tokens, device public keys, channel membership, and **encrypted** message payloads. It never stores message plaintext or private keys. The Company Brain, if you run it, has its own database, which does hold plaintext of the channels it was added to. Run it on infrastructure you control.
+Users (issuer, subject, name, email, handle, colour, avatar emoji, what they use Anarchy for, DM privacy setting), spaces and who's in them, hashed session tokens, device public keys, channel membership, **encrypted** message payloads, and **encrypted** file chunks. It never stores message plaintext or private keys. The Company Brain, if you run it, has its own database, which does hold plaintext of the channels it was added to. Run it on infrastructure you control.
 
 ## Not safe yet (phase 0)
 

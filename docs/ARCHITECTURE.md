@@ -61,6 +61,19 @@ server → client  ACK       { seq } | REJECT { reason: stale_epoch → fetch co
 
 ## 5. Files (drive): our own design, inspired by Filen
 
+**What's built (D18):** every space has a drive, a desk of kind `files`. Each
+file gets a random key and is sealed in 4 MiB chunks with XChaCha20-Poly1305
+(nonce = per-file prefix + chunk index; the chunk's position and "last chunk"
+flag are authenticated, so reordering or truncation fails); the plaintext's
+SHA-256 is checked after download. Chunks go to the server as opaque blobs
+tied to the drive's channel and are served only to its current members. The
+file's key, name, folder and chunk list are a record in the drive's MLS channel,
+so they're end-to-end encrypted and re-shared to people added later like any
+desk record. Upload is from the native file picker or by dropping files on the
+window (only paths the OS reported as dropped are accepted). Search covers file
+names and folders on the device. The rest of this section is the plan the
+first version simplifies:
+
 - **Client-side encryption.** A file is split into 1 MiB chunks, each encrypted with AES-256-GCM using a random **file key**. Chunk IDs are random, not content hashes, so identical files don't reveal that they match. File names and metadata are encrypted too.
 - **Key hierarchy:** *file key* is wrapped by the *folder key*, which is wrapped by the *channel or team group key*, derived from MLS exporter secrets. Personal folders use the user's own key. Sharing a folder means wrapping its key for the target group, and nothing gets re-encrypted.
 - **Revocation:** removing someone rotates the folder key for **new** files. Existing files are re-encrypted in the background when policy requires it. The UI says plainly that anything already downloaded can't be taken back.
@@ -205,6 +218,7 @@ mcp_audit(id, client_id, user_id, tool, channels_touched[], ts)
 | D15 | **Direct conversations follow the receiver's rules.** | Decided 2026-09-28 | A DM is a two-person MLS group the server pins to those two people. Starting one checks the receiver's setting: anyone with the handle, or only people who share a space (the default), plus "only humans", which refuses accounts marked as agents. It can't detect a person who uses AI to write, and says so. Existing conversations aren't cut off by a later change. |
 | D16 | **A passphrase can lock the device, and save it where there's no keychain.** | Decided 2026-09-28 | The device database key is wrapped with a key derived from the passphrase (Argon2id, 64 MiB, 3 passes; XChaCha20-Poly1305) in `device.key`, and the keychain copy is deleted. The app opens locked and runs nothing but `unlock` until then. This isn't an account password: sign-in stays email, SSO or anonymous, and the server never sees the passphrase. There's no reset; forgetting it means signing in again as a new device. Anonymous accounts can't be recovered at all, and the app says so before creating one and before signing out. |
 | D17 | **A desk is a channel of encrypted records.** | Decided 2026-09-28 | Desk records (an invoice, a request) are `item` messages in the desk's MLS channel, latest write per id wins, so desks get end-to-end encryption, membership and an audit trail from what exists. Because MLS hides earlier messages from newcomers, adding someone re-shares the current state as one snapshot. Last-write-wins can lose a concurrent edit to the same record; the epoch check orders writes, and field-level merges come if real use needs them. |
+| D18 | **A file's key lives in the drive's MLS channel, not in a key hierarchy (yet).** | Decided 2026-09-29 | Putting each file's key inside its record reuses what's proven (MLS membership, re-share on join, the audit trail) instead of building folder keys now. Costs: removing someone doesn't re-encrypt files they could already open (they keep keys, not bytes: the server stops serving them the chunks); deleting marks the record and leaves the chunks until garbage collection exists; chunks sit in Postgres, capped at 200 MB a file, until the object store lands. The folder-key hierarchy above comes with sharing across spaces and external links. |
 
 ## 12. Open decisions
 

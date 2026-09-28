@@ -718,7 +718,7 @@ pub async fn search(i: &mut Inner, query: String) -> Result<Vec<SearchHit>, Stri
         for item in i.client()?.desk_items(channel).map_err(err)? {
             let blob = item.data.to_string().to_lowercase();
             if blob.contains(&q) {
-                let text = ["number", "customer"]
+                let text = ["number", "customer", "name", "folder"]
                     .iter()
                     .filter_map(|k| item.data.get(*k).and_then(|v| v.as_str()))
                     .collect::<Vec<_>>()
@@ -747,7 +747,7 @@ pub async fn space_members(i: &mut Inner, space: SpaceId) -> Result<Vec<PeerView
 
 // ---------- desks ----------
 
-pub const DESK_KINDS: [&str; 1] = ["collections"];
+pub const DESK_KINDS: [&str; 2] = ["collections", "files"];
 
 pub async fn create_desk(
     i: &mut Inner,
@@ -770,6 +770,162 @@ pub async fn create_desk(
 
 pub async fn desk_items(i: &mut Inner, channel: ChannelId) -> Result<Vec<DeskItem>, String> {
     i.client()?.desk_items(channel).map_err(err)
+}
+
+// ---------- drive ----------
+
+/// The space's drive: a desk of kind `files`, made the first time it's opened.
+pub async fn ensure_drive(i: &mut Inner, space: SpaceId) -> Result<ChannelId, String> {
+    if i.metas.is_empty() {
+        let _ = refresh_metas(i).await;
+    }
+    let local = i.client()?.device().channels();
+    for id in local {
+        let in_space = i.metas.get(&id).and_then(|m| m.space) == Some(space);
+        if in_space && i.client()?.desk_kind(id).map_err(err)?.as_deref() == Some("files") {
+            return Ok(id);
+        }
+    }
+    create_desk(i, Some(space), "Files".into(), "files".into()).await
+}
+
+/// 200 MB per file for now: chunks go through Postgres.
+const MAX_FILE: u64 = 200 * 1024 * 1024;
+
+fn mime_for(name: &str) -> &'static str {
+    let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "pdf" => "application/pdf",
+        "txt" | "md" | "csv" | "json" | "log" => "text/plain",
+        "doc" | "docx" => "application/msword",
+        "xls" | "xlsx" => "application/vnd.ms-excel",
+        "ppt" | "pptx" | "key" => "application/vnd.ms-powerpoint",
+        "zip" => "application/zip",
+        "mp4" | "mov" => "video/mp4",
+        "mp3" | "wav" | "m4a" => "audio/mpeg",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Encrypts and uploads a file from disk into `folder` of the drive.
+pub async fn upload_path(
+    i: &mut Inner,
+    channel: ChannelId,
+    path: std::path::PathBuf,
+    folder: String,
+) -> Result<String, String> {
+    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err("Folders can't be uploaded yet; pick the files inside".into());
+    }
+    if meta.len() > MAX_FILE {
+        return Err("Files up to 200 MB for now".into());
+    }
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "file".into());
+    let bytes = tokio::task::spawn_blocking(move || std::fs::read(&path))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    let by = i
+        .saved()
+        .and_then(|s| s.display_name.clone())
+        .unwrap_or_else(|| "Someone".into());
+    let client = i.client()?;
+    let mut data = client.upload_file(channel, &bytes).await.map_err(err)?;
+    data["name"] = serde_json::json!(name);
+    data["folder"] = serde_json::json!(folder);
+    data["mime"] = serde_json::json!(mime_for(&name));
+    data["by"] = serde_json::json!(by);
+    data["added"] = serde_json::json!(crate::engine::now_ms());
+    let id = uuid::Uuid::new_v4().to_string();
+    put_items(
+        i,
+        channel,
+        vec![ItemRecord {
+            id,
+            kind: "file".into(),
+            data,
+        }],
+    )
+    .await?;
+    Ok(name)
+}
+
+async fn file_bytes(
+    i: &mut Inner,
+    channel: ChannelId,
+    id: &str,
+) -> Result<(Vec<u8>, serde_json::Value), String> {
+    let item = i
+        .client()?
+        .desk_items(channel)
+        .map_err(err)?
+        .into_iter()
+        .find(|x| x.id == id && x.kind == "file")
+        .ok_or("That file isn't here any more")?;
+    let bytes = i
+        .client()?
+        .download_file(channel, &item.data)
+        .await
+        .map_err(err)?;
+    Ok((bytes, item.data))
+}
+
+/// Downloads, decrypts and writes a file where the person chose.
+pub async fn save_file(
+    i: &mut Inner,
+    channel: ChannelId,
+    id: String,
+    dest: std::path::PathBuf,
+) -> Result<(), String> {
+    let (bytes, _) = file_bytes(i, channel, &id).await?;
+    tokio::task::spawn_blocking(move || std::fs::write(dest, bytes))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+pub struct Preview {
+    /// `image`, `text` or `none`.
+    kind: &'static str,
+    data: String,
+}
+
+/// A look inside images (as a data URL) and text files, decrypted in memory.
+pub async fn preview_file(i: &mut Inner, channel: ChannelId, id: String) -> Result<Preview, String> {
+    use base64::Engine;
+    let (bytes, data) = file_bytes(i, channel, &id).await?;
+    let mime = data["mime"].as_str().unwrap_or("");
+    Ok(
+        if mime.starts_with("image/") && mime != "image/svg+xml" && bytes.len() <= 12 * 1024 * 1024 {
+            Preview {
+                kind: "image",
+                data: format!(
+                    "data:{mime};base64,{}",
+                    base64::engine::general_purpose::STANDARD.encode(&bytes)
+                ),
+            }
+        } else if mime == "text/plain" && bytes.len() <= 512 * 1024 {
+            Preview {
+                kind: "text",
+                data: String::from_utf8_lossy(&bytes).into_owned(),
+            }
+        } else {
+            Preview {
+                kind: "none",
+                data: String::new(),
+            }
+        },
+    )
 }
 
 /// Writes one or more records (a bulk "mark as paid" is one message).

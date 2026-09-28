@@ -160,6 +160,11 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/channels", post(create_channel).get(accounts::my_channels))
         .route("/v1/channels/{channel}/events", post(append).get(events))
         .route("/v1/channels/{channel}/members", get(members))
+        .route(
+            "/v1/channels/{channel}/blobs",
+            post(upload_blob).layer(axum::extract::DefaultBodyLimit::max(MAX_BLOB + 1024)),
+        )
+        .route("/v1/channels/{channel}/blobs/{blob}", get(download_blob))
         .route("/v1/devices/{device}/key_packages", post(upload_key_packages))
         .route("/v1/devices/{device}/key_packages/claim", post(claim_key_package))
         .route("/v1/devices/{device}/inbox", post(push_inbox).get(drain_inbox))
@@ -798,6 +803,55 @@ async fn members(
             )
             .collect(),
     ))
+}
+
+// ---------- file chunks ----------
+
+/// One sealed chunk: 4 MiB of plaintext plus the AEAD tag.
+pub const MAX_BLOB: usize = 4 * 1024 * 1024 + 64;
+
+async fn upload_blob(
+    State(s): State<AppState>,
+    dev: AuthDevice,
+    Path(channel): Path<ChannelId>,
+    body: axum::body::Bytes,
+) -> ApiResult<Json<anarchy_proto::BlobRef>> {
+    require_member(&s.db, channel, dev.device_id).await?;
+    if body.is_empty() || body.len() > MAX_BLOB {
+        return Err(ApiError::bad_request("a chunk is 1 byte to 4 MiB"));
+    }
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO blobs (id, channel_id, size, data, created_by_device) VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(id)
+    .bind(channel)
+    .bind(body.len() as i32)
+    .bind(body.as_ref())
+    .bind(dev.device_id)
+    .execute(&s.db)
+    .await?;
+    Ok(Json(anarchy_proto::BlobRef { id }))
+}
+
+async fn download_blob(
+    State(s): State<AppState>,
+    dev: AuthDevice,
+    Path((channel, blob)): Path<(ChannelId, Uuid)>,
+) -> ApiResult<Response> {
+    // Current members only: someone removed keeps any key they saw, but not the bytes.
+    require_member(&s.db, channel, dev.device_id).await?;
+    let row: Option<(Vec<u8>,)> = sqlx::query_as("SELECT data FROM blobs WHERE id = $1 AND channel_id = $2")
+        .bind(blob)
+        .bind(channel)
+        .fetch_optional(&s.db)
+        .await?;
+    let (data,) = row.ok_or_else(|| ApiError::not_found("no such file"))?;
+    Ok((
+        [(axum::http::header::CONTENT_TYPE, "application/octet-stream")],
+        data,
+    )
+        .into_response())
 }
 
 // ---------- key packages and invites ----------

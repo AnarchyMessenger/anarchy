@@ -400,9 +400,6 @@ function paintMe() {
   const p = profile || { display_name: status.session?.display_name || "You" };
   const name = p.display_name || "You";
   $("rail-me").replaceChildren(avatarEl(name, { color: p.color, avatar: p.avatar }));
-  fillAvatar($("foot-avatar"), name, p.color, p.avatar);
-  $("foot-name").textContent = name;
-  $("foot-handle").textContent = handleOf(p) ? `@${handleOf(p)}` : hostOf(status.session?.server);
   $("share-handle").textContent = handleOf(p) ? `@${handleOf(p)}` : "";
   $("share-policy").textContent = p.dm_policy === "anyone" ? "Anyone with it can message you." : "Only people in your spaces can message you.";
   show("nav-invites", isCompanyServer() && !p.is_guest);
@@ -424,7 +421,6 @@ function go(which) {
   show("side-home", which === "home");
   show("side-space", which === "space");
   show("side-settings", which === "settings");
-  show("side-foot", which !== "settings");
   renderRail();
   if (which === "settings") {
     hideMain();
@@ -445,7 +441,7 @@ function belongsHere(c) {
   return view === "home" ? c.kind === "dm" : view === "space" && c.kind === "channel" && c.space === currentSpace?.id;
 }
 function hideMain() {
-  for (const v of ["view-start", "view-convo", "view-space-empty", "view-desk", "view-settings"]) show(v, false);
+  for (const v of ["view-start", "view-convo", "view-space-empty", "view-desk", "view-drive", "view-settings"]) show(v, false);
   document.querySelector(".workspace").classList.remove("focus");
 }
 function showStart() {
@@ -457,7 +453,9 @@ function showStart() {
 }
 // The "Overview" row is active whenever nothing more specific is open.
 function markNav() {
+  const cur = channels.find((c) => c.id === current);
   $("nav-overview").classList.toggle("active", view === "space" && !current);
+  $("nav-files").classList.toggle("active", view === "space" && cur?.desk === "files");
   $("nav-home-overview").classList.toggle("active", view === "home" && !current);
 }
 function openSpace(s) {
@@ -473,7 +471,6 @@ $("nav-overview").addEventListener("click", () => { current = null; invoke("blur
 $("nav-home-overview").addEventListener("click", () => { current = null; invoke("blur"); showStart(); renderSide(); });
 $("rail-settings").addEventListener("click", () => go("settings"));
 $("rail-me").addEventListener("click", () => go("settings"));
-$("copy-handle").addEventListener("click", () => copy(`@${handleOf(profile)}`, null));
 $("share-copy").addEventListener("click", () => copy(`@${handleOf(profile)}`, $("share-copy")));
 
 // Lists
@@ -496,7 +493,7 @@ function renderSide() {
   }));
   show("no-dms", dms.length === 0);
   if (view === "space" && currentSpace) {
-    const desks = channels.filter((c) => c.kind === "channel" && c.space === currentSpace.id && c.desk);
+    const desks = channels.filter((c) => c.kind === "channel" && c.space === currentSpace.id && c.desk && c.desk !== "files");
     $("desk-list").replaceChildren(...desks.map((c) => el("button", { class: `side-item${c.id === current ? " active" : ""}`, "data-id": c.id, onclick: () => openChannel(c.id) },
       el("span", { class: "kind-icon" }, icon("receipt")), el("span", { class: "name", text: c.name }))));
     show("no-desks", desks.length === 0);
@@ -517,6 +514,7 @@ async function openChannel(id) {
   if (!c) return;
   current = id;
   markNav();
+  if (c.desk === "files") return openDrive(c);
   if (c.desk) return openDesk(c);
   hideMain(); show("view-convo");
   const dm = c.kind === "dm";
@@ -605,11 +603,165 @@ function renderHomeSpaces() {
   }));
 }
 
+// ---------- drive ----------
+
+let drive = null; // { channel, folder, query, items }
+const sizeFmt = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(n < 10240 ? 1 : 0)} KB` : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB` : `${(n / 1073741824).toFixed(2)} GB`);
+function fileIcon(mime) {
+  if (mime?.startsWith("image/")) return ["image", "image"];
+  if (mime === "application/pdf") return ["file", "pdf"];
+  return ["file", ""];
+}
+function driveFiles() { return drive.items.filter((i) => i.kind === "file" && !i.data.deleted); }
+function driveFolders() {
+  const set = new Set(drive.items.filter((i) => i.kind === "folder" && !i.data.deleted).map((i) => i.data.path));
+  for (const f of driveFiles()) {
+    const parts = (f.data.folder || "/").split("/").filter(Boolean);
+    for (let k = 1; k <= parts.length; k++) set.add(`/${parts.slice(0, k).join("/")}`);
+  }
+  return [...set];
+}
+
+async function openDriveOf(sp) {
+  try {
+    const id = await invoke("ensure_drive", { space: sp.id });
+    await refreshChannels();
+    await openChannel(id);
+  } catch (err) { alert(String(err)); }
+}
+async function openDrive(c) {
+  hideMain(); show("view-drive");
+  current = c.id;
+  markNav();
+  for (const b of document.querySelectorAll(".side-item[data-id]")) b.classList.remove("active");
+  if (!drive || drive.channel !== c.id) { drive = { channel: c.id, folder: "/", query: "", items: [] }; $("drive-search").value = ""; }
+  drive.items = await invoke("desk_items", { channel: c.id });
+  renderDrive();
+}
+function renderDrive() {
+  const files = driveFiles();
+  const total = files.reduce((n, f) => n + (f.data.file_key?.size || 0), 0);
+  $("drive-kind").textContent = `${currentSpace?.name || ""} · Files`;
+  $("drive-headline").replaceChildren(`${files.length} ${files.length === 1 ? "file" : "files"}, ${sizeFmt(total)}.`, el("span", { class: "soft", text: " Only people in this space can open them." }));
+  // Breadcrumbs.
+  const parts = drive.folder.split("/").filter(Boolean);
+  const crumbs = [el("button", { type: "button", text: "Files", onclick: () => { drive.folder = "/"; renderDrive(); } })];
+  parts.forEach((p, k) => { crumbs.push(el("span", { class: "sep", text: "/" }), el("button", { type: "button", text: p, onclick: () => { drive.folder = `/${parts.slice(0, k + 1).join("/")}`; renderDrive(); } })); });
+  $("drive-crumbs").replaceChildren(...crumbs);
+  const q = drive.query.toLowerCase();
+  let folders = [], shown = [];
+  if (q) shown = files.filter((f) => `${f.data.name} ${f.data.folder}`.toLowerCase().includes(q));
+  else {
+    const depth = parts.length + 1;
+    folders = driveFolders().filter((p) => p.split("/").filter(Boolean).length === depth && p.startsWith(drive.folder === "/" ? "/" : `${drive.folder}/`)).sort();
+    shown = files.filter((f) => (f.data.folder || "/") === drive.folder);
+  }
+  shown.sort((a, b) => (b.data.added || 0) - (a.data.added || 0));
+  const rows = [
+    ...folders.map((p) => {
+      const inside = files.filter((f) => (f.data.folder || "/") === p || (f.data.folder || "").startsWith(`${p}/`)).length;
+      return el("tr", { onclick: () => { drive.folder = p; renderDrive(); } },
+        el("td", {}, el("span", { class: "fname" }, el("span", { class: "ficon folder" }, icon("folder")), p.split("/").pop())),
+        el("td", { class: "num", text: `${inside} ${inside === 1 ? "file" : "files"}` }), el("td", { class: "c-issued" }), el("td", { class: "c-terms" }), el("td", { class: "c-actions" }));
+    }),
+    ...shown.map((f) => {
+      const [ic, cls] = fileIcon(f.data.mime);
+      const btns = el("span", { class: "row-btns" },
+        el("button", { class: "icon-btn", type: "button", title: "Download", "aria-label": `Download ${f.data.name}`, onclick: (e) => { e.stopPropagation(); downloadFile(f); } }, icon("download")),
+        el("button", { class: "icon-btn", type: "button", title: "Rename", "aria-label": `Rename ${f.data.name}`, onclick: (e) => { e.stopPropagation(); renameFile(f); } }, icon("pen")),
+        el("button", { class: "icon-btn", type: "button", title: "Delete", "aria-label": `Delete ${f.data.name}`, onclick: (e) => { e.stopPropagation(); deleteFile(f); } }, icon("trash")));
+      return el("tr", { onclick: () => previewFile(f) },
+        el("td", {}, el("span", { class: "fname" }, el("span", { class: `ficon ${cls}` }, icon(ic)), f.data.name, q && f.data.folder !== "/" ? el("small", { text: f.data.folder }) : null)),
+        el("td", { class: "num", text: sizeFmt(f.data.file_key?.size || 0) }),
+        el("td", { class: "c-issued", text: f.data.added ? dateFmt.format(f.data.added) : "" }),
+        el("td", { class: "c-terms", text: f.data.by || "" }),
+        el("td", { class: "c-actions" }, btns));
+    }),
+  ];
+  $("drive-rows").replaceChildren(...rows);
+  show("drive-table", rows.length > 0);
+  show("drive-empty", rows.length === 0);
+  $("drive-empty-title").textContent = q ? "No files match" : drive.folder === "/" ? "Nothing here yet" : "This folder is empty";
+}
+async function logTo(channel, text) { try { await invoke("send_message", { channel, text }); } catch (e) { console.warn(e); } }
+async function afterUpload(names) {
+  if (!names.length) return;
+  await logTo(drive.channel, names.length === 1 ? `Uploaded ${names[0]}${drive.folder !== "/" ? ` to ${drive.folder}` : ""}.` : `Uploaded ${names.length} files${drive.folder !== "/" ? ` to ${drive.folder}` : ""}: ${names.join(", ")}.`);
+  drive.items = await invoke("desk_items", { channel: drive.channel });
+  renderDrive();
+  refreshChannels();
+}
+$("drive-upload").addEventListener("click", async () => {
+  await busy($("drive-upload"), "Encrypting…", async () => {
+    try { await afterUpload(await invoke("pick_and_upload", { channel: drive.channel, folder: drive.folder })); }
+    catch (err) { alert(String(err)); }
+  });
+});
+$("drive-search").addEventListener("input", () => { drive.query = $("drive-search").value; renderDrive(); });
+tauri?.event?.listen?.("tauri://drag-enter", () => { if (!$("view-drive").hidden) { $("drop-target").textContent = `to ${currentSpace?.name || ""}${drive.folder === "/" ? "" : ` · ${drive.folder}`}`; show("drop-veil"); } });
+tauri?.event?.listen?.("tauri://drag-leave", () => show("drop-veil", false));
+tauri?.event?.listen?.("tauri://drag-drop", async (e) => {
+  show("drop-veil", false);
+  if ($("view-drive").hidden || !drive) return;
+  try { await afterUpload(await invoke("upload_dropped", { channel: drive.channel, folder: drive.folder, paths: e.payload.paths || [] })); }
+  catch (err) { alert(String(err)); }
+});
+async function downloadFile(f) {
+  try { if (await invoke("save_file_as", { channel: drive.channel, id: f.id, name: f.data.name })) await logTo(drive.channel, `Downloaded ${f.data.name}.`); }
+  catch (err) { alert(String(err)); }
+}
+async function renameFile(f) {
+  const name = prompt("New name", f.data.name)?.trim();
+  if (!name || name === f.data.name) return;
+  await invoke("put_items", { channel: drive.channel, items: [{ id: f.id, kind: "file", data: { ...f.data, name } }] });
+  await logTo(drive.channel, `Renamed ${f.data.name} to ${name}.`);
+  drive.items = await invoke("desk_items", { channel: drive.channel });
+  renderDrive();
+}
+async function deleteFile(f) {
+  if (!confirm(`Delete ${f.data.name} for everyone in this space?`)) return;
+  await invoke("put_items", { channel: drive.channel, items: [{ id: f.id, kind: "file", data: { ...f.data, deleted: true } }] });
+  await logTo(drive.channel, `Deleted ${f.data.name}.`);
+  drive.items = await invoke("desk_items", { channel: drive.channel });
+  renderDrive();
+}
+let previewing = null;
+async function previewFile(f) {
+  previewing = f;
+  $("dlg-preview-title").textContent = f.data.name;
+  $("preview-meta").textContent = `${sizeFmt(f.data.file_key?.size || 0)} · ${f.data.by || ""}${f.data.added ? ` · ${dateFmt.format(f.data.added)}` : ""}`;
+  $("preview-body").replaceChildren(el("p", { text: "Decrypting…" }));
+  $("dlg-preview").showModal();
+  try {
+    const p = await invoke("preview_file", { channel: drive.channel, id: f.id });
+    if (previewing !== f) return;
+    $("preview-body").replaceChildren(p.kind === "image" ? el("img", { src: p.data, alt: f.data.name }) : p.kind === "text" ? el("pre", { text: p.data }) : el("p", { text: "No preview for this kind of file. Download it to open it." }));
+  } catch (err) { $("preview-body").replaceChildren(el("p", { class: "error", text: String(err) })); }
+}
+$("preview-close").addEventListener("click", () => $("dlg-preview").close());
+$("preview-download").addEventListener("click", () => previewing && downloadFile(previewing));
+$("drive-folder").addEventListener("click", () => { $("folder-name").value = ""; setError("folder-error", ""); $("dlg-folder").showModal(); $("folder-name").focus(); });
+$("folder-cancel").addEventListener("click", () => $("dlg-folder").close());
+$("folder-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("folder-name").value.trim().replace(/\//g, "-");
+  if (!name) return setError("folder-error", "Name the folder.");
+  const path = `${drive.folder === "/" ? "" : drive.folder}/${name}`;
+  if (driveFolders().includes(path)) return setError("folder-error", "There's already a folder with that name here.");
+  await invoke("put_items", { channel: drive.channel, items: [{ id: crypto.randomUUID(), kind: "folder", data: { path } }] });
+  $("dlg-folder").close();
+  drive.items = await invoke("desk_items", { channel: drive.channel });
+  drive.folder = path;
+  renderDrive();
+});
+$("nav-files").addEventListener("click", () => openDriveOf(currentSpace));
+
 // ---------- space overview ----------
 
 async function renderSpaceOverview() {
   const sp = currentSpace;
-  const desks = channels.filter((c) => c.space === sp.id && c.desk);
+  const desks = channels.filter((c) => c.space === sp.id && c.desk && c.desk !== "files");
+  const driveCh = channels.find((c) => c.space === sp.id && c.desk === "files");
   const chans = channels.filter((c) => c.space === sp.id && c.kind === "channel" && !c.desk);
   $("space-empty-kind").textContent = `${KIND_LABEL[sp.kind] || "Space"} · ${sp.members} ${sp.members === 1 ? "member" : "members"}`;
   // One sentence, like a desk's: what this space is doing right now.
@@ -635,7 +787,14 @@ async function renderSpaceOverview() {
   const h = $("space-empty-title");
   if (desks.length && owed) h.replaceChildren(`${sp.name} `, el("span", { class: "soft", text: "has " }), money(owed), el("span", { class: "soft", text: late ? " outstanding, " : " outstanding." }), ...(late ? [`${late} overdue`, el("span", { class: "soft", text: "." })] : []));
   else h.replaceChildren(sp.name, el("span", { class: "soft", text: ` · ${[desks.length && `${desks.length} ${desks.length === 1 ? "desk" : "desks"}`, `${chans.length} ${chans.length === 1 ? "channel" : "channels"}`].filter(Boolean).join(", ")}.` }));
-  $("ov-desks").replaceChildren(...(cards.length ? cards : [el("div", { class: "ov-empty" }, "A desk holds the work: invoices, requests, jobs. ", el("button", { class: "link", type: "button", text: "Set up the first one", onclick: openNewDesk }))]));
+  const driveItems = driveCh ? await invoke("desk_items", { channel: driveCh.id }).catch(() => []) : [];
+  if (currentSpace !== sp) return;
+  const files = driveItems.filter((i) => i.kind === "file" && !i.data.deleted);
+  const filesCard = el("button", { class: "ov-desk", type: "button", onclick: () => openDriveOf(sp) },
+    el("span", { class: "top" }, icon("folder"), "Files"),
+    el("span", { class: "big" }, `${files.length} ${files.length === 1 ? "file" : "files"}`, el("span", { text: ` · ${sizeFmt(files.reduce((n, f) => n + (f.data.file_key?.size || 0), 0))}` })),
+    el("span", { class: "flags" }, el("span", { class: "flag-pill good", text: "Encrypted on your devices" })));
+  $("ov-desks").replaceChildren(...cards, ...(cards.length ? [] : [el("div", { class: "ov-empty" }, "A desk holds the work: invoices, requests, jobs. ", el("button", { class: "link", type: "button", text: "Set up the first one", onclick: openNewDesk }))]), filesCard);
   $("ov-channels").replaceChildren(...(chans.length ? chans.map((c) => el("button", { class: "ov-chan", type: "button", onclick: () => openChannel(c.id).then(() => composer.focus()) },
     el("span", { class: "hash", text: "#" }), el("span", { class: "lines" }, el("strong", { text: c.name }), el("small", { text: c.last_text || c.topic || "No messages yet" })),
     c.unread ? el("span", { class: "unread-dot" }) : el("time", { text: c.last_ts ? shortDate.format(c.last_ts) : "" })))
@@ -715,7 +874,7 @@ async function runSearch() {
   }
   if (recs.length) {
     rows.push(el("div", { class: "sr-group", text: "Records" }));
-    for (const h of recs) rows.push(item(el("span", { class: "space-tile" }, icon("receipt")), [el("span", {}, ...highlight(h.text, q)), el("small", { text: h.by })], whereOf(channels.find((c) => c.id === h.channel)), () => goTo(h.channel)));
+    for (const h of recs) rows.push(item(el("span", { class: "space-tile" }, icon(h.by === "file" ? "file" : h.by === "folder" ? "folder" : "receipt")), [el("span", {}, ...highlight(h.text, q)), el("small", { text: h.by })], whereOf(channels.find((c) => c.id === h.channel)), () => goTo(h.channel)));
   }
   if (msgs.length) {
     rows.push(el("div", { class: "sr-group", text: "Messages" }));

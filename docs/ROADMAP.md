@@ -69,6 +69,9 @@ Pulled forward from phase 4:
 
 ## Phase 3: files / drive (≈ 8 weeks)
 
+- [x] First version pulled forward: a drive per space, files encrypted on the device in chunks, folders, preview, download, rename and delete, drag and drop, search by name (D18).
+- [ ] Object storage for chunks, quotas, garbage collection of deleted files, versions, sharing across spaces, external links, sync client.
+
 - Chunked client-side encryption, folder key hierarchy, a folder per channel, *My files*.
 - Web and desktop file browser (FileList), versions, quotas.
 - External links with the key in the URL fragment, expiry and download limits.

@@ -88,6 +88,12 @@ Adapted from the reference designs the desks are based on, fitted to this system
 - **Tables:** 40px rows, customer shown with a small initials tile, money right-aligned and semibold, status as icon plus word in its colour (never colour alone), relative dates ("in 27 days", "6 days overdue" in `danger`) beside absolute ones.
 - **Honest verbs:** a button that opens a draft says "Draft", not "Send".
 
+## Drive
+
+- Opens like every place: the hero sentence ("7 files, 7.2 MB. Only people in this space can open them."), Upload (ink) and New folder, and one line saying files are encrypted on this computer.
+- Breadcrumbs, then a table: folders first (tinted folder tile, "3 files"), then files newest first (type tile, size, added, by). Row actions (download, rename, delete) appear on hover. Clicking a file previews it (images, text) inside a dialog; everything else offers Download.
+- Dropping files anywhere on the drive shows a dashed veil naming where they'll land.
+
 ## Themes
 
 - **Light:** the default. Cool neutrals, cobalt, amber selection.

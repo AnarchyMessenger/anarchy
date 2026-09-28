@@ -6,6 +6,7 @@
 pub mod client;
 pub mod content;
 pub mod device;
+pub mod files;
 pub mod oidc;
 
 pub use client::{Client, Delivered};

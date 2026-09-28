@@ -677,6 +677,57 @@ impl Client {
         ))
     }
 
+    // ---------- files ----------
+
+    async fn upload_blob(&self, channel: ChannelId, bytes: Vec<u8>) -> Result<Uuid, Error> {
+        let req = self
+            .authed(
+                self.http
+                    .post(format!("{}/v1/channels/{channel}/blobs", self.base)),
+            )
+            .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+            .body(bytes);
+        let r: anarchy_proto::BlobRef = check(req.send().await?).await?.json().await?;
+        Ok(r.id)
+    }
+
+    async fn download_blob(&self, channel: ChannelId, blob: Uuid) -> Result<Vec<u8>, Error> {
+        let req = self.authed(
+            self.http
+                .get(format!("{}/v1/channels/{channel}/blobs/{blob}", self.base)),
+        );
+        Ok(check(req.send().await?).await?.bytes().await?.to_vec())
+    }
+
+    /// Encrypts a file, uploads its chunks, and returns the record data to store
+    /// in the drive (with `name`, `folder` and `mime` alongside). Nothing is
+    /// announced to the channel yet; the caller writes the record.
+    pub async fn upload_file(&self, channel: ChannelId, bytes: &[u8]) -> Result<serde_json::Value, Error> {
+        let (key, chunks) = crate::files::seal(bytes)?;
+        let mut ids = Vec::with_capacity(chunks.len());
+        for c in chunks {
+            ids.push(self.upload_blob(channel, c).await?.to_string());
+        }
+        Ok(serde_json::json!({ "file_key": key, "chunks": ids }))
+    }
+
+    /// Downloads and decrypts a file from its record data.
+    pub async fn download_file(
+        &self,
+        channel: ChannelId,
+        data: &serde_json::Value,
+    ) -> Result<Vec<u8>, Error> {
+        let key: crate::files::FileKey = serde_json::from_value(data["file_key"].clone())
+            .map_err(|_| Error::Storage("this record has no file".into()))?;
+        let ids: Vec<Uuid> = serde_json::from_value(data["chunks"].clone())
+            .map_err(|_| Error::Storage("this record has no file".into()))?;
+        let mut chunks = Vec::with_capacity(ids.len());
+        for id in ids {
+            chunks.push(self.download_blob(channel, id).await?);
+        }
+        crate::files::open(&key, &chunks)
+    }
+
     /// Creates a desk: a channel in `space` whose info names the desk kind.
     pub async fn create_desk(
         &mut self,
