@@ -54,6 +54,21 @@
 
 <div class="frame" id="frame">
 
+  <!-- ============ Title bar (the window has no system one) ============ -->
+  <header class="titlebar" data-tauri-drag-region>
+    <div class="lights"><button class="light close" id="win-close" type="button" aria-label="Close" title="Close"></button><button class="light min" id="win-min" type="button" aria-label="Minimize" title="Minimize"></button><button class="light max" id="win-max" type="button" aria-label="Maximize" title="Maximize"></button></div>
+    <span class="wordmark" data-tauri-drag-region><span class="mark" aria-hidden="true"><svg class="i"><use href="#i-anarchy"/></svg></span>Anarchy</span>
+    <div class="tb-center" data-tauri-drag-region>
+      <div class="omnibox" id="omnibox" hidden>
+        <label class="omni-field"><svg class="i"><use href="#i-search"/></svg><input id="search" placeholder="Search messages, desks, people" autocomplete="off" spellcheck="false" aria-label="Search"><kbd id="search-kbd">Ctrl K</kbd></label>
+        <div class="search-results panel" id="search-results" role="listbox" hidden></div>
+      </div>
+    </div>
+    <div class="tb-right" data-tauri-drag-region></div>
+  </header>
+
+  <div class="stage">
+
   <!-- ============ Starting / locked ============ -->
   <div class="starting" id="starting" aria-live="polite"><span class="pulse"></span><span>Opening Anarchy…</span></div>
 
@@ -71,7 +86,7 @@
   <!-- ============ Sign-in and onboarding ============ -->
   <section class="auth" id="auth" hidden>
     <div class="auth-panel panel">
-      <header class="auth-brand"><span class="mark" aria-hidden="true"><svg class="i"><use href="#i-anarchy"/></svg></span>Anarchy<span class="steps" id="steps" aria-hidden="true"></span></header>
+      <header class="auth-brand"><span class="steps" id="steps" aria-hidden="true"></span></header>
 
       <div class="auth-body">
         <!-- 1. server -->
@@ -225,13 +240,16 @@
       <aside class="sidebar">
         <!-- Home: chats -->
         <div class="side" id="side-home">
-          <header class="side-head"><h2>Chats</h2><button class="icon-btn" id="new-dm" title="New message" aria-label="New message"><svg class="i"><use href="#i-pen"/></svg></button></header>
+          <header class="side-head"><h2>Home</h2></header>
+          <div class="side-list"><button class="side-item nav" id="nav-home-overview" type="button"><svg class="i"><use href="#i-home"/></svg><span class="name">Overview</span></button></div>
+          <div class="side-group"><span>Chats</span><button class="icon-btn sm" id="new-dm" title="New message" aria-label="New message"><svg class="i"><use href="#i-plus"/></svg></button></div>
           <div class="side-list" id="dm-list"></div>
           <p class="side-empty" id="no-dms">No conversations yet.</p>
         </div>
         <!-- Space: channels -->
         <div class="side" id="side-space" hidden>
-          <header class="side-head"><h2 id="space-name"></h2><button class="icon-btn" id="space-invite" title="Invite people" aria-label="Invite people"><svg class="i"><use href="#i-users"/></svg></button></header>
+          <header class="side-head"><span class="space-tile" id="space-tile"></span><h2 id="space-name"></h2><button class="icon-btn" id="space-invite" title="Invite people" aria-label="Invite people"><svg class="i"><use href="#i-users"/></svg></button></header>
+          <div class="side-list"><button class="side-item nav" id="nav-overview" type="button"><svg class="i"><use href="#i-home"/></svg><span class="name">Overview</span></button></div>
           <div class="side-group"><span>Desks</span><button class="icon-btn sm" id="new-desk" aria-label="New desk" title="New desk"><svg class="i"><use href="#i-plus"/></svg></button></div>
           <div class="side-list" id="desk-list"></div>
           <button class="side-empty link-row" id="no-desks" type="button">Set up a desk for invoices, requests or jobs</button>
@@ -259,10 +277,10 @@
       <main class="main" id="main">
         <!-- Home start panel -->
         <div class="view start" id="view-start">
-          <div class="start-inner">
-            <p class="eyebrow">Home</p>
-            <h1>Start somewhere</h1>
-            <p class="sub">Talk to someone directly, or make a space for a team, clients or friends.</p>
+          <div class="start-inner ov-inner">
+            <div class="ov-hero">
+              <div><p class="hero-kind">Home</p><h1 class="hero-line" id="home-headline">Start somewhere.</h1></div>
+            </div>
             <div class="start-grid">
               <form class="start-card" id="start-dm-form" novalidate>
                 <svg class="i"><use href="#i-at"/></svg>
@@ -297,20 +315,28 @@
           </form>
         </div>
 
-        <!-- Space with no channel open -->
-        <div class="view start" id="view-space-empty" hidden>
-          <div class="start-inner narrow">
-            <p class="eyebrow" id="space-empty-kind">Space</p>
-            <h1 id="space-empty-title"></h1>
-            <p class="sub">Desks hold the work: invoices, requests, jobs. Channels hold the conversation.</p>
-            <div class="row-actions"><button class="btn-ink inline" id="space-empty-desk" type="button"><svg class="i"><use href="#i-desk"/></svg>Set up a desk</button><button class="btn-outline" id="space-empty-channel" type="button"><svg class="i"><use href="#i-plus"/></svg>New channel</button><button class="btn-outline" id="space-empty-invite" type="button"><svg class="i"><use href="#i-users"/></svg>Invite people</button></div>
+        <!-- Space overview -->
+        <div class="view overview" id="view-space-empty" hidden>
+          <div class="ov-inner">
+            <div class="ov-hero">
+              <div>
+                <p class="hero-kind" id="space-empty-kind">Space</p>
+                <h1 class="hero-line" id="space-empty-title"></h1>
+              </div>
+              <div class="row-actions"><button class="btn-ink inline" id="space-empty-desk" type="button"><svg class="i"><use href="#i-desk"/></svg>Set up a desk</button><button class="btn-outline pill" id="space-empty-channel" type="button"><svg class="i"><use href="#i-plus"/></svg>New channel</button><button class="btn-outline pill" id="space-empty-invite" type="button"><svg class="i"><use href="#i-users"/></svg>Invite people</button></div>
+            </div>
+            <div class="ov-grid">
+              <section class="ov-col"><p class="block-label">Desks</p><div class="ov-desks" id="ov-desks"></div></section>
+              <section class="ov-col"><p class="block-label">Channels</p><div class="ov-list" id="ov-channels"></div></section>
+              <section class="ov-col narrow-col"><p class="block-label">People</p><div class="ov-people" id="ov-people"></div></section>
+            </div>
           </div>
         </div>
 
         <!-- Desk -->
         <div class="view desk" id="view-desk" hidden>
           <aside class="desk-notes">
-            <header class="notes-head"><button class="icon-btn" id="toggle-side" type="button" title="Show the space's channels" aria-label="Show the space's channels"><svg class="i"><use href="#i-desk"/></svg></button><span class="orb" aria-hidden="true"></span><strong id="notes-title">Desk notes</strong><span class="spacer"></span><span class="fine" id="notes-count"></span></header>
+            <header class="notes-head"><span class="orb" aria-hidden="true"></span><strong id="notes-title">Desk notes</strong><span class="spacer"></span><span class="fine" id="notes-count"></span></header>
             <div class="notes-feed" id="notes-feed"></div>
             <form class="notes-composer" id="notes-composer">
               <textarea id="notes-input" rows="2" placeholder="Write to everyone on this desk…" aria-label="Write to the desk"></textarea>
@@ -335,7 +361,7 @@
             <div class="bulk-bar" id="bulk-bar" hidden><span id="bulk-count"></span><span class="spacer"></span><button type="button" id="bulk-remind"><svg class="i"><use href="#i-mail"/></svg>Draft reminder</button><button type="button" id="bulk-paid"><svg class="i"><use href="#i-check"/></svg>Mark as paid</button><button type="button" id="bulk-copy"><svg class="i"><use href="#i-copy"/></svg>Copy as CSV</button><button type="button" id="bulk-clear" aria-label="Clear selection"><svg class="i"><use href="#i-x"/></svg></button></div>
             <div class="table-wrap">
               <table class="grid" id="desk-table">
-                <thead><tr><th class="c-check"><input type="checkbox" id="check-all" aria-label="Select all"></th><th>Invoice</th><th>Customer</th><th>Issued</th><th>Due</th><th class="num">Amount</th><th>Status</th><th>Terms</th></tr></thead>
+                <thead><tr><th class="c-check"><input type="checkbox" id="check-all" aria-label="Select all"></th><th>Invoice</th><th>Customer</th><th class="c-issued">Issued</th><th>Due</th><th class="num">Amount</th><th>Status</th><th class="c-terms">Terms</th></tr></thead>
                 <tbody id="desk-rows"></tbody>
               </table>
               <div class="desk-empty" id="desk-empty" hidden><svg class="i"><use href="#i-receipt"/></svg><strong id="desk-empty-title">No invoices yet</strong><p class="fine" id="desk-empty-sub">Create the first one. Everyone on this desk sees it, and nobody else, the server included.</p></div>
@@ -437,6 +463,7 @@
       </main>
     </div>
   </section>
+  </div>
 </div>
 
 <!-- ============ Dialogs ============ -->

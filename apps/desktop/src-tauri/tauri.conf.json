@@ -10,10 +10,12 @@
     "windows": [
       {
         "title": "Anarchy",
-        "width": 1200,
-        "height": 780,
-        "minWidth": 720,
-        "minHeight": 480
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 560,
+        "label": "main",
+        "decorations": false
       }
     ],
     "security": {

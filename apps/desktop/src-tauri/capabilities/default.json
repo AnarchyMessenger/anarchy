@@ -1,7 +1,17 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: core IPC commands only. No shell, filesystem or HTTP plugins.",
-  "windows": ["main"],
-  "permissions": ["core:default"]
+  "description": "Main window: core IPC commands plus our own window controls (the window has no system title bar). No shell, filesystem or HTTP plugins.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-start-dragging",
+    "core:window:allow-is-maximized"
+  ]
 }

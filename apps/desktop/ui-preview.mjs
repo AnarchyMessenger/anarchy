@@ -154,6 +154,13 @@ const mock = (startLocked) => {
     desk_items: async ({ channel }) => (channel === "k1" ? items : []),
     put_items: async ({ items: put }) => { for (const r of put) { const at = items.findIndex((i) => i.id === r.id); const item = { ...r, seq: 99, updated_ms: Date.now() }; if (at >= 0) items[at] = item; else items.unshift(item); } },
     compose_email: async () => { window.__drafted = (window.__drafted || 0) + 1; },
+    space_members: async () => ["u1", "u2", "u3", "u4"].map(peer).map((p, k) => (k === 0 ? { ...p, name: me(), handle: `${profile.username}#${String(profile.tag).padStart(4, "0")}`, color: profile.color, avatar: profile.avatar } : p)),
+    search: async ({ query }) => {
+      const q = query.toLowerCase(); const out = [];
+      for (const c of channels) for (const [k, m] of c.messages.entries()) if (m.text.toLowerCase().includes(q)) out.push({ channel: c.id, what: "message", seq: k + 1, ts_ms: m.ts, by: m.sender === "ME" ? "You" : m.sender, text: m.text });
+      for (const i of items) if (JSON.stringify(i.data).toLowerCase().includes(q)) out.push({ channel: "k1", what: "record", seq: i.seq, ts_ms: i.updated_ms, by: "invoice", text: `${i.data.number} · ${i.data.customer}` });
+      return out.sort((a, b) => b.ts_ms - a.ts_ms).slice(0, 40);
+    },
     sync_all: async () => ({ new_messages: 0, joined: 0, removed: 0 }),
     people: async () => Object.values(people).map((p, i) => ({ user_id: p.user_id, name: p.display_name, handle: handle(p), email: null, is_guest: false, can_be_added: i !== 3, in_channel: i < 2, me: false })),
     channel_members: async () => [{ user_id: "me", name: me(), is_guest: false, me: true }, { user_id: "u2", name: "Tomás Ruiz", is_guest: false, me: false }, { user_id: "u3", name: "Ines Bauer", is_guest: false, me: false }],
@@ -246,7 +253,12 @@ await page.click("#dm-cancel");
 // Spaces.
 await page.click('.rail-btn.space[title="Studio Chen"]');
 await visible("#view-space-empty");
-await shot("12-space-empty");
+await page.waitForTimeout(300);
+await shot("12-space-overview");
+await page.fill("#search", "trendy");
+await visible("#search-results");
+await shot("12b-search");
+await page.press("#search", "Escape");
 await page.click('#channel-list .side-item >> text="acme-rebrand"');
 await visible("#view-convo");
 await page.fill("#message", "Deck cover looks great, shipping it to Acme today.");
@@ -271,7 +283,6 @@ await page.click("#invoice-save");
 await page.waitForTimeout(250);
 await page.click("#notes-brief");
 await shot("13e-desk-after-add");
-await page.click("#toggle-side");
 await page.click("#new-desk");
 await shot("13f-new-desk");
 await page.click("#desk-cancel");

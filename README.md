@@ -24,6 +24,10 @@ Sign up with Google, email or anonymously, then say what it's for, lock the devi
 |---|---|
 | ![Home](docs/screens/home.png) | ![DM](docs/screens/dm.png) |
 
+| Space overview | Search |
+|---|---|
+| ![Space overview](docs/screens/space-overview.png) | ![Search](docs/screens/search.png) |
+
 | Desk (Collections) | Desk, bulk actions |
 |---|---|
 | ![Collections desk](docs/screens/desk.png) | ![Bulk actions](docs/screens/desk-bulk.png) |
@@ -43,6 +47,10 @@ These are rendered by `apps/desktop/ui-preview.mjs` with a mocked backend. The o
 The real app again, a Collections desk after a restart and unlock. The server's database holds none of the customer names, amounts or the desk's name in the clear.
 
 ![Real app, desk](docs/screens/real-app-desk.png)
+
+And search in the real app (`Ctrl K`), over what this device decrypted:
+
+![Real app, search](docs/screens/real-app-search.png)
 
 ## Repository layout
 

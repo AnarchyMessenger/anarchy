@@ -116,8 +116,7 @@ the target is trades, where the front desk wins.
   in the new epoch. History of *changes* before they joined stays unreadable to
   them, by design.
 - **Collections desk** (the first kind), laid out from the reference designs:
-  - *Notes column* on the left, in place of the space sidebar (which a button
-    brings back): cards for what needs you (overdue, due in 30 days, drafts
+  - *Notes column* between the space sidebar and the board: cards for what needs you (overdue, due in 30 days, drafts
     not sent), each with one primary action; below them the desk's activity,
     which is its channel: every change is logged there as a message, and
     people talk there too. The notes are rules computed on the device, and

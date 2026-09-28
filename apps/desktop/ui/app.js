@@ -176,6 +176,7 @@ function authStep(id) {
 
 function showAuth() {
   stopPolling();
+  show("omnibox", false);
   show("starting", false); show("lock", false); show("app", false); show("auth");
   if (status.last_server) $("server").value = hostOf(status.last_server);
   paintArt({});
@@ -386,6 +387,7 @@ $("s-card").addEventListener("submit", async (e) => {
 async function showApp() {
   profile = status.profile || profile;
   show("starting", false); show("lock", false); show("auth", false); show("app");
+  show("omnibox");
   paintMe();
   try { spaces = await invoke("spaces"); } catch { spaces = []; }
   renderRail();
@@ -450,18 +452,25 @@ function showStart() {
   hideMain();
   show("view-start", view === "home");
   show("view-space-empty", view === "space");
-  if (view === "space") {
-    $("space-empty-kind").textContent = `${KIND_LABEL[currentSpace.kind] || "Space"} · ${currentSpace.members} ${currentSpace.members === 1 ? "member" : "members"}`;
-    $("space-empty-title").textContent = currentSpace.name;
-  }
+  markNav();
+  if (view === "space") renderSpaceOverview();
+}
+// The "Overview" row is active whenever nothing more specific is open.
+function markNav() {
+  $("nav-overview").classList.toggle("active", view === "space" && !current);
+  $("nav-home-overview").classList.toggle("active", view === "home" && !current);
 }
 function openSpace(s) {
   currentSpace = s;
   $("space-name").textContent = s.name;
+  $("space-tile").dataset.color = colorFor(s.id);
+  $("space-tile").textContent = initials(s.name);
   current = null;
   go("space");
 }
 $("rail-home").addEventListener("click", () => go("home"));
+$("nav-overview").addEventListener("click", () => { current = null; invoke("blur"); showStart(); renderSide(); });
+$("nav-home-overview").addEventListener("click", () => { current = null; invoke("blur"); showStart(); renderSide(); });
 $("rail-settings").addEventListener("click", () => go("settings"));
 $("rail-me").addEventListener("click", () => go("settings"));
 $("copy-handle").addEventListener("click", () => copy(`@${handleOf(profile)}`, null));
@@ -507,6 +516,7 @@ async function openChannel(id) {
   const c = channels.find((x) => x.id === id);
   if (!c) return;
   current = id;
+  markNav();
   if (c.desk) return openDesk(c);
   hideMain(); show("view-convo");
   const dm = c.kind === "dm";
@@ -573,7 +583,17 @@ $("composer").addEventListener("submit", async (e) => {
 
 // Home: spaces overview
 
+function renderHomeHeadline() {
+  const hour = new Date().getHours();
+  const hello = hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const first = (profile?.display_name || "").split(" ")[0];
+  const unread = channels.filter((c) => c.kind === "dm" && c.unread).length;
+  const bits = [unread ? `${unread} unread ${unread === 1 ? "conversation" : "conversations"}` : "nothing unread", spaces.length ? `${spaces.length} ${spaces.length === 1 ? "space" : "spaces"}` : null].filter(Boolean);
+  $("home-headline").replaceChildren(`${hello}${first ? `, ${first}` : ""}.`, el("span", { class: "soft", text: ` ${bits.join(", ")[0].toUpperCase()}${bits.join(", ").slice(1)}.` }));
+}
+
 function renderHomeSpaces() {
+  renderHomeHeadline();
   show("home-spaces-wrap", spaces.length > 0);
   $("home-spaces").replaceChildren(...spaces.map((sp) => {
     const desks = channels.filter((c) => c.space === sp.id && c.desk).length;
@@ -583,6 +603,139 @@ function renderHomeSpaces() {
       el("span", { class: "tile", "data-color": colorFor(sp.id), text: initials(sp.name) }),
       el("span", {}, el("strong", { text: sp.name }), el("small", { text: bits.join(" · ") })));
   }));
+}
+
+// ---------- space overview ----------
+
+async function renderSpaceOverview() {
+  const sp = currentSpace;
+  const desks = channels.filter((c) => c.space === sp.id && c.desk);
+  const chans = channels.filter((c) => c.space === sp.id && c.kind === "channel" && !c.desk);
+  $("space-empty-kind").textContent = `${KIND_LABEL[sp.kind] || "Space"} · ${sp.members} ${sp.members === 1 ? "member" : "members"}`;
+  // One sentence, like a desk's: what this space is doing right now.
+  const deskData = await Promise.all(desks.map(async (d) => ({ d, items: await invoke("desk_items", { channel: d.id }).catch(() => []) })));
+  if (currentSpace !== sp) return;
+  const today = isoToday();
+  let owed = 0, late = 0;
+  const cards = deskData.map(({ d, items }) => {
+    const inv = items.filter((i) => i.kind === "invoice").map((i) => ({ ...i.data, state: invoiceState(i.data, today) }));
+    const open = inv.filter((i) => i.state === "open" || i.state === "overdue");
+    const overdue = inv.filter((i) => i.state === "overdue");
+    const drafts = inv.filter((i) => i.state === "draft");
+    const sum = open.reduce((n, i) => n + i.amount, 0);
+    owed += sum; late += overdue.length;
+    return el("button", { class: "ov-desk", type: "button", onclick: () => openChannel(d.id) },
+      el("span", { class: "top" }, icon("receipt"), d.name),
+      el("span", { class: "big" }, money(sum), el("span", { text: ` outstanding · ${open.length} ${open.length === 1 ? "invoice" : "invoices"}` })),
+      el("span", { class: "flags" },
+        overdue.length ? el("span", { class: "flag-pill bad", text: `${overdue.length} overdue` }) : null,
+        drafts.length ? el("span", { class: "flag-pill warn", text: `${drafts.length} ${drafts.length === 1 ? "draft" : "drafts"}` }) : null,
+        !overdue.length && !drafts.length ? el("span", { class: "flag-pill good", text: inv.length ? "All caught up" : "No invoices yet" }) : null));
+  });
+  const h = $("space-empty-title");
+  if (desks.length && owed) h.replaceChildren(`${sp.name} `, el("span", { class: "soft", text: "has " }), money(owed), el("span", { class: "soft", text: late ? " outstanding, " : " outstanding." }), ...(late ? [`${late} overdue`, el("span", { class: "soft", text: "." })] : []));
+  else h.replaceChildren(sp.name, el("span", { class: "soft", text: ` · ${[desks.length && `${desks.length} ${desks.length === 1 ? "desk" : "desks"}`, `${chans.length} ${chans.length === 1 ? "channel" : "channels"}`].filter(Boolean).join(", ")}.` }));
+  $("ov-desks").replaceChildren(...(cards.length ? cards : [el("div", { class: "ov-empty" }, "A desk holds the work: invoices, requests, jobs. ", el("button", { class: "link", type: "button", text: "Set up the first one", onclick: openNewDesk }))]));
+  $("ov-channels").replaceChildren(...(chans.length ? chans.map((c) => el("button", { class: "ov-chan", type: "button", onclick: () => openChannel(c.id).then(() => composer.focus()) },
+    el("span", { class: "hash", text: "#" }), el("span", { class: "lines" }, el("strong", { text: c.name }), el("small", { text: c.last_text || c.topic || "No messages yet" })),
+    c.unread ? el("span", { class: "unread-dot" }) : el("time", { text: c.last_ts ? shortDate.format(c.last_ts) : "" })))
+    : [el("div", { class: "ov-empty" }, "Channels are for talking. ", el("button", { class: "link", type: "button", text: "Start one", onclick: openNewChannel }))]));
+  try {
+    const members = await invoke("space_members", { space: sp.id });
+    if (currentSpace !== sp) return;
+    $("ov-people").replaceChildren(...members.map((m) => el("div", { class: "ov-person" }, avatarEl(m.name, { color: m.color, avatar: m.avatar, size: "sm" }),
+      el("span", { class: "lines" }, el("span", { text: m.name }), el("small", { text: m.handle ? `@${m.handle}` : "" })))),
+      el("button", { class: "link", type: "button", text: "Invite people", onclick: openInvite }));
+  } catch { $("ov-people").replaceChildren(el("p", { class: "fine", text: "Couldn't load people." })); }
+}
+
+// ---------- window and search ----------
+
+const appWindow = tauri?.window?.getCurrentWindow?.();
+$("win-close").addEventListener("click", () => appWindow?.close());
+$("win-min").addEventListener("click", () => appWindow?.minimize());
+$("win-max").addEventListener("click", () => appWindow?.toggleMaximize());
+$("search-kbd").textContent = /Mac/.test(navigator.platform) ? "⌘K" : "Ctrl K";
+
+let searchTimer = null, searchSeq = 0, searchCursor = -1;
+document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && !$("omnibox").hidden) { e.preventDefault(); $("search").focus(); $("search").select(); }
+});
+$("search").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 120); });
+$("search").addEventListener("focus", () => { if ($("search").value.trim()) runSearch(); });
+$("search").addEventListener("blur", () => setTimeout(() => show("search-results", false), 150));
+$("search").addEventListener("keydown", (e) => {
+  const items = [...$("search-results").querySelectorAll(".sr-item")];
+  if (e.key === "Escape") { $("search").value = ""; show("search-results", false); $("search").blur(); return; }
+  if (!items.length) return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    searchCursor = (searchCursor + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    items.forEach((b, k) => b.classList.toggle("on", k === searchCursor));
+    items[searchCursor].scrollIntoView({ block: "nearest" });
+  }
+  if (e.key === "Enter") { e.preventDefault(); (items[searchCursor] || items[0]).click(); }
+});
+function highlight(text, q) {
+  const at = text.toLowerCase().indexOf(q.toLowerCase());
+  if (at < 0) return [text];
+  const start = Math.max(0, at - 30);
+  return [(start ? "…" : "") + text.slice(start, at), el("mark", { text: text.slice(at, at + q.length) }), text.slice(at + q.length, at + q.length + 80)];
+}
+function whereOf(c) {
+  if (!c) return "";
+  if (c.kind === "dm") return "Direct";
+  const sp = spaces.find((x) => x.id === c.space);
+  return sp ? `${sp.name} · ${c.desk ? c.name : `#${c.name}`}` : c.name;
+}
+async function runSearch() {
+  const q = $("search").value.trim();
+  const box = $("search-results");
+  if (!q) { show(box, false); return; }
+  const seq = ++searchSeq;
+  const lower = q.toLowerCase();
+  const places = [
+    ...spaces.filter((sp) => sp.name.toLowerCase().includes(lower)).map((sp) => ({ label: sp.name, sub: KIND_LABEL[sp.kind] || "Space", go: () => openSpace(sp), tile: sp })),
+    ...channels.filter((c) => c.name.toLowerCase().includes(lower) || (c.peer?.handle || "").includes(lower)).map((c) => ({ label: c.kind === "dm" ? c.name : c.desk ? c.name : `#${c.name}`, sub: c.kind === "dm" ? (c.peer?.handle ? `@${c.peer.handle}` : "Direct") : whereOf(c), go: () => goTo(c.id), c })),
+  ].slice(0, 6);
+  let hits = [];
+  try { hits = await invoke("search", { query: q }); } catch (e) { console.warn(e); }
+  if (seq !== searchSeq) return;
+  const msgs = hits.filter((h) => h.what === "message").slice(0, 8);
+  const recs = hits.filter((h) => h.what === "record").slice(0, 6);
+  const rows = [];
+  const item = (lead, lines, where, go) => el("button", { class: "sr-item", type: "button", onmousedown: (e) => e.preventDefault(), onclick: () => { show(box, false); $("search").blur(); go(); } }, lead, el("span", { class: "lines" }, ...lines), where ? el("span", { class: "where", text: where }) : null);
+  if (places.length) {
+    rows.push(el("div", { class: "sr-group", text: "Go to" }));
+    for (const p of places) {
+      const lead = p.tile ? el("span", { class: "space-tile", "data-color": colorFor(p.tile.id), text: initials(p.tile.name) })
+        : p.c.kind === "dm" ? avatarEl(p.c.name, { color: p.c.peer?.color, avatar: p.c.peer?.avatar, size: "sm" }) : el("span", { class: "space-tile" }, icon(p.c.desk ? "receipt" : "chat"));
+      rows.push(item(lead, [el("span", {}, ...highlight(p.label, q)), el("small", { text: p.sub })], null, p.go));
+    }
+  }
+  if (recs.length) {
+    rows.push(el("div", { class: "sr-group", text: "Records" }));
+    for (const h of recs) rows.push(item(el("span", { class: "space-tile" }, icon("receipt")), [el("span", {}, ...highlight(h.text, q)), el("small", { text: h.by })], whereOf(channels.find((c) => c.id === h.channel)), () => goTo(h.channel)));
+  }
+  if (msgs.length) {
+    rows.push(el("div", { class: "sr-group", text: "Messages" }));
+    for (const h of msgs) rows.push(item(h.by === "You" ? avatarEl(profile?.display_name || "You", { color: profile?.color, avatar: profile?.avatar, size: "sm" }) : avatarEl(h.by, { size: "sm" }), [el("small", { text: `${h.by} · ${shortDate.format(h.ts_ms)}` }), el("span", {}, ...highlight(h.text, q))], whereOf(channels.find((c) => c.id === h.channel)), () => goTo(h.channel)));
+  }
+  if (!rows.length) rows.push(el("p", { class: "sr-empty", text: `Nothing matches "${q}". Search covers what this device can decrypt; the server can't search it for you.` }));
+  box.replaceChildren(...rows);
+  searchCursor = -1;
+  show(box, true);
+}
+// Opens any conversation or desk, switching to its space (or Home) first.
+async function goTo(id) {
+  const c = channels.find((x) => x.id === id);
+  if (!c) return;
+  if (c.kind === "dm") { if (view !== "home") go("home"); }
+  else {
+    const sp = spaces.find((x) => x.id === c.space);
+    if (sp && (currentSpace?.id !== sp.id || view !== "space")) openSpace(sp);
+  }
+  await openChannel(id);
 }
 
 // ---------- desks ----------
@@ -612,7 +765,6 @@ function invoices() {
 
 async function openDesk(c) {
   hideMain(); show("view-desk");
-  document.querySelector(".workspace").classList.add("focus");
   for (const b of document.querySelectorAll(".side-item[data-id]")) b.classList.toggle("active", b.dataset.id === c.id);
   const fresh = !desk || desk.channel !== c.id;
   if (fresh) desk = { channel: c.id, name: c.name, items: [], messages: [], tab: "all", query: "", selected: new Set() };
@@ -651,11 +803,11 @@ function renderDesk() {
       el("td", { class: "c-check" }, check),
       el("td", { class: "inv", text: i.number }),
       el("td", {}, el("span", { class: "who" }, el("span", { class: "tile", text: initials(i.customer) }), i.customer)),
-      el("td", { text: i.issued ? dateFmt.format(asDate(i.issued)) : "" }),
+      el("td", { class: "c-issued", text: i.issued ? dateFmt.format(asDate(i.issued)) : "" }),
       el("td", { class: "due" }, i.due ? shortDate.format(asDate(i.due)) : "", dueNote),
       el("td", { class: "num", text: money(i.amount) }),
       el("td", {}, el("span", { class: `st ${i.state}` }, icon(stIcon[i.state]), stLabel[i.state])),
-      el("td", { text: i.terms ? `Net ${i.terms}` : "On receipt" }));
+      el("td", { class: "c-terms", text: i.terms ? `Net ${i.terms}` : "On receipt" }));
   }));
   show("desk-table", rows.length > 0);
   show("desk-empty", rows.length === 0);
@@ -875,7 +1027,6 @@ $("notes-brief").addEventListener("click", () => {
   $("notes-feed").prepend(el("div", { class: "note-card" }, el("div", { class: "note-flag good" }, el("span", { text: "Today's brief" })), el("div", { class: "note-body" }, ...lines.map((l) => el("p", { text: l })))));
 });
 $("desk-people").addEventListener("click", () => openPeople(true));
-$("toggle-side").addEventListener("click", () => document.querySelector(".workspace").classList.toggle("focus"));
 
 // New desk.
 function openNewDesk() { $("desk-new-name").value = "Collections"; setError("desk-error", ""); $("dlg-desk").showModal(); $("desk-new-name").select(); }

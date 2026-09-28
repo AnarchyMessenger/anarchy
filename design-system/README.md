@@ -69,11 +69,18 @@ The states differ in hue *and* in label and icon: lock, building, globe. Never s
 
 Base element styles in `bundle.css` are wrapped in `:where()`, so any component class overrides them without specificity fights.
 
+## Window and navigation
+
+- **Title bar (40px, on the frame):** the window has no system title bar. Window controls at the far left (close, minimise, maximise as 12px dots), the wordmark (mark + "Anarchy", 700) over the rail, and search centred (max 520px, frosted on the frame, `Ctrl K` / `⌘K`). The rest of the bar drags the window; double-click maximises.
+- **Search** covers what the device can decrypt: places (spaces, channels, desks, people), records and messages, grouped, with the match highlighted. The empty state says the server can't search it.
+- **Sidebar (216px, inside the panel):** always there. In a space: the space tile and name, **Overview**, **Desks**, **Channels**. On Home: **Overview**, then **Chats**. Overview is active whenever nothing more specific is open.
+- **One opening per place:** Home, a space's Overview and a desk all start with the same sunken hero and one sentence in ink and `ink-faint`, then cards. Nothing opens on a blank page.
+
 ## Desks
 
 Adapted from the reference designs the desks are based on, fitted to this system:
 
-- **Notes column (300px, left):** a small orb and "Desk notes". Cards for what needs you: a coloured flag row (dot, what, amount in mono: `danger` for late, `public` for waiting, `sealed` for fine), a bold one-line title, one or two lines of plain explanation, then one ink pill button and one underlined link. Plain sentences with chips between cards. The desk's activity underneath, then a rounded composer with a "Today's brief" chip. Always say where the notes come from.
+- **Notes column (280px, between the sidebar and the board):** a small orb and "Desk notes". Cards for what needs you: a coloured flag row (dot, what, amount in mono: `danger` for late, `public` for waiting, `sealed` for fine), a bold one-line title, one or two lines of plain explanation, then one ink pill button and one underlined link. Plain sentences with chips between cards. The desk's activity underneath, then a rounded composer with a "Today's brief" chip. Always say where the notes come from.
 - **Headline sentence:** the board opens with one sentence at 34px that says how the job is going, figures in `ink` and the connecting words in `ink-faint`: "**€11,980** outstanding across **5** invoices." It replaces a row of KPI tiles.
 - **Chart card:** a white card on the sunken hero; one solid ink line for what happened, dashed for what's expected, a dot where today is, month labels in `ink-faint`.
 - **Tabs with counts:** a pill segmented control, count in `ink-faint` after each label.

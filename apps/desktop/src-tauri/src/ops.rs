@@ -666,6 +666,85 @@ pub async fn create_channel(
     Ok(id)
 }
 
+// ---------- search ----------
+
+#[derive(Serialize)]
+pub struct SearchHit {
+    channel: ChannelId,
+    /// `message` or `record`.
+    what: &'static str,
+    seq: u64,
+    ts_ms: u64,
+    /// Who wrote it (messages), or the record's kind (records).
+    by: String,
+    text: String,
+}
+
+/// Searches this device's decrypted history and desk records. Nothing leaves
+/// the computer: the server can't search what it can't read.
+pub async fn search(i: &mut Inner, query: String) -> Result<Vec<SearchHit>, String> {
+    let q = query.trim().to_lowercase();
+    if q.chars().count() < 2 {
+        return Ok(Vec::new());
+    }
+    let me = i.my_device();
+    let mut hits = Vec::new();
+    let channels = i.client()?.device().channels();
+    for channel in channels {
+        let history = i
+            .client()?
+            .device()
+            .messages(channel, 5000)
+            .map_err(|e| e.to_string())?;
+        for m in history.iter().rev() {
+            if let Some(text) = Content::decode(&m.content).text_body()
+                && text.to_lowercase().contains(&q)
+            {
+                let by = if m.sender == me {
+                    "You".to_owned()
+                } else {
+                    sender_name(i, channel, m.sender)
+                };
+                hits.push(SearchHit {
+                    channel,
+                    what: "message",
+                    seq: m.seq,
+                    ts_ms: m.ts_ms,
+                    by,
+                    text: text.to_owned(),
+                });
+            }
+        }
+        for item in i.client()?.desk_items(channel).map_err(err)? {
+            let blob = item.data.to_string().to_lowercase();
+            if blob.contains(&q) {
+                let text = ["number", "customer"]
+                    .iter()
+                    .filter_map(|k| item.data.get(*k).and_then(|v| v.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(" · ");
+                hits.push(SearchHit {
+                    channel,
+                    what: "record",
+                    seq: item.seq,
+                    ts_ms: item.updated_ms,
+                    by: item.kind,
+                    text,
+                });
+            }
+        }
+    }
+    hits.sort_by(|a, b| b.ts_ms.cmp(&a.ts_ms));
+    hits.truncate(40);
+    Ok(hits)
+}
+
+/// Everyone in a space (for its overview page).
+pub async fn space_members(i: &mut Inner, space: SpaceId) -> Result<Vec<PeerView>, String> {
+    let list = i.client()?.directory_in(space).await.map_err(err)?;
+    Ok(list.iter().map(peer_view).collect())
+}
+
 // ---------- desks ----------
 
 pub const DESK_KINDS: [&str; 1] = ["collections"];

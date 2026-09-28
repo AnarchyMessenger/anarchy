@@ -64,6 +64,8 @@ op!(create_space(name: String, kind: SpaceKind) -> anarchy_proto::SpaceSummary);
 op!(join_space(code: String) -> anarchy_proto::SpaceSummary);
 op!(create_space_invite(space: SpaceId, hours: u64, max_uses: u32) -> ops::InviteView);
 op!(start_dm(handle: String) -> ChannelId);
+op!(search(query: String) -> Vec<ops::SearchHit>);
+op!(space_members(space: SpaceId) -> Vec<ops::PeerView>);
 op!(create_desk(space: Option<SpaceId>, name: String, kind: String) -> ChannelId);
 op!(desk_items(channel: ChannelId) -> Vec<anarchy_core::DeskItem>);
 op!(put_items(channel: ChannelId, items: Vec<anarchy_core::ItemRecord>) -> ());
@@ -140,6 +142,8 @@ fn main() {
             join_space,
             create_space_invite,
             start_dm,
+            search,
+            space_members,
             create_desk,
             desk_items,
             put_items,
