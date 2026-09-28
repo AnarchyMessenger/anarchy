@@ -597,6 +597,7 @@ impl Client {
             name: name.to_owned(),
             topic: topic.to_owned(),
             trust,
+            desk: None,
         };
         self.send_content(channel, &info).await?;
         Ok(channel)
@@ -642,14 +643,56 @@ impl Client {
 
     /// The channel's latest name, topic and trust state, from local history.
     pub fn channel_info(&self, channel: ChannelId) -> Result<Option<(String, String, Trust)>, Error> {
+        Ok(self.channel_info_full(channel)?.and_then(|c| match c {
+            Content::ChannelInfo {
+                name, topic, trust, ..
+            } => Some((name, topic, trust)),
+            _ => None,
+        }))
+    }
+
+    /// The latest channel info message, desk kind included.
+    pub fn channel_info_full(&self, channel: ChannelId) -> Result<Option<Content>, Error> {
         let history = self.device.messages(channel, u32::MAX)?;
         Ok(history
             .iter()
             .rev()
-            .find_map(|m| match Content::decode(&m.content) {
-                Content::ChannelInfo { name, topic, trust } => Some((name, topic, trust)),
-                _ => None,
-            }))
+            .map(|m| Content::decode(&m.content))
+            .find(|c| matches!(c, Content::ChannelInfo { .. })))
+    }
+
+    /// The desk kind, if this channel is a desk.
+    pub fn desk_kind(&self, channel: ChannelId) -> Result<Option<String>, Error> {
+        Ok(match self.channel_info_full(channel)? {
+            Some(Content::ChannelInfo { desk, .. }) => desk,
+            _ => None,
+        })
+    }
+
+    /// A desk's records as they stand now.
+    pub fn desk_items(&self, channel: ChannelId) -> Result<Vec<crate::DeskItem>, Error> {
+        let history = self.device.messages(channel, u32::MAX)?;
+        Ok(crate::fold_items(
+            history.iter().map(|m| (m.seq, m.ts_ms, m.content.as_slice())),
+        ))
+    }
+
+    /// Creates a desk: a channel in `space` whose info names the desk kind.
+    pub async fn create_desk(
+        &mut self,
+        space: Option<SpaceId>,
+        name: &str,
+        kind: &str,
+    ) -> Result<ChannelId, Error> {
+        let channel = self.create_channel_in(space).await?;
+        let info = Content::ChannelInfo {
+            name: name.to_owned(),
+            topic: String::new(),
+            trust: Trust::Company,
+            desk: Some(kind.to_owned()),
+        };
+        self.send_content(channel, &info).await?;
+        Ok(channel)
     }
 
     /// Adds every active device of a person to a channel. Devices without key
@@ -675,18 +718,32 @@ impl Client {
     ) -> Result<Vec<DeviceId>, Error> {
         let already: Vec<DeviceId> = self.device.member_devices(channel)?;
         let mut skipped = Vec::new();
+        let mut added = 0;
         for &device in person.devices.iter().filter(|d| !already.contains(d)) {
             match self.add_device(channel, device).await {
-                Ok(()) => {}
+                Ok(()) => added += 1,
                 Err(Error::NoKeyPackage(d)) => skipped.push(d),
                 Err(e) => return Err(e),
             }
         }
         // Newcomers can't read anything from before they joined, the channel's name
-        // included, so say it again in the new epoch.
-        if let Some((name, topic, trust)) = self.channel_info(channel)? {
-            self.send_content(channel, &Content::ChannelInfo { name, topic, trust })
-                .await?;
+        // and a desk's records included, so say them again in the new epoch.
+        if added > 0 {
+            if let Some(info) = self.channel_info_full(channel)? {
+                self.send_content(channel, &info).await?;
+            }
+            let items: Vec<crate::ItemRecord> = self
+                .desk_items(channel)?
+                .into_iter()
+                .map(|i| crate::ItemRecord {
+                    id: i.id,
+                    kind: i.kind,
+                    data: i.data,
+                })
+                .collect();
+            if !items.is_empty() {
+                self.send_content(channel, &Content::Items { items }).await?;
+            }
         }
         Ok(skipped)
     }

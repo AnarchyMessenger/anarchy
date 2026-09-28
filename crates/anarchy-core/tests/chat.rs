@@ -70,6 +70,7 @@ async fn a_named_channel_with_people_and_history() {
                 name: "crit".into(),
                 topic: String::new(),
                 trust: Trust::Sealed,
+                desk: None,
             },
         )
         .await

@@ -233,7 +233,7 @@
   --radius-xl: 12px;
   --radius-pill: 999px;
   --radius-round: 50%;
-  --font-sans: "Schibsted Grotesk Variable", "Schibsted Grotesk", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --font-sans: "Anarchy Sans", "Schibsted Grotesk Variable", "Schibsted Grotesk", system-ui, sans-serif;
+  --font-mono: "Anarchy Mono", "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
   --font-luna: Tahoma, Verdana, "Segoe UI", sans-serif;
 }

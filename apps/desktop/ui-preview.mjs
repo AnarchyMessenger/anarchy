@@ -59,10 +59,35 @@ const mock = (startLocked) => {
       { sender: "Ines Bauer", ts: now - 10 * min, text: "Acme paid the deposit." },
     ] },
     { id: "c3", kind: "channel", space: "sp2", name: "general", topic: "", trust: "company", unread: false, messages: [] },
+    { id: "k1", kind: "channel", space: "sp1", desk: "collections", name: "Collections", topic: "", trust: "company", unread: false, messages: [
+      { sender: "Ines Bauer", ts: now - 3 * 864e5, text: "Added INV-1041: Nordic Outfitters, €5,400." },
+      { sender: "ME", ts: now - 864e5, text: "Marked INV-1038 (Glow Beauty, €940) as paid." },
+      { sender: "Tomás Ruiz", ts: now - 2 * 60 * min, text: "Trendy Terra said the transfer goes out Friday." },
+    ] },
+  ];
+  // Invoices on the Collections desk, dated relative to today.
+  const iso = (days) => { const d = new Date(now + days * 864e5); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+  const inv = (n, customer, email, euros, issuedAgo, terms, status, paidAgo) => ({ id: `i${n}`, kind: "invoice", seq: n, updated_ms: now, data: {
+    number: `INV-${n}`, customer, email, amount: Math.round(euros * 100), currency: "EUR", issued: iso(-issuedAgo), terms, due: iso(terms - issuedAgo), status,
+    ...(paidAgo !== undefined ? { paid_on: iso(-paidAgo) } : {}) } });
+  let items = [
+    inv(1044, "Urban Threads", "ap@urbanthreads.eu", 1200, 3, 30, "sent"),
+    inv(1043, "Glow Beauty Hub", "billing@glowbeauty.com", 940, 5, 30, "paid", 1),
+    inv(1042, "Trendy Terra", "finance@trendyterra.fr", 1650, 32, 30, "sent"),
+    inv(1041, "Nordic Outfitters", "ap@nordic.se", 5400, 6, 90, "sent"),
+    inv(1040, "Ridgewear Retail", "accounts@ridgewear.de", 1250, 36, 30, "sent"),
+    inv(1039, "Hike+Supply Co.", "pay@hikesupply.com", 2480, 7, 60, "sent"),
+    inv(1038, "Urban Threads", "ap@urbanthreads.eu", 3100, 11, 30, "draft"),
+    inv(1037, "Glow Beauty Hub", "billing@glowbeauty.com", 760, 40, 30, "paid", 25),
+    inv(1036, "Atlas Apparel", "hello@atlasapparel.co", 2310, 70, 30, "paid", 44),
+    inv(1035, "Moss & Stone", "office@mossandstone.nl", 1880, 95, 30, "paid", 66),
+    inv(1034, "Lumen Living", "ap@lumenliving.com", 4200, 125, 30, "paid", 92),
+    inv(1033, "Field & Forest", "billing@fieldforest.ie", 1450, 150, 30, "paid", 118),
+    inv(1032, "Saltwater Supply", "ops@saltwater.pt", 990, 176, 30, "paid", 150),
   ];
   const me = () => profile?.display_name || "You";
   const view = (c) => ({
-    id: c.id, kind: c.kind, space: c.space ?? null, peer: c.kind === "dm" ? peer(c.peer) : null,
+    id: c.id, kind: c.kind, space: c.space ?? null, desk: c.desk ?? null, peer: c.kind === "dm" ? peer(c.peer) : null,
     name: c.kind === "dm" ? people[c.peer].display_name : c.name, topic: c.topic ?? "", trust: c.trust ?? "sealed",
     unread: c.unread && c.id !== open, last_ts: c.messages.at(-1)?.ts ?? 0,
     last_text: c.messages.at(-1) ? (c.messages.at(-1).sender === "ME" ? `You: ${c.messages.at(-1).text}` : c.messages.at(-1).text) : null,
@@ -125,6 +150,10 @@ const mock = (startLocked) => {
     blur: async () => { open = null; },
     send_message: async ({ channel, text }) => { await wait(120); channels.find((x) => x.id === channel).messages.push({ sender: "ME", ts: Date.now(), text }); },
     create_channel: async ({ space, name, topic, trust }) => { const id = `c${channels.length + 1}`; channels.push({ id, kind: "channel", space, name: name.trim().toLowerCase().replace(/\s+/g, "-"), topic, trust, unread: false, messages: [] }); return id; },
+    create_desk: async ({ space, name }) => { const id = `k${channels.length + 1}`; channels.push({ id, kind: "channel", space, desk: "collections", name, trust: "company", unread: false, messages: [] }); return id; },
+    desk_items: async ({ channel }) => (channel === "k1" ? items : []),
+    put_items: async ({ items: put }) => { for (const r of put) { const at = items.findIndex((i) => i.id === r.id); const item = { ...r, seq: 99, updated_ms: Date.now() }; if (at >= 0) items[at] = item; else items.unshift(item); } },
+    compose_email: async () => { window.__drafted = (window.__drafted || 0) + 1; },
     sync_all: async () => ({ new_messages: 0, joined: 0, removed: 0 }),
     people: async () => Object.values(people).map((p, i) => ({ user_id: p.user_id, name: p.display_name, handle: handle(p), email: null, is_guest: false, can_be_added: i !== 3, in_channel: i < 2, me: false })),
     channel_members: async () => [{ user_id: "me", name: me(), is_guest: false, me: true }, { user_id: "u2", name: "Tomás Ruiz", is_guest: false, me: false }, { user_id: "u3", name: "Ines Bauer", is_guest: false, me: false }],
@@ -224,6 +253,28 @@ await page.fill("#message", "Deck cover looks great, shipping it to Acme today."
 await page.press("#message", "Enter");
 await page.waitForTimeout(300);
 await shot("13-channel");
+await page.click('#desk-list .side-item >> text="Collections"');
+await visible("#view-desk");
+await page.waitForTimeout(250);
+await shot("13b-desk");
+await page.click('#desk-tabs button >> text="Overdue"');
+await page.click("#check-all");
+await shot("13c-desk-overdue-selected");
+await page.click("#bulk-clear");
+await page.click('#desk-tabs button >> text="All"');
+await page.click("#new-invoice");
+await page.fill("#inv-customer", "Common Goods");
+await page.fill("#inv-email", "ap@commongoods.co");
+await page.fill("#inv-amount", "1840");
+await shot("13d-new-invoice");
+await page.click("#invoice-save");
+await page.waitForTimeout(250);
+await page.click("#notes-brief");
+await shot("13e-desk-after-add");
+await page.click("#toggle-side");
+await page.click("#new-desk");
+await shot("13f-new-desk");
+await page.click("#desk-cancel");
 await page.click("#rail-add");
 await page.fill("#space-new-name", "Family");
 await page.check('input[name=space-kind][value="personal"]');

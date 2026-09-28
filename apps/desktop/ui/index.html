@@ -28,6 +28,17 @@
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
   <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
   <symbol id="i-cursor" viewBox="0 0 24 24"><path d="M5 3l14 7-6 2-2 6z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-desk" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></symbol>
+  <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5 10 17l9-10"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4.5M12 17h.01"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M6 3h3l2 5-2.5 1.5a11 11 0 0 0 5 5L15 12l5 2v3a2 2 0 0 1-2 2A15 15 0 0 1 4 5a2 2 0 0 1 2-2z"/></symbol>
+  <symbol id="i-truck" viewBox="0 0 24 24"><path d="M3 6h11v10H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></symbol>
+  <symbol id="i-cart" viewBox="0 0 24 24"><path d="M3 4h2l2.4 11h10.2L20 8H6.3"/><circle cx="9" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/></symbol>
+  <symbol id="i-lifebuoy" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M6 6l3.5 3.5M18 6l-3.5 3.5M6 18l3.5-3.5M18 18l-3.5-3.5"/></symbol>
+  <symbol id="i-anarchy" viewBox="0 0 24 24"><circle cx="12" cy="12.5" r="8"/><path d="M6.2 21.2 12 3l5.8 18.2M4.4 15h15.2"/></symbol>
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></symbol>
   <symbol id="i-at" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-4 7.5"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
@@ -48,7 +59,7 @@
 
   <section class="lock panel" id="lock" hidden>
     <form class="lock-card" id="lock-form" novalidate>
-      <span class="mark mark-lg" aria-hidden="true">A</span>
+      <span class="mark mark-lg" aria-hidden="true"><svg class="i"><use href="#i-anarchy"/></svg></span>
       <h1>Anarchy is locked</h1>
       <p class="sub">Enter this device's passphrase. It never leaves this computer.</p>
       <input class="text-input" id="lock-pass" type="password" autocomplete="current-password" placeholder="Passphrase" aria-label="Passphrase">
@@ -60,7 +71,7 @@
   <!-- ============ Sign-in and onboarding ============ -->
   <section class="auth" id="auth" hidden>
     <div class="auth-panel panel">
-      <header class="auth-brand"><span class="mark" aria-hidden="true">A</span>Anarchy<span class="steps" id="steps" aria-hidden="true"></span></header>
+      <header class="auth-brand"><span class="mark" aria-hidden="true"><svg class="i"><use href="#i-anarchy"/></svg></span>Anarchy<span class="steps" id="steps" aria-hidden="true"></span></header>
 
       <div class="auth-body">
         <!-- 1. server -->
@@ -221,6 +232,9 @@
         <!-- Space: channels -->
         <div class="side" id="side-space" hidden>
           <header class="side-head"><h2 id="space-name"></h2><button class="icon-btn" id="space-invite" title="Invite people" aria-label="Invite people"><svg class="i"><use href="#i-users"/></svg></button></header>
+          <div class="side-group"><span>Desks</span><button class="icon-btn sm" id="new-desk" aria-label="New desk" title="New desk"><svg class="i"><use href="#i-plus"/></svg></button></div>
+          <div class="side-list" id="desk-list"></div>
+          <button class="side-empty link-row" id="no-desks" type="button">Set up a desk for invoices, requests or jobs</button>
           <div class="side-group"><span>Channels</span><button class="icon-btn sm" id="new-channel" aria-label="New channel" title="New channel"><svg class="i"><use href="#i-plus"/></svg></button></div>
           <div class="side-list" id="channel-list"></div>
           <p class="side-empty" id="no-channels">No channels yet.</p>
@@ -260,6 +274,7 @@
               <button class="start-card" id="start-create" type="button"><svg class="i"><use href="#i-plus"/></svg><strong>Create a space</strong><small id="start-create-sub">Channels, people and later desks, for one purpose.</small></button>
               <button class="start-card" id="start-join" type="button"><svg class="i"><use href="#i-ticket"/></svg><strong>Join with a code</strong><small>Someone sent you an invite code.</small></button>
             </div>
+            <div class="home-spaces" id="home-spaces-wrap" hidden><p class="block-label">Your spaces</p><div class="space-grid" id="home-spaces"></div></div>
             <div class="share-row"><span>Your handle</span><code id="share-handle"></code><button class="btn-outline sm" id="share-copy" type="button"><svg class="i"><use href="#i-copy"/></svg>Copy</button><span class="fine" id="share-policy"></span></div>
           </div>
         </div>
@@ -287,9 +302,45 @@
           <div class="start-inner narrow">
             <p class="eyebrow" id="space-empty-kind">Space</p>
             <h1 id="space-empty-title"></h1>
-            <p class="sub">Channels hold the conversation. Make one for each topic, client or project.</p>
-            <div class="row-actions"><button class="btn-ink inline" id="space-empty-channel" type="button"><svg class="i"><use href="#i-plus"/></svg>New channel</button><button class="btn-outline" id="space-empty-invite" type="button"><svg class="i"><use href="#i-users"/></svg>Invite people</button></div>
+            <p class="sub">Desks hold the work: invoices, requests, jobs. Channels hold the conversation.</p>
+            <div class="row-actions"><button class="btn-ink inline" id="space-empty-desk" type="button"><svg class="i"><use href="#i-desk"/></svg>Set up a desk</button><button class="btn-outline" id="space-empty-channel" type="button"><svg class="i"><use href="#i-plus"/></svg>New channel</button><button class="btn-outline" id="space-empty-invite" type="button"><svg class="i"><use href="#i-users"/></svg>Invite people</button></div>
           </div>
+        </div>
+
+        <!-- Desk -->
+        <div class="view desk" id="view-desk" hidden>
+          <aside class="desk-notes">
+            <header class="notes-head"><button class="icon-btn" id="toggle-side" type="button" title="Show the space's channels" aria-label="Show the space's channels"><svg class="i"><use href="#i-desk"/></svg></button><span class="orb" aria-hidden="true"></span><strong id="notes-title">Desk notes</strong><span class="spacer"></span><span class="fine" id="notes-count"></span></header>
+            <div class="notes-feed" id="notes-feed"></div>
+            <form class="notes-composer" id="notes-composer">
+              <textarea id="notes-input" rows="2" placeholder="Write to everyone on this desk…" aria-label="Write to the desk"></textarea>
+              <div class="notes-bar"><button type="button" class="chip" id="notes-brief"><svg class="i"><use href="#i-sparkle"/></svg>Today's brief</button><span class="spacer"></span><button class="send round" id="notes-send" type="submit" aria-label="Send" disabled><svg class="i"><use href="#i-send"/></svg></button></div>
+            </form>
+          </aside>
+          <section class="desk-board">
+            <div class="desk-hero">
+              <div class="hero-text">
+                <p class="hero-kind" id="desk-kind">Collections</p>
+                <h1 class="hero-line" id="desk-headline"></h1>
+                <div class="row-actions"><button class="btn-ink inline" id="new-invoice" type="button"><svg class="i"><use href="#i-plus"/></svg>New invoice</button><button class="btn-outline inline pill" id="desk-people" type="button"><svg class="i"><use href="#i-users"/></svg><span id="desk-people-count">1</span></button></div>
+              </div>
+              <div class="hero-chart">
+                <div class="chart-head"><span class="fine">Collected per month</span><span class="legend"><i class="solid"></i>Paid <i class="dash"></i>Due</span></div>
+                <div class="chart-total"><strong id="chart-total"></strong><span id="chart-sub"></span></div>
+                <svg id="chart" viewBox="0 0 360 96" preserveAspectRatio="none" aria-hidden="true"></svg>
+                <div class="chart-axis" id="chart-axis"></div>
+              </div>
+            </div>
+            <div class="desk-tools"><div class="seg" id="desk-tabs" role="tablist"></div><span class="spacer"></span><label class="search pill"><svg class="i"><use href="#i-search"/></svg><input id="desk-search" placeholder="Search invoices or customers" aria-label="Search"></label></div>
+            <div class="bulk-bar" id="bulk-bar" hidden><span id="bulk-count"></span><span class="spacer"></span><button type="button" id="bulk-remind"><svg class="i"><use href="#i-mail"/></svg>Draft reminder</button><button type="button" id="bulk-paid"><svg class="i"><use href="#i-check"/></svg>Mark as paid</button><button type="button" id="bulk-copy"><svg class="i"><use href="#i-copy"/></svg>Copy as CSV</button><button type="button" id="bulk-clear" aria-label="Clear selection"><svg class="i"><use href="#i-x"/></svg></button></div>
+            <div class="table-wrap">
+              <table class="grid" id="desk-table">
+                <thead><tr><th class="c-check"><input type="checkbox" id="check-all" aria-label="Select all"></th><th>Invoice</th><th>Customer</th><th>Issued</th><th>Due</th><th class="num">Amount</th><th>Status</th><th>Terms</th></tr></thead>
+                <tbody id="desk-rows"></tbody>
+              </table>
+              <div class="desk-empty" id="desk-empty" hidden><svg class="i"><use href="#i-receipt"/></svg><strong id="desk-empty-title">No invoices yet</strong><p class="fine" id="desk-empty-sub">Create the first one. Everyone on this desk sees it, and nobody else, the server included.</p></div>
+            </div>
+          </section>
         </div>
 
         <!-- Settings pages -->
@@ -424,6 +475,41 @@
     </div>
     <p class="error" id="space-error" hidden></p>
     <div class="modal-actions"><button class="btn-outline" type="button" id="space-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="space-submit">Create space</button></div>
+  </form>
+</dialog>
+
+<dialog class="modal panel wide" id="dlg-desk" aria-labelledby="dlg-desk-title">
+  <form id="desk-form" novalidate>
+    <h2 id="dlg-desk-title">Set up a desk</h2>
+    <p class="fine">A desk is a workspace for one job: the records, the numbers and what needs you, with the conversation beside it. Later you'll describe how you work and Anarchy will draft the desk; for now, start from one of these.</p>
+    <div class="kind-grid" role="radiogroup" aria-label="Kind of desk">
+      <button type="button" class="kind" role="radio" data-kind="collections" aria-checked="true"><svg class="i"><use href="#i-receipt"/></svg><strong>Collections</strong><small>Invoices out, who paid, reminders.</small></button>
+      <button type="button" class="kind" disabled><svg class="i"><use href="#i-phone"/></svg><strong>Front desk</strong><small>Calls, texts, bookings.</small><span class="tag">Needs a phone partner</span></button>
+      <button type="button" class="kind" disabled><svg class="i"><use href="#i-lifebuoy"/></svg><strong>Help desk</strong><small>Questions in, answers from your docs.</small><span class="tag">Needs the Brain</span></button>
+      <button type="button" class="kind" disabled><svg class="i"><use href="#i-truck"/></svg><strong>Dispatch</strong><small>Jobs, crews, schedule changes.</small><span class="tag">Later</span></button>
+      <button type="button" class="kind" disabled><svg class="i"><use href="#i-cart"/></svg><strong>Purchasing</strong><small>Supplier bills and approvals.</small><span class="tag">Later</span></button>
+    </div>
+    <label class="field" for="desk-new-name">Name<input class="text-input" id="desk-new-name" maxlength="64" value="Collections" autocomplete="off"></label>
+    <p class="fine">Desks are Company-trust: still end-to-end encrypted, and ready for the desk agent when it arrives.</p>
+    <p class="error" id="desk-error" hidden></p>
+    <div class="modal-actions"><button class="btn-outline" type="button" id="desk-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="desk-create">Create desk</button></div>
+  </form>
+</dialog>
+
+<dialog class="modal panel" id="dlg-invoice" aria-labelledby="dlg-invoice-title">
+  <form id="invoice-form" novalidate>
+    <h2 id="dlg-invoice-title">New invoice</h2>
+    <div class="form-grid">
+      <label class="field span2" for="inv-customer">Customer<input class="text-input" id="inv-customer" maxlength="80" autocomplete="off" placeholder="Acme Corp"></label>
+      <label class="field span2" for="inv-email">Billing email <span class="optional">· for reminders</span><input class="text-input" id="inv-email" type="email" autocomplete="off" placeholder="billing@acme.com"></label>
+      <label class="field" for="inv-amount">Amount (€)<input class="text-input" id="inv-amount" inputmode="decimal" placeholder="1 200.00"></label>
+      <label class="field" for="inv-number">Number<input class="text-input mono" id="inv-number" maxlength="24"></label>
+      <label class="field" for="inv-issued">Issued<input class="text-input" id="inv-issued" type="date"></label>
+      <label class="field" for="inv-terms">Terms<select class="text-input" id="inv-terms"><option value="0">Due on receipt</option><option value="15">Net 15</option><option value="30" selected>Net 30</option><option value="60">Net 60</option><option value="90">Net 90</option></select></label>
+      <label class="field span2" for="inv-status">Status<select class="text-input" id="inv-status"><option value="draft">Draft</option><option value="sent" selected>Sent</option><option value="paid">Paid</option><option value="void">Void</option></select></label>
+    </div>
+    <p class="error" id="invoice-error" hidden></p>
+    <div class="modal-actions"><button class="btn-outline" type="button" id="invoice-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="invoice-save">Save invoice</button></div>
   </form>
 </dialog>
 

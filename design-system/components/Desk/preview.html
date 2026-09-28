@@ -1,0 +1,21 @@
+<!-- @dsCard group="Desks" height=380 -->
+<style>body{margin:0;padding:16px;background:var(--canvas);font-family:var(--font-sans,system-ui);color:var(--ink);font-size:13px}
+.d{display:grid;grid-template-columns:240px 1fr;border-radius:12px;overflow:hidden;background:var(--surface);box-shadow:0 0 0 1px rgba(26,24,20,.08)}
+.n{padding:12px;background:color-mix(in srgb,var(--surface-sunken) 40%,var(--surface));border-right:1px solid var(--border);display:grid;gap:10px;align-content:start}
+.card{border:1px solid var(--border);border-radius:12px;background:var(--surface);overflow:hidden}
+.flag{display:flex;justify-content:space-between;padding:6px 10px;background:var(--danger-soft);color:var(--danger);font-size:11px;font-weight:600}
+.flag span:last-child{font-family:var(--font-mono,monospace);font-weight:500}
+.body{padding:8px 10px 10px;display:grid;gap:5px}.body strong{font-size:13px}.body p{margin:0;color:var(--ink-muted);font-size:12px}
+.pillb{justify-self:start;padding:5px 11px;border-radius:999px;background:var(--ink);color:var(--surface);font-size:12px;border:0}
+.b{padding:12px}.hero{padding:16px;border-radius:14px;background:var(--surface-sunken)}
+.hl{margin:4px 0 0;font-size:24px;font-weight:640;letter-spacing:-.03em;line-height:1.15}.hl span{color:var(--ink-faint)}
+.tabs{display:inline-flex;gap:2px;margin:12px 0 8px;padding:3px;border-radius:999px;background:var(--surface-sunken)}.tabs b{padding:4px 10px;border-radius:999px;font-weight:560;color:var(--ink-muted)}.tabs b.on{background:var(--surface);color:var(--ink)}.tabs i{font-style:normal;color:var(--ink-faint);margin-left:4px;font-size:11px}
+.bar{display:flex;align-items:center;gap:6px;padding:5px 5px 5px 12px;border-radius:999px;background:var(--ink);color:var(--surface);font-size:12px}.bar span{flex:1}.bar em{font-style:normal;padding:4px 9px;border-radius:999px;background:rgba(255,255,255,.14)}
+table{width:100%;border-collapse:collapse;margin-top:6px}td{padding:8px 6px;border-bottom:1px solid var(--border)}td.m{text-align:right;font-weight:600}.late{color:var(--danger);font-size:11px}
+</style>
+<div class="d"><div class="n"><div class="card"><div class="flag"><span>● 2 overdue</span><span>€2,900</span></div><div class="body"><strong>2 invoices slipped past due</strong><p>Ridgewear Retail (6 days) and Trendy Terra (2 days).</p><button class="pillb">Draft reminders</button></div></div><p style="margin:0">€1,200 is due in the next 30 days, from 1 invoice.</p></div>
+<div class="b"><div class="hero"><span style="color:var(--ink-muted);font-size:12px">Collections</span><p class="hl">€11,980 <span>outstanding across</span> 5 <span>invoices.</span></p></div>
+<div class="tabs"><b class="on">All<i>13</i></b><b>Open<i>3</i></b><b>Overdue<i>2</i></b><b>Paid<i>7</i></b></div>
+<div class="bar"><span>2 selected · €2,900 total</span><em>Draft reminder</em><em>Mark as paid</em></div>
+<table><tr><td>INV-1042</td><td>Trendy Terra</td><td>Sep 26 <span class="late">2 days overdue</span></td><td class="m">€1,650</td></tr><tr><td>INV-1040</td><td>Ridgewear Retail</td><td>Sep 22 <span class="late">6 days overdue</span></td><td class="m">€1,250</td></tr></table></div></div>
+<script>/* static */</script>

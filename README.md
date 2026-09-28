@@ -24,6 +24,10 @@ Sign up with Google, email or anonymously, then say what it's for, lock the devi
 |---|---|
 | ![Home](docs/screens/home.png) | ![DM](docs/screens/dm.png) |
 
+| Desk (Collections) | Desk, bulk actions |
+|---|---|
+| ![Collections desk](docs/screens/desk.png) | ![Bulk actions](docs/screens/desk-bulk.png) |
+
 | A space's channel | Privacy |
 |---|---|
 | ![Channel in a space](docs/screens/space-channel.png) | ![Privacy settings](docs/screens/privacy.png) |
@@ -35,6 +39,10 @@ Sign up with Google, email or anonymously, then say what it's for, lock the devi
 These are rendered by `apps/desktop/ui-preview.mjs` with a mocked backend. The one below is the real app: a DM from an anonymous account arriving by handle, against a real server, taken under Xvfb.
 
 ![Real app](docs/screens/real-app-dm-received.png)
+
+The real app again, a Collections desk after a restart and unlock. The server's database holds none of the customer names, amounts or the desk's name in the clear.
+
+![Real app, desk](docs/screens/real-app-desk.png)
 
 ## Repository layout
 

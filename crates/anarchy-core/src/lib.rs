@@ -9,7 +9,7 @@ pub mod device;
 pub mod oidc;
 
 pub use client::{Client, Delivered};
-pub use content::{Content, Trust};
+pub use content::{Content, DeskItem, ItemRecord, Trust, fold_items};
 pub use device::{Device, Incoming, PendingCommit, StoredMessage};
 
 use anarchy_proto::{ChannelId, DeviceId};

@@ -425,14 +425,16 @@ function go(which) {
   show("side-foot", which !== "settings");
   renderRail();
   if (which === "settings") {
-    for (const v of ["view-start", "view-convo", "view-space-empty"]) show(v, false);
+    hideMain();
     show("view-settings");
     invoke("blur");
     settingsPage("profile");
     return;
   }
   show("view-settings", false);
+  show("view-desk", false);
   renderSide();
+  renderHomeSpaces();
   const inView = current && channels.find((c) => c.id === current && belongsHere(c));
   if (inView) openChannel(current);
   else { current = null; invoke("blur"); showStart(); }
@@ -440,8 +442,12 @@ function go(which) {
 function belongsHere(c) {
   return view === "home" ? c.kind === "dm" : view === "space" && c.kind === "channel" && c.space === currentSpace?.id;
 }
+function hideMain() {
+  for (const v of ["view-start", "view-convo", "view-space-empty", "view-desk", "view-settings"]) show(v, false);
+  document.querySelector(".workspace").classList.remove("focus");
+}
 function showStart() {
-  show("view-convo", false);
+  hideMain();
   show("view-start", view === "home");
   show("view-space-empty", view === "space");
   if (view === "space") {
@@ -466,6 +472,7 @@ $("share-copy").addEventListener("click", () => copy(`@${handleOf(profile)}`, $(
 async function refreshChannels() {
   channels = await invoke("list_channels");
   renderSide();
+  renderHomeSpaces();
   const dmUnread = channels.some((c) => c.kind === "dm" && c.unread && c.id !== current);
   show("home-dot", dmUnread);
 }
@@ -480,7 +487,11 @@ function renderSide() {
   }));
   show("no-dms", dms.length === 0);
   if (view === "space" && currentSpace) {
-    const list = channels.filter((c) => c.kind === "channel" && c.space === currentSpace.id);
+    const desks = channels.filter((c) => c.kind === "channel" && c.space === currentSpace.id && c.desk);
+    $("desk-list").replaceChildren(...desks.map((c) => el("button", { class: `side-item${c.id === current ? " active" : ""}`, "data-id": c.id, onclick: () => openChannel(c.id) },
+      el("span", { class: "kind-icon" }, icon("receipt")), el("span", { class: "name", text: c.name }))));
+    show("no-desks", desks.length === 0);
+    const list = channels.filter((c) => c.kind === "channel" && c.space === currentSpace.id && !c.desk);
     $("channel-list").replaceChildren(...list.map((c) => {
       const unread = c.unread && c.id !== current;
       return el("button", { class: `side-item${c.id === current ? " active" : ""}${unread ? " unread" : ""}`, "data-id": c.id, onclick: () => openChannel(c.id).then(() => composer.focus()) },
@@ -496,7 +507,8 @@ async function openChannel(id) {
   const c = channels.find((x) => x.id === id);
   if (!c) return;
   current = id;
-  show("view-start", false); show("view-space-empty", false); show("view-convo");
+  if (c.desk) return openDesk(c);
+  hideMain(); show("view-convo");
   const dm = c.kind === "dm";
   show("convo-avatar", dm);
   if (dm) fillAvatar($("convo-avatar"), c.name, c.peer?.color, c.peer?.avatar);
@@ -557,6 +569,330 @@ $("composer").addEventListener("submit", async (e) => {
   try { await invoke("send_message", { channel: current, text }); }
   catch (err) { composer.value = text; fitComposer(); $("transcript").append(el("p", { class: "error", text: `Not sent: ${err}` })); }
   openChannel(current);
+});
+
+// Home: spaces overview
+
+function renderHomeSpaces() {
+  show("home-spaces-wrap", spaces.length > 0);
+  $("home-spaces").replaceChildren(...spaces.map((sp) => {
+    const desks = channels.filter((c) => c.space === sp.id && c.desk).length;
+    const chans = channels.filter((c) => c.space === sp.id && c.kind === "channel" && !c.desk).length;
+    const bits = [`${sp.members} ${sp.members === 1 ? "member" : "members"}`, desks ? `${desks} ${desks === 1 ? "desk" : "desks"}` : null, chans ? `${chans} ${chans === 1 ? "channel" : "channels"}` : null].filter(Boolean);
+    return el("button", { class: "space-card", type: "button", onclick: () => openSpace(sp) },
+      el("span", { class: "tile", "data-color": colorFor(sp.id), text: initials(sp.name) }),
+      el("span", {}, el("strong", { text: sp.name }), el("small", { text: bits.join(" · ") })));
+  }));
+}
+
+// ---------- desks ----------
+
+const money = (cents) => new Intl.NumberFormat(undefined, { style: "currency", currency: "EUR", maximumFractionDigits: cents % 100 ? 2 : 0 }).format(cents / 100);
+const moneyShort = (cents) => new Intl.NumberFormat(undefined, { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(Math.round(cents / 100));
+const dateFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
+const shortDate = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+const monthName = new Intl.DateTimeFormat(undefined, { month: "short" });
+function isoToday() { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); }
+function addDays(iso, n) { const d = new Date(`${iso}T12:00:00`); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+function daysBetween(a, b) { return Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 864e5); }
+function asDate(iso) { return new Date(`${iso}T12:00:00`); }
+
+let desk = null; // { channel, items, messages, tab, query, selected:Set }
+
+// Paid, void and draft are what people set; "overdue" and "open" follow from the due date.
+function invoiceState(inv, today) {
+  if (inv.status === "paid" || inv.status === "void" || inv.status === "draft") return inv.status;
+  return inv.due < today ? "overdue" : "open";
+}
+function invoices() {
+  const today = isoToday();
+  return desk.items.filter((i) => i.kind === "invoice").map((i) => ({ ...i.data, id: i.id, updated_ms: i.updated_ms, state: invoiceState(i.data, today) }))
+    .sort((a, b) => (b.issued || "").localeCompare(a.issued || "") || (b.number || "").localeCompare(a.number || ""));
+}
+
+async function openDesk(c) {
+  hideMain(); show("view-desk");
+  document.querySelector(".workspace").classList.add("focus");
+  for (const b of document.querySelectorAll(".side-item[data-id]")) b.classList.toggle("active", b.dataset.id === c.id);
+  const fresh = !desk || desk.channel !== c.id;
+  if (fresh) desk = { channel: c.id, name: c.name, items: [], messages: [], tab: "all", query: "", selected: new Set() };
+  const [items, messages] = await Promise.all([invoke("desk_items", { channel: c.id }), invoke("open_channel", { channel: c.id })]);
+  desk.items = items; desk.messages = messages;
+  invoke("channel_members", { channel: c.id }).then((m) => { $("desk-people-count").textContent = String(m.length); });
+  if (fresh) $("desk-search").value = "";
+  $("desk-kind").textContent = c.name;
+  renderDesk();
+  refreshChannels();
+}
+
+function renderDesk() {
+  const all = invoices();
+  const outstanding = all.filter((i) => i.state === "open" || i.state === "overdue");
+  const owed = outstanding.reduce((n, i) => n + i.amount, 0);
+  const h = $("desk-headline");
+  if (!all.length) h.replaceChildren("Nothing billed ", el("span", { class: "soft", text: "yet." }));
+  else if (!outstanding.length) h.replaceChildren("Nothing outstanding. ", el("span", { class: "soft", text: `${all.filter((i) => i.state === "paid").length} invoices paid.` }));
+  else h.replaceChildren(`${money(owed)} `, el("span", { class: "soft", text: "outstanding across " }), `${outstanding.length} ${outstanding.length === 1 ? "invoice" : "invoices"}.`);
+  renderChart(all);
+  const counts = { all: all.length, open: all.filter((i) => i.state === "open").length, overdue: all.filter((i) => i.state === "overdue").length, paid: all.filter((i) => i.state === "paid").length, draft: all.filter((i) => i.state === "draft").length };
+  const labels = { all: "All", open: "Open", overdue: "Overdue", paid: "Paid", draft: "Drafts" };
+  $("desk-tabs").replaceChildren(...Object.keys(labels).map((k) => el("button", { type: "button", role: "tab", "aria-selected": String(desk.tab === k), onclick: () => { desk.tab = k; renderDesk(); } }, labels[k], el("span", { class: "n", text: String(counts[k]) }))));
+  const q = desk.query.toLowerCase();
+  const rows = all.filter((i) => (desk.tab === "all" ? i.state !== "void" : i.state === desk.tab)).filter((i) => !q || `${i.number} ${i.customer}`.toLowerCase().includes(q));
+  const today = isoToday();
+  const stIcon = { paid: "check", overdue: "alert", open: "clock", draft: "pen", void: "x" };
+  const stLabel = { paid: "Paid", overdue: "Overdue", open: "Unpaid", draft: "Draft", void: "Void" };
+  $("desk-rows").replaceChildren(...rows.map((i) => {
+    const d = daysBetween(today, i.due);
+    const dueNote = i.state === "overdue" ? el("small", { class: "late", text: `${-d} ${-d === 1 ? "day" : "days"} overdue` })
+      : i.state === "open" ? el("small", { text: d === 0 ? "today" : `in ${d} ${d === 1 ? "day" : "days"}` }) : null;
+    const check = el("input", { type: "checkbox", "aria-label": `Select ${i.number}`, checked: desk.selected.has(i.id), onclick: (e) => e.stopPropagation(), onchange: (e) => { e.target.checked ? desk.selected.add(i.id) : desk.selected.delete(i.id); renderBulk(); e.target.closest("tr").classList.toggle("selected", e.target.checked); } });
+    return el("tr", { class: desk.selected.has(i.id) ? "selected" : "", onclick: () => openInvoice(i) },
+      el("td", { class: "c-check" }, check),
+      el("td", { class: "inv", text: i.number }),
+      el("td", {}, el("span", { class: "who" }, el("span", { class: "tile", text: initials(i.customer) }), i.customer)),
+      el("td", { text: i.issued ? dateFmt.format(asDate(i.issued)) : "" }),
+      el("td", { class: "due" }, i.due ? shortDate.format(asDate(i.due)) : "", dueNote),
+      el("td", { class: "num", text: money(i.amount) }),
+      el("td", {}, el("span", { class: `st ${i.state}` }, icon(stIcon[i.state]), stLabel[i.state])),
+      el("td", { text: i.terms ? `Net ${i.terms}` : "On receipt" }));
+  }));
+  show("desk-table", rows.length > 0);
+  show("desk-empty", rows.length === 0);
+  $("desk-empty-title").textContent = all.length ? "Nothing here" : "No invoices yet";
+  $("desk-empty-sub").textContent = all.length ? "No invoices match this view." : "Create the first one. Everyone on this desk sees it, and nobody else, the server included.";
+  $("check-all").checked = rows.length > 0 && rows.every((i) => desk.selected.has(i.id));
+  renderBulk();
+  renderNotes(all);
+}
+
+function renderBulk() {
+  const sel = invoices().filter((i) => desk.selected.has(i.id));
+  show("bulk-bar", sel.length > 0);
+  $("bulk-count").replaceChildren(`${sel.length} selected`, el("small", { text: `· ${money(sel.reduce((n, i) => n + i.amount, 0))} total` }));
+}
+
+// Paid per month (solid) for the last six months, then what's due (dashed) for the next three.
+function renderChart(all) {
+  const now = new Date();
+  const months = [];
+  for (let k = -5; k <= 3; k++) months.push(new Date(now.getFullYear(), now.getMonth() + k, 1));
+  const key = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const paid = months.map((m) => all.filter((i) => i.state === "paid" && (i.paid_on || i.due || "").startsWith(key(m))).reduce((n, i) => n + i.amount, 0));
+  const due = months.map((m, k) => (k < 5 ? null : all.filter((i) => (i.state === "open" || i.state === "overdue") && (k === 5 ? i.due <= `${key(m)}-31` : i.due.startsWith(key(m)))).reduce((n, i) => n + i.amount, 0)));
+  const max = Math.max(1, ...paid, ...due.filter((v) => v !== null));
+  const x = (k) => 10 + (k * 340) / 8;
+  const y = (v) => 86 - (v / max) * 72;
+  const solid = paid.slice(0, 6).map((v, k) => `${k ? "L" : "M"}${x(k)},${y(v)}`).join(" ");
+  const dashed = [5, 6, 7, 8].map((k, j) => `${j ? "L" : "M"}${x(k)},${y(k === 5 ? paid[5] + due[5] : due[k])}`).join(" ");
+  const area = `${solid} L${x(5)},90 L${x(0)},90 Z`;
+  const svg = $("chart");
+  const ns = "http://www.w3.org/2000/svg";
+  const path = (d, attrs) => { const p = document.createElementNS(ns, "path"); p.setAttribute("d", d); for (const [k, v] of Object.entries(attrs)) p.setAttribute(k, v); return p; };
+  const grad = document.createElementNS(ns, "defs");
+  grad.innerHTML = '<linearGradient id="fillg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".14"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient>';
+  const dot = document.createElementNS(ns, "circle");
+  dot.setAttribute("cx", x(5)); dot.setAttribute("cy", y(paid[5])); dot.setAttribute("r", 3); dot.setAttribute("fill", "currentColor");
+  svg.replaceChildren(grad, path(area, { fill: "url(#fillg)", stroke: "none" }), path(solid, { fill: "none", stroke: "currentColor", "stroke-width": 2, "vector-effect": "non-scaling-stroke" }),
+    path(dashed, { fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-dasharray": "4 4", "vector-effect": "non-scaling-stroke", opacity: .7 }), dot);
+  svg.style.color = "var(--ink)";
+  $("chart-axis").replaceChildren(...months.map((m) => el("span", { text: monthName.format(m) })));
+  const thisMonth = paid[5], lastMonth = paid[4];
+  $("chart-total").textContent = money(paid.slice(0, 6).reduce((a, b) => a + b, 0));
+  $("chart-sub").textContent = thisMonth ? `${money(thisMonth)} this month` : "";
+  $("chart-sub").style.color = thisMonth >= lastMonth ? "var(--sealed)" : "var(--ink-muted)";
+}
+
+// Desk notes: worked out on this device from the records. The desk agent will
+// write these (and act on them) once the Company Brain exists; until then they're
+// plain rules, and they say so.
+function renderNotes(all) {
+  const today = isoToday();
+  const cards = [];
+  const overdue = all.filter((i) => i.state === "overdue").sort((a, b) => a.due.localeCompare(b.due));
+  const soon = all.filter((i) => i.state === "open" && daysBetween(today, i.due) <= 30);
+  const drafts = all.filter((i) => i.state === "draft");
+  const meta = (label) => el("div", { class: "note-meta" }, el("span", { class: "orb" }), `${label} · ${timeFmt.format(Date.now())}`);
+  if (overdue.length) {
+    const names = overdue.slice(0, 2).map((i) => `${i.customer} (${-daysBetween(today, i.due)} ${-daysBetween(today, i.due) === 1 ? "day" : "days"})`);
+    const more = overdue.length > 2 ? ` and ${overdue.length - 2} more` : "";
+    const reminded = overdue.filter((i) => i.reminded_on).length;
+    cards.push(el("div", {}, meta("Collections"), el("div", { class: "note-card" },
+      el("div", { class: "note-flag bad" }, el("span", { text: `${overdue.length} overdue` }), el("span", { class: "amt", text: money(overdue.reduce((n, i) => n + i.amount, 0)) })),
+      el("div", { class: "note-body" },
+        el("strong", { text: overdue.length === 1 ? `${overdue[0].number} slipped past due` : `${overdue.length} invoices slipped past due` }),
+        el("p", { text: `${names.join(" and ")}${more}.${reminded ? ` ${reminded} already had a reminder.` : ""}` }),
+        el("div", { class: "note-actions" }, el("button", { class: "btn-ink", type: "button", text: "Draft reminders", onclick: () => { selectOnly(overdue); remindSelected(); } }),
+          el("button", { class: "link", type: "button", text: "Show them", onclick: () => { desk.tab = "overdue"; selectOnly(overdue); } }))))));
+  }
+  if (soon.length) {
+    const sum = soon.reduce((n, i) => n + i.amount, 0);
+    cards.push(el("div", {}, el("p", { class: "note-text", text: `${money(sum)} is due in the next 30 days, from ${soon.length} ${soon.length === 1 ? "invoice" : "invoices"}.` }),
+      el("div", { class: "chips" }, el("button", { class: "chip", type: "button", text: "Show them", onclick: () => { desk.tab = "open"; renderDesk(); } }),
+        el("button", { class: "chip", type: "button", text: "Copy aging report", onclick: (e) => copy(agingCsv(all), e.target) }))));
+  }
+  if (drafts.length) {
+    cards.push(el("div", { class: "note-card" }, el("div", { class: "note-flag warn" }, el("span", { text: `${drafts.length} ${drafts.length === 1 ? "draft" : "drafts"}` }), el("span", { class: "amt", text: money(drafts.reduce((n, i) => n + i.amount, 0)) })),
+      el("div", { class: "note-body" }, el("strong", { text: "Not sent yet" }), el("p", { text: "Drafts don't count as outstanding until you mark them sent." }),
+        el("div", { class: "note-actions" }, el("button", { class: "btn-ink", type: "button", text: "Review", onclick: () => { desk.tab = "draft"; renderDesk(); } })))));
+  }
+  if (all.length && !overdue.length && !drafts.length) {
+    cards.push(el("div", { class: "note-card" }, el("div", { class: "note-flag good" }, el("span", { text: "All caught up" })), el("div", { class: "note-body" }, el("p", { text: "Nothing is overdue and nothing is waiting to be sent." }))));
+  }
+  if (!all.length) cards.push(el("p", { class: "note-text", text: "Add invoices and this column tells you what needs you: what's late, what's due, what's still a draft." }));
+  cards.push(el("p", { class: "fine", text: "These notes are worked out on this device from the desk's records. The desk agent comes with the Company Brain." }));
+  // The desk's conversation and its log of who did what.
+  const acts = desk.messages.slice(-30).map((m) => el("div", { class: "act" }, avatarEl(m.sender, m.mine ? { color: profile?.color, avatar: profile?.avatar, size: "sm" } : { size: "sm" }),
+    el("div", {}, el("strong", { text: m.sender }), el("time", { text: timeFmt.format(m.ts_ms) }), el("p", { text: m.text }))));
+  if (acts.length) cards.push(el("div", { class: "activity" }, el("p", { class: "block-label", text: "Activity" }), ...acts));
+  $("notes-feed").replaceChildren(...cards);
+  $("notes-count").textContent = overdue.length ? `${overdue.length} need you` : "";
+}
+
+function selectOnly(list) { desk.selected = new Set(list.map((i) => i.id)); renderDesk(); }
+function csvCell(v) { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }
+function toCsv(list) {
+  const head = ["Number", "Customer", "Email", "Issued", "Due", "Amount (EUR)", "Status"];
+  return [head, ...list.map((i) => [i.number, i.customer, i.email, i.issued, i.due, (i.amount / 100).toFixed(2), i.state])].map((r) => r.map(csvCell).join(",")).join("\n");
+}
+function agingCsv(all) {
+  const today = isoToday();
+  const open = all.filter((i) => i.state === "open" || i.state === "overdue");
+  const bucket = (i) => { const late = -daysBetween(today, i.due); return late <= 0 ? "Current" : late <= 30 ? "1-30" : late <= 60 ? "31-60" : "60+"; };
+  return [["Customer", "Number", "Due", "Bucket", "Amount (EUR)"], ...open.map((i) => [i.customer, i.number, i.due, bucket(i), (i.amount / 100).toFixed(2)])].map((r) => r.map(csvCell).join(",")).join("\n");
+}
+
+async function putInvoices(list) {
+  await invoke("put_items", { channel: desk.channel, items: list.map(({ id, state, updated_ms, ...data }) => ({ id, kind: "invoice", data })) });
+}
+async function logActivity(text) { try { await invoke("send_message", { channel: desk.channel, text }); } catch (e) { console.warn(e); } }
+
+$("desk-search").addEventListener("input", () => { desk.query = $("desk-search").value; renderDesk(); });
+$("check-all").addEventListener("change", () => {
+  const today = isoToday();
+  const visible = invoices().filter((i) => (desk.tab === "all" ? i.state !== "void" : i.state === desk.tab));
+  if ($("check-all").checked) visible.forEach((i) => desk.selected.add(i.id)); else visible.forEach((i) => desk.selected.delete(i.id));
+  void today;
+  renderDesk();
+});
+$("bulk-clear").addEventListener("click", () => { desk.selected.clear(); renderDesk(); });
+$("bulk-copy").addEventListener("click", (e) => copy(toCsv(invoices().filter((i) => desk.selected.has(i.id))), e.currentTarget));
+$("bulk-paid").addEventListener("click", async () => {
+  const today = isoToday();
+  const sel = invoices().filter((i) => desk.selected.has(i.id) && i.state !== "paid");
+  if (!sel.length) return;
+  await putInvoices(sel.map((i) => ({ ...i, status: "paid", paid_on: today })));
+  await logActivity(sel.length === 1 ? `Marked ${sel[0].number} (${sel[0].customer}, ${money(sel[0].amount)}) as paid.` : `Marked ${sel.length} invoices as paid: ${sel.map((i) => i.number).join(", ")}.`);
+  desk.selected.clear();
+  openChannel(desk.channel);
+});
+$("bulk-remind").addEventListener("click", remindSelected);
+// Drafts one email per invoice in the person's mail app (at most five at once).
+async function remindSelected() {
+  const today = isoToday();
+  const sel = invoices().filter((i) => desk.selected.has(i.id) && (i.state === "open" || i.state === "overdue"));
+  const withEmail = sel.filter((i) => i.email).slice(0, 5);
+  if (!withEmail.length) { alert(sel.length ? "Add a billing email to these invoices first." : "Pick unpaid invoices to remind."); return; }
+  const me = profile?.display_name || "";
+  for (const i of withEmail) {
+    const late = -daysBetween(today, i.due);
+    const body = `Hello,\n\nA reminder that invoice ${i.number} for ${money(i.amount)} ${late > 0 ? `was due on ${dateFmt.format(asDate(i.due))} (${late} ${late === 1 ? "day" : "days"} ago)` : `is due on ${dateFmt.format(asDate(i.due))}`}. If it's already on its way, thank you and please ignore this.\n\nBest,\n${me}`;
+    try { await invoke("compose_email", { to: i.email, subject: `Invoice ${i.number}${late > 0 ? " is overdue" : " reminder"}`, body }); }
+    catch (err) { alert(String(err)); return; }
+  }
+  await putInvoices(withEmail.map((i) => ({ ...i, reminded_on: today })));
+  await logActivity(`Drafted ${withEmail.length === 1 ? "a reminder" : `${withEmail.length} reminders`} in my mail app: ${withEmail.map((i) => `${i.number} to ${i.customer}`).join(", ")}.`);
+  openChannel(desk.channel);
+}
+
+// New or edited invoice.
+let editing = null;
+function openInvoice(inv) {
+  editing = inv || null;
+  const all = invoices();
+  const next = Math.max(1000, ...all.map((i) => parseInt(String(i.number).replace(/\D/g, ""), 10) || 0)) + 1;
+  $("dlg-invoice-title").textContent = inv ? `Invoice ${inv.number}` : "New invoice";
+  $("inv-customer").value = inv?.customer || "";
+  $("inv-email").value = inv?.email || "";
+  $("inv-amount").value = inv ? (inv.amount / 100).toFixed(2) : "";
+  $("inv-number").value = inv?.number || `INV-${next}`;
+  $("inv-issued").value = inv?.issued || isoToday();
+  $("inv-terms").value = String(inv?.terms ?? 30);
+  $("inv-status").value = inv?.status || "sent";
+  $("invoice-save").textContent = inv ? "Save changes" : "Save invoice";
+  setError("invoice-error", "");
+  $("dlg-invoice").showModal();
+  $("inv-customer").focus();
+}
+$("new-invoice").addEventListener("click", () => openInvoice(null));
+$("invoice-cancel").addEventListener("click", () => $("dlg-invoice").close());
+$("invoice-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const customer = $("inv-customer").value.trim();
+  const amount = Math.round(parseFloat($("inv-amount").value.replace(/\s/g, "").replace(",", ".")) * 100);
+  const email = $("inv-email").value.trim();
+  if (!customer) return setError("invoice-error", "Who's it for?");
+  if (!Number.isFinite(amount) || amount <= 0) return setError("invoice-error", "Enter an amount, like 1200 or 1200.50.");
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return setError("invoice-error", "That email doesn't look right.");
+  const issued = $("inv-issued").value || isoToday();
+  const terms = Number($("inv-terms").value);
+  const status = $("inv-status").value;
+  const inv = {
+    ...(editing || {}), id: editing?.id || crypto.randomUUID(), number: $("inv-number").value.trim() || `INV-${Date.now() % 100000}`,
+    customer, email, amount, currency: "EUR", issued, terms, due: addDays(issued, terms), status,
+    paid_on: status === "paid" ? (editing?.paid_on || isoToday()) : undefined,
+  };
+  await busy($("invoice-save"), "Saving…", async () => {
+    try {
+      await putInvoices([inv]);
+      const verb = !editing ? "Added" : editing.status !== status ? `Set ${status === "sent" ? "as sent" : `to ${status}`}` : "Updated";
+      await logActivity(`${verb} ${inv.number}: ${customer}, ${money(amount)}.`);
+      $("dlg-invoice").close();
+      openChannel(desk.channel);
+    } catch (err) { setError("invoice-error", String(err)); }
+  });
+});
+
+$("notes-input").addEventListener("input", () => { $("notes-send").disabled = !$("notes-input").value.trim(); });
+$("notes-input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("notes-composer").requestSubmit(); } });
+$("notes-composer").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("notes-input").value.trim();
+  if (!text) return;
+  $("notes-input").value = ""; $("notes-send").disabled = true;
+  await logActivity(text);
+  openChannel(desk.channel);
+});
+$("notes-brief").addEventListener("click", () => {
+  const all = invoices();
+  const paidMonth = all.filter((i) => i.state === "paid" && (i.paid_on || "").slice(0, 7) === isoToday().slice(0, 7));
+  const open = all.filter((i) => i.state === "open" || i.state === "overdue");
+  const lines = [
+    `${money(open.reduce((n, i) => n + i.amount, 0))} outstanding on ${open.length} ${open.length === 1 ? "invoice" : "invoices"}.`,
+    `${money(paidMonth.reduce((n, i) => n + i.amount, 0))} collected this month.`,
+    (() => { const o = all.filter((i) => i.state === "overdue").length, d = all.filter((i) => i.state === "draft").length; return `${o} overdue, ${d} ${d === 1 ? "draft" : "drafts"}.`; })(),
+  ];
+  $("notes-feed").prepend(el("div", { class: "note-card" }, el("div", { class: "note-flag good" }, el("span", { text: "Today's brief" })), el("div", { class: "note-body" }, ...lines.map((l) => el("p", { text: l })))));
+});
+$("desk-people").addEventListener("click", () => openPeople(true));
+$("toggle-side").addEventListener("click", () => document.querySelector(".workspace").classList.toggle("focus"));
+
+// New desk.
+function openNewDesk() { $("desk-new-name").value = "Collections"; setError("desk-error", ""); $("dlg-desk").showModal(); $("desk-new-name").select(); }
+$("new-desk").addEventListener("click", openNewDesk);
+$("no-desks").addEventListener("click", openNewDesk);
+$("space-empty-desk").addEventListener("click", openNewDesk);
+$("desk-cancel").addEventListener("click", () => $("dlg-desk").close());
+$("desk-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await busy($("desk-create"), "Creating…", async () => {
+    try {
+      const id = await invoke("create_desk", { space: currentSpace?.id ?? null, name: $("desk-new-name").value, kind: "collections" });
+      $("dlg-desk").close();
+      await refreshChannels();
+      await openChannel(id);
+    } catch (err) { setError("desk-error", String(err)); }
+  });
 });
 
 // Direct messages
@@ -736,7 +1072,7 @@ function startPolling() {
       const r = await invoke("sync_all");
       if (r.new_messages || r.joined || r.removed) {
         await refreshChannels();
-        if (current && !$("view-convo").hidden) await openChannel(current);
+        if (current && (!$("view-convo").hidden || !$("view-desk").hidden)) await openChannel(current);
       }
     } catch (err) {
       if (/signed out|sign in required/i.test(String(err))) { status = await invoke("status"); if (!status.session) showAuth(); }

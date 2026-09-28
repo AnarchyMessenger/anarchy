@@ -1,6 +1,7 @@
 # Desks plan: purpose-built workspaces that AI builds from how you work
 
-> Status: design, not scheduled. It needs agents, the Company MCP and
+> Status: step 1 built (a hand-configured Collections desk, see "What exists
+> now"). Everything agent-driven still needs agents, the Company MCP and
 > approvals (ROADMAP phase 4). Replaces the agent sections of SOLO-PLAN.md;
 > Solo becomes "a space with desks and one human".
 
@@ -104,10 +105,37 @@ the target is trades, where the front desk wins.
 - A desk's agent reads its channel in plaintext on the org's infrastructure, so
   desks are Company-trust spaces, never Sealed ones.
 
+## What exists now (step 1)
+
+- **Storage:** a desk is a channel in a space whose encrypted channel info
+  names its kind (`"desk": "collections"`). Records are `item` messages
+  (`{"t":"item","id","kind","data"}`), folded in order, latest write wins; a
+  bulk change is one `items` message. The server sees ciphertext only.
+- **Newcomers:** MLS doesn't let someone added later read earlier messages, so
+  adding a person to a desk re-shares its current state (one `items` snapshot)
+  in the new epoch. History of *changes* before they joined stays unreadable to
+  them, by design.
+- **Collections desk** (the first kind), laid out from the reference designs:
+  - *Notes column* on the left, in place of the space sidebar (which a button
+    brings back): cards for what needs you (overdue, due in 30 days, drafts
+    not sent), each with one primary action; below them the desk's activity,
+    which is its channel: every change is logged there as a message, and
+    people talk there too. The notes are rules computed on the device, and
+    the column says so. The desk agent will write them once the Brain exists.
+  - *Board:* a sentence that says how the job is going ("€11,980 outstanding
+    across 5 invoices."), paid-per-month with what's due dashed, status tabs
+    with counts, search, a table, and a black bar for bulk actions.
+- **Actions:** new or edit invoice; mark as paid; copy as CSV; aging report.
+  *Draft reminder* opens one email per invoice in the person's own mail app,
+  prefilled; Anarchy doesn't send mail for desks yet (that's the desk inbox),
+  so the button says "Draft", not "Send".
+- **Other kinds** (front desk, help desk, dispatch, purchasing) are shown in
+  "Set up a desk" as not available yet, each with what it's waiting for.
+
 ## Build order
 
-1. Item content type and a desk view with three blocks (queue, item detail,
-   activity), hand-configured. Proves desks on encrypted channels.
+1. ~~Item content type and a desk view, hand-configured. Proves desks on
+   encrypted channels.~~ Done: Collections.
 2. Workflow as a list, compiled to that desk.
 3. The agent interview that drafts the workflow; override → proposed change.
 4. The first real desk (collections or front desk) with its partner.

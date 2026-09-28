@@ -69,6 +69,18 @@ The states differ in hue *and* in label and icon: lock, building, globe. Never s
 
 Base element styles in `bundle.css` are wrapped in `:where()`, so any component class overrides them without specificity fights.
 
+## Desks
+
+Adapted from the reference designs the desks are based on, fitted to this system:
+
+- **Notes column (300px, left):** a small orb and "Desk notes". Cards for what needs you: a coloured flag row (dot, what, amount in mono: `danger` for late, `public` for waiting, `sealed` for fine), a bold one-line title, one or two lines of plain explanation, then one ink pill button and one underlined link. Plain sentences with chips between cards. The desk's activity underneath, then a rounded composer with a "Today's brief" chip. Always say where the notes come from.
+- **Headline sentence:** the board opens with one sentence at 34px that says how the job is going, figures in `ink` and the connecting words in `ink-faint`: "**€11,980** outstanding across **5** invoices." It replaces a row of KPI tiles.
+- **Chart card:** a white card on the sunken hero; one solid ink line for what happened, dashed for what's expected, a dot where today is, month labels in `ink-faint`.
+- **Tabs with counts:** a pill segmented control, count in `ink-faint` after each label.
+- **Bulk bar:** when rows are selected, a black pill bar sticks above the table: "2 selected · €2,900 total" and pill actions on 12% white.
+- **Tables:** 40px rows, customer shown with a small initials tile, money right-aligned and semibold, status as icon plus word in its colour (never colour alone), relative dates ("in 27 days", "6 days overdue" in `danger`) beside absolute ones.
+- **Honest verbs:** a button that opens a draft says "Draft", not "Send".
+
 ## Themes
 
 - **Light:** the default. Cool neutrals, cobalt, amber selection.

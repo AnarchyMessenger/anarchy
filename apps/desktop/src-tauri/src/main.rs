@@ -64,6 +64,10 @@ op!(create_space(name: String, kind: SpaceKind) -> anarchy_proto::SpaceSummary);
 op!(join_space(code: String) -> anarchy_proto::SpaceSummary);
 op!(create_space_invite(space: SpaceId, hours: u64, max_uses: u32) -> ops::InviteView);
 op!(start_dm(handle: String) -> ChannelId);
+op!(create_desk(space: Option<SpaceId>, name: String, kind: String) -> ChannelId);
+op!(desk_items(channel: ChannelId) -> Vec<anarchy_core::DeskItem>);
+op!(put_items(channel: ChannelId, items: Vec<anarchy_core::ItemRecord>) -> ());
+op!(compose_email(to: String, subject: String, body: String) -> ());
 op!(workspace_info(server: String) -> ops::Workspace);
 op!(request_email_code(server: String, email: String) -> ());
 op!(sign_in_email(server: String, email: String, code: String) -> ());
@@ -136,6 +140,10 @@ fn main() {
             join_space,
             create_space_invite,
             start_dm,
+            create_desk,
+            desk_items,
+            put_items,
+            compose_email,
             workspace_info,
             sign_in_sso,
             cancel_sign_in,

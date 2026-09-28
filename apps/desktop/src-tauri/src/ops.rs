@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anarchy_core::{Client, Content, Trust, oidc};
+use anarchy_core::{Client, Content, DeskItem, ItemRecord, Trust, oidc};
 use anarchy_proto::{
     AuthConfig, ChannelId, ChannelKind, DeviceId, DirectoryEntry, Profile, ProfileUpdate, Session, SpaceId,
     SpaceKind, SpaceSummary, UserId, format_handle, parse_handle,
@@ -478,6 +478,8 @@ pub struct ChannelView {
     /// `channel` or `dm`.
     kind: &'static str,
     space: Option<SpaceId>,
+    /// Set for desks, e.g. `collections`.
+    desk: Option<String>,
     /// For a DM: the other person.
     peer: Option<PeerView>,
     name: String,
@@ -535,6 +537,7 @@ pub async fn list_channels(i: &mut Inner) -> Result<Vec<ChannelView>, String> {
                 "channel"
             },
             space: meta.and_then(|m| m.space),
+            desk: client.desk_kind(id).map_err(err)?,
             name: peer.as_ref().map_or(name, |p| p.name.clone()),
             peer,
             topic,
@@ -661,6 +664,86 @@ pub async fn create_channel(
     i.metas.clear();
     refresh_members(i, id).await?;
     Ok(id)
+}
+
+// ---------- desks ----------
+
+pub const DESK_KINDS: [&str; 1] = ["collections"];
+
+pub async fn create_desk(
+    i: &mut Inner,
+    space: Option<SpaceId>,
+    name: String,
+    kind: String,
+) -> Result<ChannelId, String> {
+    if !DESK_KINDS.contains(&kind.as_str()) {
+        return Err("That kind of desk isn't available yet".into());
+    }
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > 64 {
+        return Err("Desk names are 1 to 64 characters".into());
+    }
+    let id = i.client()?.create_desk(space, name, &kind).await.map_err(err)?;
+    i.metas.clear();
+    refresh_members(i, id).await?;
+    Ok(id)
+}
+
+pub async fn desk_items(i: &mut Inner, channel: ChannelId) -> Result<Vec<DeskItem>, String> {
+    i.client()?.desk_items(channel).map_err(err)
+}
+
+/// Writes one or more records (a bulk "mark as paid" is one message).
+pub async fn put_items(i: &mut Inner, channel: ChannelId, items: Vec<ItemRecord>) -> Result<(), String> {
+    if items.is_empty() {
+        return Ok(());
+    }
+    let content = if items.len() == 1 {
+        let r = items.into_iter().next().expect("one item");
+        Content::Item {
+            id: r.id,
+            kind: r.kind,
+            data: r.data,
+        }
+    } else {
+        Content::Items { items }
+    };
+    let client = i.client()?;
+    match client.send_content(channel, &content).await {
+        Err(anarchy_core::Error::StaleEpoch { .. }) => {
+            client.sync_and_store(channel).await.map_err(err)?;
+            client.send_content(channel, &content).await.map_err(err)?;
+        }
+        other => {
+            other.map_err(err)?;
+        }
+    }
+    Ok(())
+}
+
+/// Opens a drafted email in the person's own mail app. Anarchy doesn't send
+/// mail for desks yet (that's the desk inbox), so it never claims it did.
+pub async fn compose_email(_i: &mut Inner, to: String, subject: String, body: String) -> Result<(), String> {
+    fn enc(s: &str) -> String {
+        s.bytes()
+            .map(|b| match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    (b as char).to_string()
+                }
+                _ => format!("%{b:02X}"),
+            })
+            .collect()
+    }
+    if to.contains(['\r', '\n', '?', '&']) {
+        return Err("That email address doesn't look right".into());
+    }
+    let url = format!(
+        "mailto:{}?subject={}&body={}",
+        enc(&to).replace("%40", "@"),
+        enc(&subject),
+        enc(&body)
+    );
+    open::that_detached(url).map_err(|_| "No mail app is set up on this computer".to_string())
 }
 
 #[derive(Serialize)]
