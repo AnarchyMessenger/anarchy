@@ -1,114 +1,345 @@
 // Hides the console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::path::Path;
-use std::sync::Mutex;
+mod storage;
 
-use anarchy_core::Device;
-use serde::Serialize;
+use std::time::Duration;
+
+use anarchy_core::{Client, Device, oidc};
+use anarchy_proto::{AuthConfig, Session};
+use serde::{Deserialize, Serialize};
+use storage::Storage;
 use tauri::Manager;
+use tokio::sync::{Mutex, Notify};
 
-const KEYCHAIN_SERVICE: &str = "org.anarchymessenger.desktop";
-const KEYCHAIN_ACCOUNT: &str = "device-database-key";
+/// How long the app waits for the browser to come back from the identity provider.
+const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(300);
 
-/// Where this run's device lives.
-#[derive(Clone, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum Storage {
-    /// Encrypted on disk, key in the OS keychain.
-    Saved { path: String },
-    /// In memory only; everything is lost on quit. `reason` is shown to the user.
-    Temporary { reason: String },
+/// A signed-in session, saved (encrypted) in the device database.
+#[derive(Clone, Serialize, Deserialize)]
+struct SavedSession {
+    server: String,
+    org_name: String,
+    session: Session,
+    /// Guests pick a display name; members get theirs from the identity provider.
+    display_name: Option<String>,
+}
+
+/// Appearance: light/dark/system, plus the window frame colour.
+#[derive(Clone, Serialize, Deserialize)]
+struct Appearance {
+    display: String,
+    frame: String,
+}
+
+impl Default for Appearance {
+    fn default() -> Self {
+        Self {
+            display: "system".into(),
+            frame: "cobalt".into(),
+        }
+    }
+}
+
+const FRAMES: [&str; 9] = [
+    "cobalt", "spring", "summer", "autumn", "winter", "coral", "ocean", "forest", "dusk",
+];
+
+// One instance per app, moved only on sign-in and sign-out: variant size doesn't matter.
+#[allow(clippy::large_enum_variant)]
+enum Account {
+    SignedOut(Device),
+    SignedIn(Box<Client>, SavedSession),
+    /// Only while a command moves the device between states.
+    Moving,
 }
 
 struct AppState {
-    device: Mutex<Device>,
+    account: Mutex<Account>,
     storage: Storage,
+    cancel_sign_in: Notify,
 }
 
 #[derive(Serialize)]
-struct DeviceInfo {
-    id: String,
-    ciphersuite: &'static str,
+struct Status {
+    device_id: String,
     storage: Storage,
+    appearance: Appearance,
+    session: Option<SessionInfo>,
+}
+
+#[derive(Serialize)]
+struct SessionInfo {
+    server: String,
+    org_name: String,
+    is_guest: bool,
+    display_name: Option<String>,
+    expires_at_ms: u64,
+}
+
+fn device_of(account: &Account) -> &Device {
+    match account {
+        Account::SignedOut(d) => d,
+        Account::SignedIn(c, _) => c.device(),
+        Account::Moving => unreachable!("account is only Moving inside a command"),
+    }
+}
+
+fn read_json<T: for<'de> Deserialize<'de>>(device: &Device, key: &str) -> Option<T> {
+    device
+        .setting(key)
+        .ok()
+        .flatten()
+        .and_then(|v| serde_json::from_slice(&v).ok())
+}
+
+fn write_json<T: Serialize>(device: &Device, key: &str, value: &T) -> Result<(), String> {
+    device
+        .set_setting(key, &serde_json::to_vec(value).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Accepts what people type ("chat.northwind.org", "https://…"). Plain http only for this computer.
+fn normalize_server(input: &str) -> Result<String, String> {
+    let input = input.trim().trim_end_matches('/');
+    if input.is_empty() {
+        return Err("Enter your workspace address, for example chat.northwind.org".into());
+    }
+    let with_scheme = if input.contains("://") {
+        input.to_owned()
+    } else {
+        format!("https://{input}")
+    };
+    let url = reqwest_url(&with_scheme).ok_or("That doesn't look like a web address")?;
+    let local = matches!(url.1.as_str(), "localhost" | "127.0.0.1" | "[::1]");
+    match url.0.as_str() {
+        "https" => Ok(with_scheme),
+        "http" if local => Ok(with_scheme),
+        "http" => Err("Use https:// for workspaces on other computers".into()),
+        _ => Err("Workspace addresses start with https://".into()),
+    }
+}
+
+/// (scheme, host) of a URL, without pulling in a URL crate.
+fn reqwest_url(s: &str) -> Option<(String, String)> {
+    let (scheme, rest) = s.split_once("://")?;
+    let host = rest
+        .split(['/', '?', '#'])
+        .next()?
+        .rsplit_once('@')
+        .map_or(rest, |(_, h)| h);
+    let host = host.split('/').next()?;
+    let host = if host.starts_with('[') {
+        host.split_inclusive(']').next()?.to_owned()
+    } else {
+        host.split(':').next()?.to_owned()
+    };
+    if host.is_empty() || host.contains(' ') {
+        return None;
+    }
+    Some((scheme.to_ascii_lowercase(), host.to_ascii_lowercase()))
+}
+
+// ---------- commands ----------
+
+#[tauri::command]
+async fn app_status(state: tauri::State<'_, AppState>) -> Result<Status, String> {
+    let account = state.account.lock().await;
+    let device = device_of(&account);
+    let session = match &*account {
+        Account::SignedIn(_, s) => Some(SessionInfo {
+            server: s.server.clone(),
+            org_name: s.org_name.clone(),
+            is_guest: s.session.is_guest,
+            display_name: s.display_name.clone(),
+            expires_at_ms: s.session.expires_at_ms,
+        }),
+        _ => None,
+    };
+    Ok(Status {
+        device_id: device.id().to_string(),
+        storage: state.storage.clone(),
+        appearance: read_json(device, "appearance").unwrap_or_default(),
+        session,
+    })
+}
+
+#[derive(Serialize)]
+struct Workspace {
+    server: String,
+    config: AuthConfig,
 }
 
 #[tauri::command]
-fn device_info(state: tauri::State<'_, AppState>) -> DeviceInfo {
-    let device = state.device.lock().expect("device lock poisoned");
-    DeviceInfo {
-        id: device.id().to_string(),
-        ciphersuite: "MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519",
-        storage: state.storage.clone(),
-    }
-}
-
-fn to_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-fn from_hex(s: &str) -> Option<[u8; 32]> {
-    let mut out = [0u8; 32];
-    if s.len() != 64 {
-        return None;
-    }
-    for (i, byte) in out.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(s.get(i * 2..i * 2 + 2)?, 16).ok()?;
-    }
-    Some(out)
-}
-
-/// Opens the device saved in `dir`, creating it and its keychain entry on first run.
-/// The database key never touches the disk.
-fn open_saved_device(dir: &Path) -> Result<(Device, String), String> {
-    std::fs::create_dir_all(dir).map_err(|e| format!("can't create {}: {e}", dir.display()))?;
-    let path = dir.join("device.db");
-    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-        .map_err(|e| format!("the system keychain is unavailable ({e})"))?;
-
-    let device = match entry.get_password() {
-        Ok(hex) => {
-            let key = from_hex(&hex).ok_or("the keychain entry for this device is corrupted")?;
-            Device::open_or_create(&path, &key).map_err(|e| e.to_string())?
+async fn workspace_info(server: String) -> Result<Workspace, String> {
+    let server = normalize_server(&server)?;
+    let config = oidc::workspace_config(&server).await.map_err(|e| match e {
+        anarchy_core::Error::Http(_) => {
+            format!("Couldn't reach {server}. Check the address and your connection.")
         }
-        Err(keyring::Error::NoEntry) => {
-            if path.exists() {
-                // Never overwrite a device we can't open: its owner may restore the key.
-                return Err(format!(
-                    "{} exists but its key is missing from the keychain; move it aside to start fresh",
-                    path.display()
-                ));
-            }
-            let mut key = [0u8; 32];
-            getrandom::fill(&mut key).map_err(|e| e.to_string())?;
-            entry
-                .set_password(&to_hex(&key))
-                .map_err(|e| format!("can't save the key to the keychain ({e})"))?;
-            Device::create(&path, &key).map_err(|e| e.to_string())?
-        }
-        Err(e) => return Err(format!("the system keychain is unavailable ({e})")),
+        other => other.to_string(),
+    })?;
+    Ok(Workspace { server, config })
+}
+
+/// Opens the identity provider in the browser and waits for the user to come back.
+#[tauri::command]
+async fn sign_in_sso(
+    state: tauri::State<'_, AppState>,
+    window: tauri::Window,
+    server: String,
+) -> Result<(), String> {
+    let server = normalize_server(&server)?;
+    let config = oidc::workspace_config(&server).await.map_err(|e| e.to_string())?;
+    let pending = oidc::begin(&config).await.map_err(|e| e.to_string())?;
+    if open::that_detached(&pending.url).is_err() {
+        // No default browser (or it failed): let the person open the link themselves.
+        let _ = tauri::Emitter::emit(&window, "sign-in-link", &pending.url);
+    }
+    let id_token = tokio::select! {
+        r = pending.finish(SIGN_IN_TIMEOUT) => r.map_err(|e| e.to_string())?,
+        _ = state.cancel_sign_in.notified() => return Err("Sign-in cancelled".into()),
     };
-    Ok((device, path.display().to_string()))
+    let session = Client::login_with_id_token(&server, &id_token)
+        .await
+        .map_err(|e| e.to_string())?;
+    attach(&state, server, config.org_name, session, None).await
+}
+
+#[tauri::command]
+async fn cancel_sign_in(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    state.cancel_sign_in.notify_waiters();
+    Ok(())
+}
+
+#[tauri::command]
+async fn join_as_guest(
+    state: tauri::State<'_, AppState>,
+    server: String,
+    code: String,
+    name: String,
+) -> Result<(), String> {
+    let server = normalize_server(&server)?;
+    let config = oidc::workspace_config(&server).await.map_err(|e| e.to_string())?;
+    let session = Client::login_as_guest(&server, &code, &name)
+        .await
+        .map_err(|e| match e {
+            anarchy_core::Error::Api { message, .. } => message,
+            other => other.to_string(),
+        })?;
+    attach(
+        &state,
+        server,
+        config.org_name,
+        session,
+        Some(name.trim().to_owned()),
+    )
+    .await
+}
+
+/// Puts the device behind a new session, registers it and saves the session.
+/// On failure the device goes back to the signed-out state, untouched.
+async fn attach(
+    state: &AppState,
+    server: String,
+    org_name: String,
+    session: Session,
+    display_name: Option<String>,
+) -> Result<(), String> {
+    let mut account = state.account.lock().await;
+    let device = match std::mem::replace(&mut *account, Account::Moving) {
+        Account::SignedOut(d) => d,
+        Account::SignedIn(c, _) => (*c).into_device(),
+        Account::Moving => unreachable!(),
+    };
+    let (id, key) = (device.id(), device.signature_public_key());
+    if let Err(e) = Client::register(&server, &session, id, key).await {
+        *account = Account::SignedOut(device);
+        return Err(e.to_string());
+    }
+    let client = Client::from_session(&server, session.clone(), device);
+    let saved = SavedSession {
+        server,
+        org_name,
+        session,
+        display_name,
+    };
+    if let Err(e) = write_json(client.device(), "session", &saved) {
+        *account = Account::SignedOut(client.into_device());
+        return Err(e);
+    }
+    *account = Account::SignedIn(Box::new(client), saved);
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_appearance(
+    state: tauri::State<'_, AppState>,
+    display: String,
+    frame: String,
+) -> Result<(), String> {
+    if !["light", "dark", "system", "luna"].contains(&display.as_str()) || !FRAMES.contains(&frame.as_str()) {
+        return Err("unknown appearance".into());
+    }
+    let account = state.account.lock().await;
+    write_json(device_of(&account), "appearance", &Appearance { display, frame })
+}
+
+/// Signs out of the workspace. The device, its keys and its channels stay on this computer.
+#[tauri::command]
+async fn sign_out(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let mut account = state.account.lock().await;
+    *account = match std::mem::replace(&mut *account, Account::Moving) {
+        Account::SignedIn(client, _) => {
+            let device = (*client).into_device();
+            device.delete_setting("session").map_err(|e| e.to_string())?;
+            Account::SignedOut(device)
+        }
+        signed_out => signed_out, // already signed out: nothing to do
+    };
+    Ok(())
 }
 
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
-            let (device, storage) = match open_saved_device(&dir) {
-                Ok((device, path)) => (device, Storage::Saved { path }),
-                Err(reason) => {
-                    eprintln!("anarchy: running with a temporary device: {reason}");
-                    (Device::new()?, Storage::Temporary { reason })
+            let (device, storage) = storage::open_device(&dir);
+            // Resume a saved session unless it has expired (guests' end with their invite).
+            let account = match read_json::<SavedSession>(&device, "session") {
+                Some(saved) if saved.session.expires_at_ms > now_ms() => {
+                    let client = Client::from_session(&saved.server, saved.session.clone(), device);
+                    Account::SignedIn(Box::new(client), saved)
                 }
+                Some(_) => {
+                    let _ = device.delete_setting("session");
+                    Account::SignedOut(device)
+                }
+                None => Account::SignedOut(device),
             };
             app.manage(AppState {
-                device: Mutex::new(device),
+                account: Mutex::new(account),
                 storage,
+                cancel_sign_in: Notify::new(),
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![device_info])
+        .invoke_handler(tauri::generate_handler![
+            app_status,
+            workspace_info,
+            sign_in_sso,
+            cancel_sign_in,
+            join_as_guest,
+            set_appearance,
+            sign_out
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Anarchy");
 }
@@ -118,10 +349,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hex_round_trips_and_rejects_garbage() {
-        let key = [0xab; 32];
-        assert_eq!(from_hex(&to_hex(&key)), Some(key));
-        assert_eq!(from_hex("zz"), None);
-        assert_eq!(from_hex(&"g".repeat(64)), None);
+    fn workspace_addresses_are_normalised() {
+        assert_eq!(
+            normalize_server(" chat.northwind.org/ ").unwrap(),
+            "https://chat.northwind.org"
+        );
+        assert_eq!(
+            normalize_server("https://chat.northwind.org").unwrap(),
+            "https://chat.northwind.org"
+        );
+        assert_eq!(
+            normalize_server("http://localhost:8080").unwrap(),
+            "http://localhost:8080"
+        );
+        assert_eq!(
+            normalize_server("http://127.0.0.1:8080").unwrap(),
+            "http://127.0.0.1:8080"
+        );
+        assert!(
+            normalize_server("http://chat.northwind.org").is_err(),
+            "no plain http across the network"
+        );
+        assert!(normalize_server("http://localhost.evil.test").is_err());
+        assert!(
+            normalize_server("http://evil.test@localhost").is_ok(),
+            "userinfo is stripped; host is localhost"
+        );
+        assert!(normalize_server("ftp://chat.northwind.org").is_err());
+        assert!(normalize_server("").is_err());
+        assert!(normalize_server("not a url").is_err());
     }
 }

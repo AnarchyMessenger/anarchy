@@ -5,6 +5,7 @@
 
 pub mod client;
 pub mod device;
+pub mod oidc;
 
 pub use client::{Client, Delivered};
 pub use device::{Device, Incoming, PendingCommit};
@@ -19,6 +20,8 @@ pub enum Error {
     Storage(String),
     #[error("the key does not open this device's database")]
     WrongKey,
+    #[error("sign-in failed: {0}")]
+    SignIn(String),
     #[error("this device is not in channel {0}")]
     UnknownChannel(ChannelId),
     #[error("device {0} has no key packages left; it must publish more before it can be added")]

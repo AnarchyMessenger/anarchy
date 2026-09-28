@@ -72,6 +72,10 @@ impl Oidc {
         &self.config.issuer
     }
 
+    pub fn audience(&self) -> &str {
+        &self.config.audience
+    }
+
     /// Verifies signature, issuer, audience and expiry.
     pub async fn verify(&self, id_token: &str) -> Result<IdClaims, ApiError> {
         let header = jsonwebtoken::decode_header(id_token).map_err(|_| ApiError::unauthorized())?;
@@ -147,6 +151,39 @@ impl Oidc {
     }
 }
 
+/// A new random invite code (128 bits, base32, grouped for reading aloud) and the hash to store.
+pub fn new_invite_code() -> (String, Vec<u8>) {
+    const ALPHABET: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes).expect("OS random number generator unavailable");
+    let mut bits = 0u32;
+    let mut nbits = 0;
+    let mut raw = String::new();
+    for b in bytes {
+        bits = (bits << 8) | b as u32;
+        nbits += 8;
+        while nbits >= 5 {
+            nbits -= 5;
+            raw.push(ALPHABET[((bits >> nbits) & 31) as usize] as char);
+        }
+    }
+    if nbits > 0 {
+        raw.push(ALPHABET[((bits << (5 - nbits)) & 31) as usize] as char);
+    }
+    let hash = hash_token(&raw);
+    let grouped = raw
+        .as_bytes()
+        .chunks(4)
+        .map(|c| std::str::from_utf8(c).unwrap())
+        .collect::<Vec<_>>()
+        .join("-");
+    (grouped, hash)
+}
+
+pub fn hash_invite_code(typed: &str) -> Vec<u8> {
+    hash_token(&anarchy_proto::normalize_invite_code(typed))
+}
+
 /// A new random session token and the hash to store.
 pub fn new_session_token() -> (String, Vec<u8>) {
     let mut bytes = [0u8; 32];
@@ -165,6 +202,7 @@ fn hash_token(token: &str) -> Vec<u8> {
 pub struct AuthUser {
     pub user_id: UserId,
     pub org_id: OrgId,
+    pub is_guest: bool,
 }
 
 /// A request from a registered, non-revoked device of the signed-in user.
@@ -182,15 +220,21 @@ async fn session_user(parts: &Parts, db: &PgPool) -> Result<AuthUser, ApiError> 
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or_else(ApiError::unauthorized)?;
-    let row: Option<(Uuid, Uuid)> = sqlx::query_as(
-        "SELECT u.id, u.org_id FROM sessions s JOIN users u ON u.id = s.user_id
-         WHERE s.token_hash = $1 AND s.expires_at > now()",
+    // An expired guest is signed out everywhere, whatever their session says.
+    let row: Option<(Uuid, Uuid, bool)> = sqlx::query_as(
+        "SELECT u.id, u.org_id, u.is_guest FROM sessions s JOIN users u ON u.id = s.user_id
+         WHERE s.token_hash = $1 AND s.expires_at > now()
+           AND (u.expires_at IS NULL OR u.expires_at > now())",
     )
     .bind(hash_token(token))
     .fetch_optional(db)
     .await?;
-    let (user_id, org_id) = row.ok_or_else(ApiError::unauthorized)?;
-    Ok(AuthUser { user_id, org_id })
+    let (user_id, org_id, is_guest) = row.ok_or_else(ApiError::unauthorized)?;
+    Ok(AuthUser {
+        user_id,
+        org_id,
+        is_guest,
+    })
 }
 
 impl FromRequestParts<AppState> for AuthUser {

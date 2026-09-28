@@ -28,6 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             jwks_url: std::env::var("ANARCHY_OIDC_JWKS_URL").ok(),
         },
         org_name: env("ANARCHY_ORG_NAME"),
+        guests_enabled: std::env::var("ANARCHY_GUESTS_ENABLED").is_ok_and(|v| v == "true" || v == "1"),
         session_ttl: Duration::from_secs(
             std::env::var("ANARCHY_SESSION_TTL_SECS")
                 .ok()

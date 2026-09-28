@@ -50,13 +50,60 @@ pub struct OidcLogin {
     pub id_token: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Session {
     /// Bearer token for `Authorization: Bearer …`. The server stores only its hash.
     pub token: String,
     pub user_id: UserId,
     pub org_id: OrgId,
     pub expires_at_ms: u64,
+    /// Guests joined with an invite code; their session ends when the invite does.
+    #[serde(default)]
+    pub is_guest: bool,
+}
+
+/// `GET /v1/auth/config` (public): what a client needs before anyone signs in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuthConfig {
+    pub org_name: String,
+    /// OpenID Connect issuer; clients discover its endpoints from it.
+    pub issuer: String,
+    /// The public client ID registered for Anarchy at the identity provider.
+    pub client_id: String,
+    /// Whether people can join with an invite code instead of an account.
+    pub guests_enabled: bool,
+}
+
+/// `POST /v1/auth/guest`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GuestJoin {
+    pub invite_code: String,
+    /// Shown to others instead of a real name. 1–64 characters.
+    pub display_name: String,
+}
+
+/// `POST /v1/invites`: members (not guests) create guest invites.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateInvite {
+    pub expires_in_secs: u64,
+    pub max_uses: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Invite {
+    pub id: Uuid,
+    /// Shown once. The server keeps only its hash.
+    pub code: String,
+    pub expires_at_ms: u64,
+    pub max_uses: u32,
+}
+
+/// Normalises a typed invite code: case, spaces and dashes don't matter.
+pub fn normalize_invite_code(code: &str) -> String {
+    code.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
 }
 
 /// `POST /v1/devices`: register a device under the signed-in user.

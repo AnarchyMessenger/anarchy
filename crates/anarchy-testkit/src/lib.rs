@@ -4,9 +4,15 @@
 //! user may create databases (for example `postgres://postgres@127.0.0.1:5432/postgres`,
 //! or `docker compose up db`). Each test gets its own fresh database.
 
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anarchy_server::{AppState, Config, OidcConfig, router};
+use axum::Json;
+use axum::extract::{Form, Query, State};
+use axum::http::{StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
@@ -14,6 +20,7 @@ use p256::SecretKey;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::pkcs8::EncodePrivateKey;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions};
 use sqlx::{ConnectOptions, Executor};
 use uuid::Uuid;
@@ -24,12 +31,46 @@ pub fn now_secs() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
 }
 
-/// A local OpenID Connect provider: serves discovery and JWKS, signs ES256 ID tokens.
+/// A local OpenID Connect provider: discovery, JWKS, and an authorization code
+/// endpoint with PKCE that signs the user in immediately as `login_hint`
+/// (the test plays the browser). Issues ES256 ID tokens.
 pub struct TestIdp {
     pub issuer: String,
+    signer: Arc<Signer>,
+}
+
+struct Signer {
+    issuer: String,
     kid: String,
     key: EncodingKey,
 }
+
+impl Signer {
+    fn sign(&self, claims: &Value) -> String {
+        let mut header = Header::new(Algorithm::ES256);
+        header.kid = Some(self.kid.clone());
+        jsonwebtoken::encode(&header, claims, &self.key).unwrap()
+    }
+
+    fn id_token(&self, sub: &str, name: &str) -> String {
+        let now = now_secs();
+        self.sign(&json!({
+            "iss": self.issuer, "aud": AUDIENCE, "sub": sub, "name": name,
+            "email": format!("{sub}@example.test"), "iat": now, "exp": now + 600,
+        }))
+    }
+}
+
+/// Codes handed out by /authorize, waiting to be traded at /token.
+#[derive(Clone)]
+struct PendingCode {
+    sub: String,
+    client_id: String,
+    redirect_uri: String,
+    challenge: String,
+}
+
+type Codes = Arc<Mutex<HashMap<String, PendingCode>>>;
 
 fn random_p256_key() -> SecretKey {
     loop {
@@ -39,6 +80,49 @@ fn random_p256_key() -> SecretKey {
             return key;
         }
     }
+}
+
+async fn authorize(State(codes): State<Codes>, Query(q): Query<HashMap<String, String>>) -> Response {
+    let get = |k: &str| q.get(k).cloned().unwrap_or_default();
+    if get("response_type") != "code"
+        || get("code_challenge_method") != "S256"
+        || get("client_id") != AUDIENCE
+    {
+        return (StatusCode::BAD_REQUEST, "bad authorization request").into_response();
+    }
+    let code = Uuid::new_v4().simple().to_string();
+    codes.lock().unwrap().insert(
+        code.clone(),
+        PendingCode {
+            sub: q.get("login_hint").cloned().unwrap_or_else(|| "tester".into()),
+            client_id: get("client_id"),
+            redirect_uri: get("redirect_uri"),
+            challenge: get("code_challenge"),
+        },
+    );
+    let mut to = get("redirect_uri");
+    to.push_str(&format!("?code={code}&state={}", get("state")));
+    (StatusCode::FOUND, [(header::LOCATION, to)]).into_response()
+}
+
+async fn token(
+    State((codes, signer)): State<(Codes, Arc<Signer>)>,
+    Form(f): Form<HashMap<String, String>>,
+) -> Response {
+    let get = |k: &str| f.get(k).cloned().unwrap_or_default();
+    let Some(pending) = codes.lock().unwrap().remove(&get("code")) else {
+        return (StatusCode::BAD_REQUEST, Json(json!({"error": "invalid_grant"}))).into_response();
+    };
+    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(get("code_verifier").as_bytes()));
+    if get("grant_type") != "authorization_code"
+        || challenge != pending.challenge
+        || get("redirect_uri") != pending.redirect_uri
+        || get("client_id") != pending.client_id
+    {
+        return (StatusCode::BAD_REQUEST, Json(json!({"error": "invalid_grant"}))).into_response();
+    }
+    let id_token = signer.id_token(&pending.sub, &pending.sub);
+    Json(json!({"id_token": id_token, "token_type": "Bearer", "expires_in": 600})).into_response()
 }
 
 impl TestIdp {
@@ -54,7 +138,20 @@ impl TestIdp {
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let issuer = format!("http://{}", listener.local_addr().unwrap());
-        let discovery = json!({ "issuer": issuer, "jwks_uri": format!("{issuer}/jwks") });
+        let discovery = json!({
+            "issuer": issuer,
+            "jwks_uri": format!("{issuer}/jwks"),
+            "authorization_endpoint": format!("{issuer}/authorize"),
+            "token_endpoint": format!("{issuer}/token"),
+        });
+        let der = secret.to_pkcs8_der().unwrap();
+        let signer = Arc::new(Signer {
+            issuer: issuer.clone(),
+            kid,
+            key: EncodingKey::from_ec_der(der.as_bytes()),
+        });
+        let codes: Codes = Arc::default();
+
         let app = axum::Router::new()
             .route(
                 "/.well-known/openid-configuration",
@@ -63,31 +160,27 @@ impl TestIdp {
             .route(
                 "/jwks",
                 axum::routing::get(move || async move { axum::Json(jwks) }),
+            )
+            .route(
+                "/authorize",
+                axum::routing::get(authorize).with_state(codes.clone()),
+            )
+            .route(
+                "/token",
+                axum::routing::post(token).with_state((codes, signer.clone())),
             );
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-
-        let der = secret.to_pkcs8_der().unwrap();
-        Self {
-            issuer,
-            kid,
-            key: EncodingKey::from_ec_der(der.as_bytes()),
-        }
+        Self { issuer, signer }
     }
 
     /// A valid ID token for `sub`, good for ten minutes.
     pub fn id_token(&self, sub: &str, name: &str) -> String {
-        let now = now_secs();
-        self.sign(json!({
-            "iss": self.issuer, "aud": AUDIENCE, "sub": sub, "name": name,
-            "email": format!("{sub}@example.test"), "iat": now, "exp": now + 600,
-        }))
+        self.signer.id_token(sub, name)
     }
 
     /// Signs arbitrary claims with this provider's key, for negative tests.
     pub fn sign(&self, claims: Value) -> String {
-        let mut header = Header::new(Algorithm::ES256);
-        header.kid = Some(self.kid.clone());
-        jsonwebtoken::encode(&header, &claims, &self.key).unwrap()
+        self.signer.sign(&claims)
     }
 }
 
@@ -122,6 +215,10 @@ pub struct TestServer {
 
 impl TestServer {
     pub async fn start() -> Self {
+        Self::start_with_guests(true).await
+    }
+
+    pub async fn start_with_guests(guests_enabled: bool) -> Self {
         let idp = TestIdp::start().await;
         let db = fresh_database().await;
         let state = AppState::new(
@@ -133,6 +230,7 @@ impl TestServer {
                     jwks_url: None,
                 },
                 org_name: "Northwind".into(),
+                guests_enabled,
                 session_ttl: Duration::from_secs(3600),
             },
         )

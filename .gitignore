@@ -2,3 +2,4 @@
 apps/desktop/src-tauri/gen/
 node_modules/
 .DS_Store
+apps/desktop/preview/

@@ -19,7 +19,11 @@ Remaining:
 - [x] Encrypted device storage: MLS state, key packages, channel list and sync cursors in one SQLCipher file; desktop keeps its key in the OS keychain and falls back to a clearly labelled temporary device when there is none (D7).
 - [ ] WebSocket subscriptions (live push instead of polling `sync`).
 - [x] OIDC sign-in (ID token verified against the provider's keys), hashed server sessions, device registration, membership checks on every endpoint (D5). Tests cover forged, expired and wrong-audience tokens, non-members and spoofed devices.
-- [ ] Desktop sign-in flow (system browser, authorization code + PKCE).
+- [x] Desktop onboarding: workspace address → sign in with the organisation (system browser, PKCE, loopback) or join as a guest with an invite code → pick display mode and frame colour (D9, D10).
+- [x] Guest invites: expiry, use limits, revocation; guests expire with their invite and are cleaned out of channels.
+- [ ] Settings screens beyond Appearance (Notifications, Devices, Company Brain) are placeholders.
+- [ ] A slow OS keychain blocks the first window paint (the device opens before the window); move it off the startup path.
+- [ ] Rate limiting on sign-in and guest join (codes are 128-bit, so guessing isn't feasible, but floods still cost).
 - [x] Member removal (keys rotate; removed devices read up to their removal, then delete the channel), re-adding, device revocation with `remove_revoked` clean-up (D8).
 - [x] Brain purges a channel's index when removed from it; survives restarts.
 - [ ] Device proof of possession at registration.
@@ -81,6 +85,8 @@ Pulled forward from phase 4:
 - Moderation tooling.
 
 ## Later / parking lot
+
+- Branded frame themes extracted from an organisation's brand guidelines (colours from a PDF), as in the Deel reference: an Enterprise feature for the Brain.
 
 - Collaborative documents (Yjs or Automerge over encrypted events).
 - Calendar, and email bridging.

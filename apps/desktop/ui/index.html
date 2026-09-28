@@ -9,48 +9,211 @@
 <link rel="stylesheet" href="app.css">
 </head>
 <body class="ax">
-<div class="shell">
-  <nav class="ax-rail" aria-label="Spaces">
-    <span class="ax-rail-kind">Orgs</span>
-    <button class="ax-rail-item active" aria-current="true" title="Northwind">NW</button>
-    <span class="ax-rail-sep"></span>
-    <button class="ax-rail-item" title="Join or create a space" aria-label="Join or create a space">+</button>
-  </nav>
-  <aside class="ax-sidebar sidebar">
-    <label class="ax-search"><input id="search" aria-label="Search" placeholder="Search"></label>
-    <div class="ax-group">Channels</div>
-    <button class="ax-row active"><span class="hash">#</span><strong>general</strong><span></span></button>
-    <div class="ax-group">Theme</div>
-    <div class="ax-seg theme" role="radiogroup" aria-label="Theme">
-      <span role="radio" tabindex="0" data-theme-choice="system">System</span>
-      <span role="radio" tabindex="0" data-theme-choice="light">Light</span>
-      <span role="radio" tabindex="0" data-theme-choice="dark">Dark</span>
-      <span role="radio" tabindex="0" data-theme-choice="luna">Luna</span>
+<svg width="0" height="0" class="sprite" aria-hidden="true">
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></symbol>
+  <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 19h20"/></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5 5h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-5 4v-4H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3"/></symbol>
+  <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z"/><path d="M13 6v12" stroke-dasharray="2 2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></symbol>
+</svg>
+
+<div class="frame" id="frame">
+
+  <!-- ============ Onboarding ============ -->
+  <section class="onboarding" id="onboarding" hidden aria-labelledby="ob-title">
+    <div class="ob-card panel">
+      <div class="ob-top">
+        <span class="wordmark">Anarchy</span>
+        <ol class="ob-steps" aria-label="Setup progress">
+          <li data-step-dot="1">Workspace</li><li data-step-dot="2">Join</li><li data-step-dot="3">Look</li>
+        </ol>
+      </div>
+
+      <!-- Step 1: where -->
+      <form class="ob-step" id="step-1" data-step="1" novalidate>
+        <h1 id="ob-title">Welcome to Anarchy</h1>
+        <p class="lede">Chat, calls and files for your team, encrypted end to end on servers your organisation controls.</p>
+        <label class="field" for="server">Workspace address
+          <input class="text-input" id="server" name="server" autocomplete="url" spellcheck="false" placeholder="chat.northwind.org">
+        </label>
+        <p class="error" id="server-error" role="alert" hidden></p>
+        <div class="ob-actions">
+          <span class="hint">Your IT team or whoever invited you has this address.</span>
+          <button class="ax-btn primary" id="server-continue" type="submit">Continue</button>
+        </div>
+      </form>
+
+      <!-- Step 2: how to join -->
+      <div class="ob-step" id="step-2" data-step="2" hidden>
+        <div class="org">
+          <span class="org-tile" id="org-initials">NW</span>
+          <div><h1 id="org-name">Northwind</h1><p class="lede muted" id="org-server">chat.northwind.org</p></div>
+        </div>
+
+        <div class="choices" id="join-choices">
+          <button class="choice" id="choose-sso" type="button">
+            <svg class="i" aria-hidden="true"><use href="#i-key"/></svg>
+            <span><strong>Sign in with <span id="sso-org">Northwind</span></strong><small>Use your work account. Opens your browser.</small></span>
+          </button>
+          <button class="choice" id="choose-guest" type="button">
+            <svg class="i" aria-hidden="true"><use href="#i-ticket"/></svg>
+            <span><strong>Join as a guest</strong><small>No account needed. Use the invite code you were given.</small></span>
+          </button>
+          <p class="hint" id="guests-off" hidden>This workspace doesn't allow guests. Sign in with your work account.</p>
+        </div>
+
+        <div class="waiting" id="sso-waiting" hidden aria-live="polite">
+          <span class="pulse" aria-hidden="true"></span>
+          <div>
+            <strong>Finish signing in in your browser</strong>
+            <p class="muted">Come back here when it says you're signed in.</p>
+            <p class="link-fallback" id="sso-link-box" hidden>Your browser didn't open. Open this link to sign in:
+              <code id="sso-link"></code> <button class="ax-btn sm" id="sso-copy" type="button">Copy link</button></p>
+          </div>
+          <button class="ax-btn ghost sm" id="sso-cancel" type="button">Cancel</button>
+        </div>
+
+        <form class="guest-form" id="guest-form" hidden novalidate>
+          <label class="field" for="invite-code">Invite code
+            <input class="text-input mono" id="invite-code" autocomplete="off" spellcheck="false" placeholder="7qk2-mx9f-…">
+          </label>
+          <label class="field" for="guest-name">Your name
+            <input class="text-input" id="guest-name" autocomplete="nickname" maxlength="64" placeholder="How others will see you">
+          </label>
+          <p class="note"><svg class="i" aria-hidden="true"><use href="#i-lock"/></svg>
+            Guests don't need an email or account. Your access ends when the invite does, and members can still see that you're a guest.</p>
+          <div class="ob-actions">
+            <button class="ax-btn ghost" id="guest-back" type="button">Back</button>
+            <button class="ax-btn primary" id="guest-join" type="submit">Join as guest</button>
+          </div>
+        </form>
+
+        <p class="error" id="join-error" role="alert" hidden></p>
+        <div class="ob-actions" id="join-footer">
+          <button class="ax-btn ghost" id="step-2-back" type="button"><svg class="i" aria-hidden="true"><use href="#i-arrow-left"/></svg>Different workspace</button>
+        </div>
+      </div>
+
+      <!-- Step 3: look -->
+      <div class="ob-step" id="step-3" data-step="3" hidden>
+        <h1>Make it yours</h1>
+        <p class="lede">Pick a colour for the window frame. Change it any time in Settings.</p>
+        <div class="appearance" id="ob-appearance"></div>
+        <div class="ob-actions">
+          <span class="hint" id="signed-in-as"></span>
+          <button class="ax-btn primary" id="finish" type="button">Open Anarchy</button>
+        </div>
+      </div>
     </div>
-  </aside>
-  <main class="main">
-    <header class="ax-header">
-      <span class="name"># general</span>
-      <span class="ax-seal sealed">Sealed</span>
-      <span class="topic">Phase 0 shell</span>
-    </header>
-    <section class="ax-transcript transcript" aria-live="polite">
-      <div class="ax-notice">Device keys ready</div>
-      <div class="ax-banner sealed">
-        <span>Device <code id="device-id">…</code> · <span id="suite"></span>. Keys stay on this device; the server only relays ciphertext.</span>
-      </div>
-      <div class="ax-banner info" id="storage-saved" hidden>
-        <span>Saved on this computer, encrypted. The key is in your system keychain.</span>
-      </div>
-      <div class="ax-banner danger" id="storage-temporary" hidden>
-        <span><strong>Nothing will be kept when you quit.</strong> <span id="storage-reason"></span></span>
-      </div>
-    </section>
-    <form class="ax-composer composer" id="composer">
-      <textarea id="message" aria-label="Message #general" placeholder="Message #general (sending arrives in phase 1)" disabled></textarea>
-    </form>
-  </main>
+  </section>
+
+  <!-- ============ App shell ============ -->
+  <div class="shell" id="app" hidden>
+    <nav class="rail" aria-label="Navigation">
+      <span class="rail-mark" id="rail-org" title="Workspace">NW</span>
+      <button class="rail-btn active" data-view="home" aria-label="Home" title="Home"><svg class="i"><use href="#i-home"/></svg></button>
+      <button class="rail-btn" data-view="home" aria-label="Chat" title="Chat"><svg class="i"><use href="#i-chat"/></svg></button>
+      <button class="rail-btn" data-view="home" aria-label="Calls" title="Calls"><svg class="i"><use href="#i-phone"/></svg></button>
+      <button class="rail-btn" data-view="home" aria-label="Files" title="Files"><svg class="i"><use href="#i-folder"/></svg></button>
+      <span class="rail-spacer"></span>
+      <button class="rail-btn" data-view="settings" aria-label="Settings" title="Settings"><svg class="i"><use href="#i-settings"/></svg></button>
+    </nav>
+
+    <div class="panel workspace">
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <strong id="sidebar-title">Northwind</strong>
+          <span class="guest-chip" id="guest-chip" hidden>Guest</span>
+          <button class="icon-btn" aria-label="Collapse sidebar" title="Collapse sidebar"><svg class="i"><use href="#i-panel"/></svg></button>
+        </div>
+        <nav class="side-nav" id="side-home">
+          <div class="ax-group">Channels</div>
+          <button class="side-item active"><span class="hash">#</span>general</button>
+          <button class="side-item"><span class="hash">#</span>design-crit</button>
+          <div class="ax-group">Direct messages</div>
+          <button class="side-item"><span class="dot"></span>scribe <span class="ax-role">agent</span></button>
+        </nav>
+        <nav class="side-nav" id="side-settings" hidden>
+          <button class="side-item active">Appearance</button>
+          <button class="side-item">Notifications</button>
+          <button class="side-item">Devices</button>
+          <button class="side-item">Company Brain</button>
+        </nav>
+        <div class="account">
+          <span class="avatar" id="account-avatar">A</span>
+          <span class="account-text"><strong id="account-name">Signed in</strong><small id="account-server"></small></span>
+          <button class="ax-btn ghost sm" id="sign-out" type="button">Sign out</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <label class="search"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input aria-label="Search" placeholder="Search"><kbd>⌘K</kbd></label>
+        </header>
+
+        <section class="view" id="view-home">
+          <h1 class="page-title"># general</h1>
+          <p class="page-sub">Messages arrive in phase 1. For now, here's what this device knows.</p>
+          <div class="facts">
+            <div class="ax-banner sealed"><svg class="i" aria-hidden="true"><use href="#i-lock"/></svg>
+              <span>Device <code id="device-id">…</code>. Its keys stay on this computer; the server only relays ciphertext.</span></div>
+            <div class="ax-banner info" id="storage-saved" hidden><span>Saved on this computer, encrypted. The key is in your system keychain.</span></div>
+            <div class="ax-banner danger" id="storage-temporary" hidden><span><strong>Nothing will be kept when you quit.</strong> <span id="storage-reason"></span></span></div>
+            <div class="ax-banner public" id="guest-banner" hidden><span>You're a guest. Ask whoever invited you to add you to a channel. Your access ends <span id="guest-until"></span>.</span></div>
+          </div>
+        </section>
+
+        <section class="view" id="view-settings" hidden>
+          <h1 class="page-title">Appearance</h1>
+          <p class="page-sub">Manage how your workspace looks and feels.</p>
+          <div class="appearance" id="settings-appearance"></div>
+        </section>
+      </main>
+    </div>
+  </div>
 </div>
+
+<template id="appearance-template">
+  <div class="block">
+    <div class="block-label">Display</div>
+    <div class="display-seg" role="radiogroup" aria-label="Display">
+      <button role="radio" data-display="light"><svg class="i"><use href="#i-sun"/></svg>Light</button>
+      <button role="radio" data-display="dark"><svg class="i"><use href="#i-moon"/></svg>Dark</button>
+      <button role="radio" data-display="system"><svg class="i"><use href="#i-laptop"/></svg>System</button>
+      <button role="radio" data-display="luna" title="The retro XP / Messenger look"><svg class="i"><use href="#i-sparkle"/></svg>Luna</button>
+    </div>
+  </div>
+  <div class="block frames" role="radiogroup" aria-label="Frame colour">
+    <div class="block-label">Default</div>
+    <div class="swatches"><button class="swatch" role="radio" data-frame="cobalt"><span class="chip"></span><span class="name">Anarchy</span></button></div>
+    <div class="block-label">Seasons</div>
+    <div class="swatches">
+      <button class="swatch" role="radio" data-frame="spring"><span class="chip"></span><span class="name">Spring</span></button>
+      <button class="swatch" role="radio" data-frame="summer"><span class="chip"></span><span class="name">Summer</span></button>
+      <button class="swatch" role="radio" data-frame="autumn"><span class="chip"></span><span class="name">Autumn</span></button>
+      <button class="swatch" role="radio" data-frame="winter"><span class="chip"></span><span class="name">Winter</span></button>
+    </div>
+    <div class="block-label">Nature</div>
+    <div class="swatches">
+      <button class="swatch" role="radio" data-frame="coral"><span class="chip"></span><span class="name">Coral</span></button>
+      <button class="swatch" role="radio" data-frame="ocean"><span class="chip"></span><span class="name">Ocean</span></button>
+      <button class="swatch" role="radio" data-frame="forest"><span class="chip"></span><span class="name">Forest</span></button>
+      <button class="swatch" role="radio" data-frame="dusk"><span class="chip"></span><span class="name">Dusk</span></button>
+    </div>
+  </div>
+</template>
+
 <script src="app.js"></script>
 </body>
 </html>

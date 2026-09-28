@@ -32,7 +32,9 @@ The states differ in hue *and* in label and icon: lock, building, globe. Never s
 
 **Radii.** Use `radius-sm` 6 for inputs and chips, `radius-md` 8 for buttons and rows, `radius-lg` 12 for cards and panels, and `radius-xl` 16 for the composer and rail tiles. Pills (`radius-pill`) are only for badges and trust states. Luna overrides them to 3/4/5/7.
 
-**Depth.** The modern themes are flat, with a 1px `border` and small shadows. Use `shadow-1` at rest, `shadow-2` for menus and `shadow-3` for toasts and dialogs. Luna maps the same tokens to its bevels and glossy gradients. Don't add gradients in Light or Dark.
+**Depth.** The modern themes are flat, with a 1px `border` and small shadows. Use `shadow-1` at rest, `shadow-2` for menus and `shadow-3` for toasts and dialogs. Luna maps the same tokens to its bevels and glossy gradients. In Light and Dark, gradients belong to the **frame** only (below), never to panels, cards or anything behind body text.
+
+**Frame.** The window is a coloured frame and the content is a neutral floating panel inset 8px from it, the way Arc does it. The frame is a three-stop gradient from one of the `frame-<theme>-a/b/c` token sets. There are nine: Anarchy (cobalt, the default), Spring, Summer, Autumn, Winter, Coral, Ocean, Forest and Dusk. People pick one per workspace, so switching workspaces also switches colour. Only the rail's icons and labels sit on the frame, and `ink` reads at 5.6:1 or better on every stop. The panel has a 1px stroke *outside* its edge at 8% black (7% white in Dark) plus a soft lift, so it reads as floating rather than boxed. In Dark, a 60% `canvas` wash sits over the frame. Luna ignores the frame choice and uses its own blues.
 
 **Motion.** Use 120–180ms ease-out for hover and open, and a single bounce loop for typing. `prefers-reduced-motion` turns all of it off.
 

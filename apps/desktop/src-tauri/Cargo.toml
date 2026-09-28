@@ -12,6 +12,11 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 anarchy-core.workspace = true
+anarchy-proto.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+# Opens the sign-in page in the default browser.
+open = "5"
 tauri = { version = "2", features = [] }
 serde.workspace = true
 getrandom.workspace = true

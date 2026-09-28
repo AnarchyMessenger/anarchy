@@ -5,8 +5,9 @@
 //! fetch events after the cursor and apply them in order.
 
 use anarchy_proto::{
-    AppendRequest, AppendResponse, Blob, ChannelId, CreateChannel, DEVICE_HEADER, DeviceId, EventKind,
-    EventsPage, InboxItem, KeyPackageUpload, Member, OidcLogin, OrgId, RegisterDevice, Session, UserId,
+    AppendRequest, AppendResponse, Blob, ChannelId, CreateChannel, CreateInvite, DEVICE_HEADER, DeviceId,
+    EventKind, EventsPage, GuestJoin, InboxItem, Invite, KeyPackageUpload, Member, OidcLogin, OrgId,
+    RegisterDevice, Session, UserId,
 };
 use reqwest::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
@@ -49,40 +50,137 @@ async fn check(resp: Response) -> Result<Response, Error> {
 }
 
 impl Client {
-    /// Signs in with an ID token from the organisation's identity provider and
-    /// registers `device` under that user.
-    pub async fn sign_in(base_url: impl Into<String>, id_token: &str, device: Device) -> Result<Self, Error> {
-        let http = reqwest::Client::new();
-        let base = base_url.into().trim_end_matches('/').to_owned();
-        let resp = http
+    /// Exchanges an ID token from the organisation's identity provider for a session.
+    pub async fn login_with_id_token(base_url: &str, id_token: &str) -> Result<Session, Error> {
+        let base = base_url.trim_end_matches('/');
+        let resp = reqwest::Client::new()
             .post(format!("{base}/v1/auth/oidc"))
             .json(&OidcLogin {
                 id_token: id_token.to_owned(),
             })
             .send()
             .await?;
-        let session: Session = check(resp).await?.json().await?;
-        let client = Self {
-            http,
+        Ok(check(resp).await?.json().await?)
+    }
+
+    /// Joins as a guest with an invite code: no account, just a display name.
+    /// Access ends when the invite expires.
+    pub async fn login_as_guest(
+        base_url: &str,
+        invite_code: &str,
+        display_name: &str,
+    ) -> Result<Session, Error> {
+        let base = base_url.trim_end_matches('/');
+        let body = GuestJoin {
+            invite_code: invite_code.to_owned(),
+            display_name: display_name.to_owned(),
+        };
+        let resp = reqwest::Client::new()
+            .post(format!("{base}/v1/auth/guest"))
+            .json(&body)
+            .send()
+            .await?;
+        Ok(check(resp).await?.json().await?)
+    }
+
+    /// Signs in with an ID token and registers `device` under that user.
+    pub async fn sign_in(base_url: impl Into<String>, id_token: &str, device: Device) -> Result<Self, Error> {
+        let base = base_url.into();
+        let session = Self::login_with_id_token(&base, id_token).await?;
+        let client = Self::from_session(base, session, device);
+        client.register_device().await?;
+        Ok(client)
+    }
+
+    /// Joins as a guest and registers `device` under the new guest user.
+    pub async fn join_as_guest(
+        base_url: impl Into<String>,
+        invite_code: &str,
+        display_name: &str,
+        device: Device,
+    ) -> Result<Self, Error> {
+        let base = base_url.into();
+        let session = Self::login_as_guest(&base, invite_code, display_name).await?;
+        let client = Self::from_session(base, session, device);
+        client.register_device().await?;
+        Ok(client)
+    }
+
+    /// Resumes a session saved earlier (for example after an app restart), without a network call.
+    pub fn from_session(base_url: impl Into<String>, session: Session, device: Device) -> Self {
+        let base = base_url.into().trim_end_matches('/').to_owned();
+        Self {
+            http: reqwest::Client::new(),
             base,
             session,
             device,
-        };
+        }
+    }
+
+    /// Registers this client's device under the session's user. Safe to repeat.
+    pub async fn register_device(&self) -> Result<(), Error> {
+        Self::register(
+            &self.base,
+            &self.session,
+            self.device.id(),
+            self.device.signature_public_key(),
+        )
+        .await
+    }
+
+    /// Registers a device without borrowing it across the request, for callers
+    /// (like the desktop app) whose futures must be `Send`: `Device` isn't `Sync`.
+    pub async fn register(
+        base_url: &str,
+        session: &Session,
+        device_id: DeviceId,
+        signature_key: Vec<u8>,
+    ) -> Result<(), Error> {
         let register = RegisterDevice {
-            device_id: client.device.id(),
-            signature_key: Blob(client.device.signature_public_key()),
+            device_id,
+            signature_key: Blob(signature_key),
         };
         check(
-            client
-                .http
-                .post(format!("{}/v1/devices", client.base))
-                .bearer_auth(&client.session.token)
+            reqwest::Client::new()
+                .post(format!("{}/v1/devices", base_url.trim_end_matches('/')))
+                .bearer_auth(&session.token)
                 .json(&register)
                 .send()
                 .await?,
         )
         .await?;
-        Ok(client)
+        Ok(())
+    }
+
+    pub fn session(&self) -> &Session {
+        &self.session
+    }
+
+    pub fn server_url(&self) -> &str {
+        &self.base
+    }
+
+    /// Signs out locally: gives the device back. Its keys and channels stay on disk.
+    pub fn into_device(self) -> Device {
+        self.device
+    }
+
+    /// Creates a guest invite code (members only). The code is shown once.
+    pub async fn create_invite(
+        &self,
+        expires_in: std::time::Duration,
+        max_uses: u32,
+    ) -> Result<Invite, Error> {
+        let body = CreateInvite {
+            expires_in_secs: expires_in.as_secs(),
+            max_uses,
+        };
+        Ok(self.post("/v1/invites", &body).await?.json().await?)
+    }
+
+    pub async fn revoke_invite(&self, invite: uuid::Uuid) -> Result<(), Error> {
+        self.post(&format!("/v1/invites/{invite}/revoke"), &()).await?;
+        Ok(())
     }
 
     pub fn device(&self) -> &Device {

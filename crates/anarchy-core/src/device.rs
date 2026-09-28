@@ -134,6 +134,10 @@ CREATE TABLE IF NOT EXISTS anarchy_device (
 CREATE TABLE IF NOT EXISTS anarchy_channels (
     channel_id  BLOB PRIMARY KEY,
     cursor      INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS anarchy_settings (
+    key    TEXT PRIMARY KEY,
+    value  BLOB NOT NULL
 );";
 
 impl Device {
@@ -158,6 +162,7 @@ impl Device {
             return Err(Error::Storage(format!("{} does not exist", path.display())));
         }
         let meta = open_encrypted(Some(path), key)?;
+        meta.execute_batch(SCHEMA).map_err(db)?; // adds tables introduced after this device was created
         let storage = Self::storage(Some(path), key)?;
         let (id, public): (Vec<u8>, Vec<u8>) = meta
             .query_row("SELECT id, signature_public_key FROM anarchy_device", [], |r| {
@@ -257,6 +262,34 @@ impl Device {
         let mut c: Vec<_> = self.channels.keys().copied().collect();
         c.sort();
         c
+    }
+
+    /// Reads an app setting (session, theme, …) from the encrypted database.
+    pub fn setting(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
+        self.meta
+            .query_row("SELECT value FROM anarchy_settings WHERE key = ?1", [key], |r| {
+                r.get(0)
+            })
+            .optional()
+            .map_err(db)
+    }
+
+    pub fn set_setting(&self, key: &str, value: &[u8]) -> Result<(), Error> {
+        self.meta
+            .execute(
+                "INSERT INTO anarchy_settings (key, value) VALUES (?1, ?2)
+                 ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                params![key, value],
+            )
+            .map_err(db)?;
+        Ok(())
+    }
+
+    pub fn delete_setting(&self, key: &str) -> Result<(), Error> {
+        self.meta
+            .execute("DELETE FROM anarchy_settings WHERE key = ?1", [key])
+            .map_err(db)?;
+        Ok(())
     }
 
     pub fn has_channel(&self, channel: ChannelId) -> bool {

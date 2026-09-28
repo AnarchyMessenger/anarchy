@@ -12,6 +12,7 @@
 | Build and test core and server | `cargo test` |
 | Run the server | `cargo run -p anarchy-server` (configuration: `docs/SELF-HOSTING.md`) |
 | Run the desktop app | `cargo run -p anarchy-desktop` |
+| Preview the desktop UI in Chromium (mocked backend, screenshots in `apps/desktop/preview/`) | `NODE_PATH=$(npm root -g) node apps/desktop/ui-preview.mjs` (needs Playwright) |
 | Regenerate CSS after editing `design-system/tokens.json` or `components/bundle.css` | `node design-system/build.mjs` |
 | Lint | `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings` |
 | Licenses and advisories | `cargo deny check` |

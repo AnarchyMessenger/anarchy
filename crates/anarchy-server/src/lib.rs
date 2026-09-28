@@ -10,8 +10,9 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anarchy_proto::{
-    AppendRequest, AppendResponse, Blob, ChannelId, CreateChannel, DeviceId, Event, EventKind, EventsPage,
-    InboxItem, KeyPackageUpload, Member, OidcLogin, OrgId, RegisterDevice, Session,
+    AppendRequest, AppendResponse, AuthConfig, Blob, ChannelId, CreateChannel, CreateInvite, DeviceId, Event,
+    EventKind, EventsPage, GuestJoin, InboxItem, Invite, KeyPackageUpload, Member, OidcLogin, OrgId,
+    RegisterDevice, Session,
 };
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -31,6 +32,8 @@ pub struct Config {
     /// This server hosts one organisation (self-hosted, single tenant).
     pub org_name: String,
     pub session_ttl: Duration,
+    /// Let members invite guests (people without an account). Off by default.
+    pub guests_enabled: bool,
 }
 
 #[derive(Clone)]
@@ -38,7 +41,9 @@ pub struct AppState {
     pub db: PgPool,
     pub oidc: Arc<Oidc>,
     pub org_id: OrgId,
+    pub org_name: String,
     pub session_ttl: Duration,
+    pub guests_enabled: bool,
 }
 
 impl AppState {
@@ -57,7 +62,9 @@ impl AppState {
             db,
             oidc: Arc::new(Oidc::new(config.oidc)),
             org_id,
+            org_name: config.org_name,
             session_ttl: config.session_ttl,
+            guests_enabled: config.guests_enabled,
         })
     }
 }
@@ -65,7 +72,11 @@ impl AppState {
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(|| async { "ok" }))
+        .route("/v1/auth/config", get(auth_config))
         .route("/v1/auth/oidc", post(login))
+        .route("/v1/auth/guest", post(join_as_guest))
+        .route("/v1/invites", post(create_invite))
+        .route("/v1/invites/{invite}/revoke", post(revoke_invite))
         .route("/v1/devices", post(register_device))
         .route("/v1/devices/{device}/revoke", post(revoke_device))
         .route("/v1/channels", post(create_channel))
@@ -169,7 +180,143 @@ async fn login(State(s): State<AppState>, Json(req): Json<OidcLogin>) -> ApiResu
         user_id,
         org_id: s.org_id,
         expires_at_ms,
+        is_guest: false,
     }))
+}
+
+async fn auth_config(State(s): State<AppState>) -> Json<AuthConfig> {
+    Json(AuthConfig {
+        org_name: s.org_name.clone(),
+        issuer: s.oidc.issuer().to_owned(),
+        client_id: s.oidc.audience().to_owned(),
+        guests_enabled: s.guests_enabled,
+    })
+}
+
+/// Creates a guest account from an invite code. The guest's access, and every
+/// session it gets, ends when the invite expires.
+async fn join_as_guest(State(s): State<AppState>, Json(req): Json<GuestJoin>) -> ApiResult<Json<Session>> {
+    if !s.guests_enabled {
+        return Err(ApiError::forbidden("this workspace doesn't allow guests"));
+    }
+    let name = req.display_name.trim();
+    if name.is_empty() || name.chars().count() > 64 {
+        return Err(ApiError::bad_request("display name must be 1 to 64 characters"));
+    }
+    let mut tx = s.db.begin().await?;
+    let invite: Option<(Uuid, f64)> = sqlx::query_as(
+        "SELECT id, extract(epoch FROM expires_at)::float8 FROM invites
+         WHERE code_hash = $1 AND org_id = $2 AND revoked_at IS NULL
+           AND expires_at > now() AND uses < max_uses
+         FOR UPDATE",
+    )
+    .bind(auth::hash_invite_code(&req.invite_code))
+    .bind(s.org_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    // One message for unknown, used-up, revoked and expired codes: no hints for guessing.
+    let (invite_id, invite_expiry) =
+        invite.ok_or_else(|| ApiError::forbidden("this invite code isn't valid; ask for a new one"))?;
+    sqlx::query("UPDATE invites SET uses = uses + 1 WHERE id = $1")
+        .bind(invite_id)
+        .execute(&mut *tx)
+        .await?;
+
+    let user_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO users (id, org_id, oidc_issuer, oidc_subject, display_name, is_guest, expires_at, invite_id)
+         VALUES ($1, $2, 'anarchy:guest', $3, $4, true, to_timestamp($5), $6)",
+    )
+    .bind(user_id)
+    .bind(s.org_id)
+    .bind(user_id.to_string())
+    .bind(name)
+    .bind(invite_expiry)
+    .bind(invite_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let (token, hash) = auth::new_session_token();
+    let expires_at_ms = (now_ms() + s.session_ttl.as_millis() as u64).min((invite_expiry * 1000.0) as u64);
+    sqlx::query(
+        "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, to_timestamp($3 / 1000.0))",
+    )
+    .bind(hash)
+    .bind(user_id)
+    .bind(expires_at_ms as f64)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(Json(Session {
+        token,
+        user_id,
+        org_id: s.org_id,
+        expires_at_ms,
+        is_guest: true,
+    }))
+}
+
+const MAX_INVITE_SECS: u64 = 30 * 24 * 3600;
+
+async fn create_invite(
+    State(s): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<CreateInvite>,
+) -> ApiResult<Json<Invite>> {
+    if !s.guests_enabled {
+        return Err(ApiError::forbidden("this workspace doesn't allow guests"));
+    }
+    if user.is_guest {
+        return Err(ApiError::forbidden("guests can't invite other guests"));
+    }
+    if !(60..=MAX_INVITE_SECS).contains(&req.expires_in_secs) {
+        return Err(ApiError::bad_request("invites last between 1 minute and 30 days"));
+    }
+    if !(1..=1000).contains(&req.max_uses) {
+        return Err(ApiError::bad_request("an invite can be used 1 to 1000 times"));
+    }
+    let (code, hash) = auth::new_invite_code();
+    let id = Uuid::new_v4();
+    let expires_at_ms = now_ms() + req.expires_in_secs * 1000;
+    sqlx::query(
+        "INSERT INTO invites (id, org_id, code_hash, created_by, expires_at, max_uses)
+         VALUES ($1, $2, $3, $4, to_timestamp($5 / 1000.0), $6)",
+    )
+    .bind(id)
+    .bind(user.org_id)
+    .bind(hash)
+    .bind(user.user_id)
+    .bind(expires_at_ms as f64)
+    .bind(req.max_uses as i32)
+    .execute(&s.db)
+    .await?;
+    Ok(Json(Invite {
+        id,
+        code,
+        expires_at_ms,
+        max_uses: req.max_uses,
+    }))
+}
+
+/// Revokes an invite. Guests who already joined through it keep access until it
+/// would have expired; revoke their devices to cut them off sooner.
+async fn revoke_invite(
+    State(s): State<AppState>,
+    user: AuthUser,
+    Path(invite): Path<Uuid>,
+) -> ApiResult<StatusCode> {
+    let updated = sqlx::query(
+        "UPDATE invites SET revoked_at = now() WHERE id = $1 AND created_by = $2 AND revoked_at IS NULL",
+    )
+    .bind(invite)
+    .bind(user.user_id)
+    .execute(&s.db)
+    .await?
+    .rows_affected();
+    if updated == 0 {
+        return Err(ApiError::not_found("no such active invite"));
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn register_device(
@@ -346,7 +493,8 @@ async fn append(
     for added in &req.adds {
         let same_org: Option<(i32,)> = sqlx::query_as(
             "SELECT 1 FROM devices d JOIN users u ON u.id = d.user_id
-             WHERE d.id = $1 AND u.org_id = $2 AND d.revoked_at IS NULL",
+             WHERE d.id = $1 AND u.org_id = $2 AND d.revoked_at IS NULL
+               AND (u.expires_at IS NULL OR u.expires_at > now())",
         )
         .bind(added)
         .bind(dev.org_id)
@@ -476,8 +624,10 @@ async fn members(
 ) -> ApiResult<Json<Vec<Member>>> {
     require_member(&s.db, channel, dev.device_id).await?;
     let rows: Vec<(Uuid, Uuid)> = sqlx::query_as(
-        "SELECT d.id, d.user_id FROM channel_members m JOIN devices d ON d.id = m.device_id
+        "SELECT d.id, d.user_id FROM channel_members m
+         JOIN devices d ON d.id = m.device_id JOIN users u ON u.id = d.user_id
          WHERE m.channel_id = $1 AND m.removed_seq IS NULL AND d.revoked_at IS NULL
+           AND (u.expires_at IS NULL OR u.expires_at > now())
          ORDER BY m.added_seq, d.id",
     )
     .bind(channel)

@@ -19,8 +19,9 @@
 | `ANARCHY_ORG_NAME` | yes | Your organisation's name. One server hosts one organisation. |
 | `ANARCHY_LISTEN` | no | Default `127.0.0.1:8080` |
 | `ANARCHY_SESSION_TTL_SECS` | no | Session lifetime, default 30 days |
+| `ANARCHY_GUESTS_ENABLED` | no | `true` lets members invite guests (no account; access ends with the invite). Off by default. |
 
-Register Anarchy in your identity provider as a **public client** using the authorization code flow with PKCE. The desktop app signs in through the system browser and sends the ID token to `POST /v1/auth/oidc`. Accepted signing algorithms: RS256, PS256, ES256, ES384, EdDSA.
+Register Anarchy in your identity provider as a **public client** using the authorization code flow with PKCE, and allow the loopback redirect `http://127.0.0.1/callback` on any port (RFC 8252; in Keycloak, add `http://127.0.0.1/*` as a valid redirect URI). The desktop app signs in through the system browser and sends the ID token to `POST /v1/auth/oidc`. Accepted signing algorithms: RS256, PS256, ES256, ES384, EdDSA.
 
 ## What the server stores
 

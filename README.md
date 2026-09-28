@@ -12,6 +12,20 @@ The Community edition (Discord-style servers plus public forums) comes later. Se
 | [docs/COMMUNITY-PLAN.md](docs/COMMUNITY-PLAN.md) | Community edition (parked) |
 | [design-system/](design-system/) | Tokens (Light, Dark, Luna), component CSS, component guidelines |
 
+## Screens
+
+Onboarding: sign in with your organisation, or join as a guest with an invite code; then pick a frame colour.
+
+| Join | Guest | Look |
+|---|---|---|
+| ![Join a workspace](docs/screens/onboarding-join.png) | ![Join as a guest](docs/screens/onboarding-guest.png) | ![Pick a frame colour](docs/screens/onboarding-look.png) |
+
+| App (Spring, guest) | Settings (Dark, Ocean) |
+|---|---|
+| ![App shell](docs/screens/app-guest-spring.png) | ![Appearance settings](docs/screens/settings-dark-ocean.png) |
+
+Rendered by `apps/desktop/ui-preview.mjs` with a mocked backend.
+
 ## Repository layout
 
 | Path | What |
