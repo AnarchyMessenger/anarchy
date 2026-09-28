@@ -1,0 +1,3 @@
+A person's card: how they look in Anarchy and how others find them.
+
+340×214 (scale it down, never change its proportions), the person's colour as a three-stop gradient with a diagonal sheen. Top row in tracked mono: `ANARCHY` and the account kind (MEMBER, FREELANCE, PERSONAL, COMMUNITY, WORK, ANONYMOUS, GUEST). Then the avatar tile (emoji or initials on 55% white), the name (22px, 700, −0.025em), the handle `@username#0427` in mono with the tag at 55%, and a foot with "Since" and an E2EE chip. Tilt it −2° to −4° when it's decoration (onboarding, profile); keep it straight anywhere it's read closely. Text is always ink: every frame colour keeps ink at 5:1 or better.

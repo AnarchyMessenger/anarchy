@@ -26,6 +26,15 @@ Remaining:
 - [x] Split-screen sign-in (SSO, email code, guest invite) inside the gradient frame.
 - [x] Real chat: create Sealed/Company channels, send and receive, unread markers, add and remove people (all of a person's devices at once), desktop notifications. Channel names and topics are encrypted too.
 - [x] Settings: Account, Appearance, Notifications, Devices (revoke), Invite guests.
+- [x] Personal accounts: sign up with Google/SSO, email or anonymously; `username#tag` handles; profile card (name, picture, colour) (D13).
+- [x] Spaces: create, invite by code, join; channels belong to a space; the directory is scoped to shared spaces (D14).
+- [x] Direct conversations by handle, with privacy settings (anyone / people in my spaces / only humans) (D15).
+- [x] Passphrase lock for the device, which also saves devices on computers without a keychain (D16).
+- [x] Onboarding: account → what it's for → passphrase → welcome card → Home.
+- [ ] Changing or removing the passphrase; adding an email to an anonymous account.
+- [ ] Space roles and settings (rename, leave, remove people from the space).
+- [ ] A new device of yours joins your existing conversations (today only devices present when a conversation starts are in it).
+- [ ] Blocking and reporting people in DMs.
 - [ ] Company Brain settings page (needs the Brain binary first).
 - [ ] People who join a channel can't read what was sent before they joined (MLS forward secrecy). Decide whether to offer history sharing: a member re-encrypts recent history for the newcomer (opt-in per channel, logged).
 - [ ] Rate limiting per IP on sign-in and guest join. Email codes are already limited per address; invite codes are 128-bit, so guessing isn't feasible, but floods still cost.

@@ -14,23 +14,27 @@ The Community edition (Discord-style servers plus public forums) comes later. Se
 
 ## Screens
 
-Sign in with SSO, an emailed code, or an invite code as a guest; then pick a frame colour.
+Sign up with Google, email or anonymously, then say what it's for, lock the device with a passphrase and make your card.
 
-| Sign in | Look |
+| Sign up | Your card |
 |---|---|
-| ![Sign in](docs/screens/sign-in.png) | ![Pick a frame colour](docs/screens/look.png) |
+| ![Sign up](docs/screens/sign-up.png) | ![Welcome card](docs/screens/welcome-card.png) |
 
-| Chat | Add people |
+| Home | Direct conversation |
 |---|---|
-| ![Chat](docs/screens/chat.png) | ![Add people](docs/screens/add-people.png) |
+| ![Home](docs/screens/home.png) | ![DM](docs/screens/dm.png) |
 
-| Devices | Dark, Ocean |
+| A space's channel | Privacy |
 |---|---|
-| ![Devices](docs/screens/devices.png) | ![Chat in dark mode](docs/screens/chat-dark.png) |
+| ![Channel in a space](docs/screens/space-channel.png) | ![Privacy settings](docs/screens/privacy.png) |
 
-These are rendered by `apps/desktop/ui-preview.mjs` with a mocked backend. The screenshot below is the real app instead: two desktop instances against a real server, taken under Xvfb.
+| Dark | Locked |
+|---|---|
+| ![Dark](docs/screens/dark.png) | ![Locked](docs/screens/locked.png) |
 
-![Real app, two people](docs/screens/real-app-two-people.png)
+These are rendered by `apps/desktop/ui-preview.mjs` with a mocked backend. The one below is the real app: a DM from an anonymous account arriving by handle, against a real server, taken under Xvfb.
+
+![Real app](docs/screens/real-app-dm-received.png)
 
 ## Repository layout
 
