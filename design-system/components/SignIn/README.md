@@ -1,0 +1,3 @@
+Split-screen sign-in inside the frame: the form on a white panel on the left (about 47%), the frame's gradient on the right with one dark glass card previewing the workspace.
+
+Steps, one question each: workspace address → sign in (outline "Continue with <Org> SSO", an "or" rule, work email → 6-digit code that submits itself when complete) → optional "Join as a guest" (invite code + name) → pick display mode and frame colour. Primary buttons here are `ink`, not `primary`. Errors sit under the form in `danger`. The card shows a person's and an agent's cursor chip. Under 880px the art side is hidden.

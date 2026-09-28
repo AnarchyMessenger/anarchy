@@ -21,9 +21,14 @@ Remaining:
 - [x] OIDC sign-in (ID token verified against the provider's keys), hashed server sessions, device registration, membership checks on every endpoint (D5). Tests cover forged, expired and wrong-audience tokens, non-members and spoofed devices.
 - [x] Desktop onboarding: workspace address → sign in with the organisation (system browser, PKCE, loopback) or join as a guest with an invite code → pick display mode and frame colour (D9, D10).
 - [x] Guest invites: expiry, use limits, revocation; guests expire with their invite and are cleaned out of channels.
-- [ ] Settings screens beyond Appearance (Notifications, Devices, Company Brain) are placeholders.
-- [ ] A slow OS keychain blocks the first window paint (the device opens before the window); move it off the startup path.
-- [ ] Rate limiting on sign-in and guest join (codes are 128-bit, so guessing isn't feasible, but floods still cost).
+- [x] Email one-time codes as a second sign-in method, limited to the organisation's domains; SSO becomes optional (D11).
+- [x] Desktop opens instantly: an engine thread owns the device and unlocks it behind the painted window; the keychain gets 3 seconds before the app falls back to a temporary device (D12).
+- [x] Split-screen sign-in (SSO, email code, guest invite) inside the gradient frame.
+- [x] Real chat: create Sealed/Company channels, send and receive, unread markers, add and remove people (all of a person's devices at once), desktop notifications. Channel names and topics are encrypted too.
+- [x] Settings: Account, Appearance, Notifications, Devices (revoke), Invite guests.
+- [ ] Company Brain settings page (needs the Brain binary first).
+- [ ] People who join a channel can't read what was sent before they joined (MLS forward secrecy). Decide whether to offer history sharing: a member re-encrypts recent history for the newcomer (opt-in per channel, logged).
+- [ ] Rate limiting per IP on sign-in and guest join. Email codes are already limited per address; invite codes are 128-bit, so guessing isn't feasible, but floods still cost.
 - [x] Member removal (keys rotate; removed devices read up to their removal, then delete the channel), re-adding, device revocation with `remove_revoked` clean-up (D8).
 - [x] Brain purges a channel's index when removed from it; survives restarts.
 - [ ] Device proof of possession at registration.
@@ -85,6 +90,8 @@ Pulled forward from phase 4:
 - Moderation tooling.
 
 ## Later / parking lot
+
+- **Solo spaces** (personal ERP and agent teams): see SOLO-PLAN.md.
 
 - Branded frame themes extracted from an organisation's brand guidelines (colours from a PDF), as in the Deel reference: an Enterprise feature for the Brain.
 

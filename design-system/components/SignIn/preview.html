@@ -1,0 +1,24 @@
+<!-- @dsCard group="Onboarding" height=440 -->
+<style>body{margin:0;padding:16px;background:var(--canvas);font-family:var(--font-sans,system-ui)}
+.win{display:grid;grid-template-columns:47% 1fr;height:400px;border-radius:14px;padding:8px;background:linear-gradient(135deg,var(--frame-cobalt-a),var(--frame-cobalt-b) 55%,var(--frame-cobalt-c))}
+.pane{display:grid;place-items:center;border-radius:10px;background:var(--surface);box-shadow:0 0 0 1px rgba(0,0,0,.08),0 10px 30px rgba(17,21,28,.12)}
+.form{display:grid;gap:10px;width:260px;text-align:center}
+.mark{justify-self:center;display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--frame-cobalt-a),var(--frame-cobalt-c));font-weight:600;color:var(--ink)}
+h1{margin:0;font-size:20px;color:var(--ink)} p{margin:0;font-size:13px;color:var(--ink-muted)}
+.b{height:36px;border-radius:8px;font:inherit;font-size:13px;font-weight:500;cursor:pointer}
+.ink{border:1px solid var(--ink);background:var(--ink);color:var(--surface)} .out{border:1px solid var(--border-strong);background:var(--surface);color:var(--ink)}
+input{height:36px;padding:0 12px;border:1px solid var(--border-strong);border-radius:8px;font:inherit;font-size:13px;background:var(--surface);color:var(--ink)}
+.or{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-faint)} .or::before,.or::after{content:"";flex:1;border-top:1px solid var(--border)}
+.art{display:grid;place-items:center}
+.card{width:230px;padding:12px 14px 22px;border-radius:12px;background:rgba(24,29,40,.9);color:#e7eaef;box-shadow:0 20px 40px rgba(17,21,28,.3);position:relative}
+.card small{color:#a0a8b6;font-size:11px} .card strong{display:block;margin:6px 0 4px;font-weight:500}
+.chip{position:absolute;bottom:-10px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
+</style>
+<div class="win"><div class="pane"><div class="form">
+<div class="mark">N</div><h1>Sign in to Northwind</h1><p>chat.northwind.org · <u>Change</u></p>
+<button class="b out">Continue with Northwind SSO</button><div class="or">or</div>
+<input aria-label="Work email" placeholder="you@northwind.org"><button class="b ink">Email me a code</button>
+<p>Have an invite code? <u>Join as a guest</u></p></div></div>
+<div class="art"><div class="card"><small>● Waiting for you</small><strong>Northwind is ready</strong><small>Sign in and your channels pick up where you left off.</small>
+<span class="chip" style="left:40px;background:#fff;color:#11151c">scribe · agent</span><span class="chip" style="right:14px;background:#11151c;color:#fff;border:1px solid #555">You</span></div></div></div>
+<script>/* static */</script>

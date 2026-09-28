@@ -48,6 +48,17 @@ The states differ in hue *and* in label and icon: lock, building, globe. Never s
 - **Community edition:** the same shell, plus a *Forum* item per community that opens ForumThreadList. Public forums also render server-side at a public URL without the app shell, for search engines. Readers without access see ForumPost's gate instead of the composer.
 - **Access flows:** InviteLink (who, what scope, what role, how long, how many uses) → AccessRequest queue for admins → the result posts as a SystemNotice and a Toast.
 
+## Screens built so far (desktop)
+
+- **Sign-in (split screen).** Inside the frame, a white panel on the left (about 47%, never narrower than 400px) holds the form. The frame itself is the right side and carries one dark glass card: a preview of the workspace ("Northwind is ready") with two cursor chips, a person's and an agent's, to show that agents work alongside people. Under 880px the art side is hidden and the panel fills the frame. Steps: workspace address → sign in (SSO button, "or" rule, email field → 6-digit code) → optional "Join as a guest" (invite code + name) → pick display mode and frame colour. One question per step, and the heading names the organisation once it's known.
+- **Buttons on auth screens** are `ink` (near-black fill, `surface` text). Outline buttons are for the secondary route (SSO next to email). Links are underlined `ink-muted`. `primary` cobalt is kept for the app itself, so the sign-in never competes with the frame colour.
+- **Chat.** Messages are grouped: a new header (avatar initials, name, time) when the sender changes or 5 minutes pass, otherwise the line continues under the previous one. Day rules separate days. Unread channels are bold with a dot. The composer is a `radius-xl` box. Enter sends and Shift+Enter adds a line. The send button stays disabled until there's text. A message being sent shows at 50% opacity until the server has it.
+- **Channel header:** name, trust state pill (Sealed / Company, with icon), topic, then the member count and "Add people". The empty state explains what newcomers can't see: messages sent before they joined stay unreadable to them.
+- **Dialogs:** a title, fields with labels above, and the trust choice as two radio cards with no default. The primary button is the last one and the only submit button, so Enter never triggers Cancel.
+- **Settings:** a sidebar list of pages; each page has a title, one sentence saying what it's for, then facts (label/value rows), toggles (label + one-line explanation) or list rows (identifier, date, a tag or a button on the right).
+
+Base element styles in `bundle.css` are wrapped in `:where()`, so any component class overrides them without specificity fights.
+
 ## Themes
 
 - **Light:** the default. Cool neutrals, cobalt, amber selection.
