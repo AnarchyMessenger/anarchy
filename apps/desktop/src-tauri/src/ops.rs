@@ -497,6 +497,8 @@ pub struct MessageView {
     mine: bool,
     ts_ms: u64,
     text: String,
+    /// The thread this reply belongs to (the root message's `seq`).
+    thread: Option<u64>,
 }
 
 /// Last read sequence number per channel.
@@ -602,13 +604,15 @@ pub async fn open_channel(i: &mut Inner, channel: ChannelId) -> Result<Vec<Messa
     Ok(history
         .iter()
         .filter_map(|m| {
-            let text = Content::decode(&m.content).text_body()?.to_owned();
+            let content = Content::decode(&m.content);
+            let text = content.text_body()?.to_owned();
             Some(MessageView {
                 seq: m.seq,
                 sender: sender_name(i, channel, m.sender),
                 mine: m.sender == me,
                 ts_ms: m.ts_ms,
                 text,
+                thread: content.thread(),
             })
         })
         .collect())
@@ -619,20 +623,27 @@ pub async fn blur(i: &mut Inner) -> Result<(), String> {
     Ok(())
 }
 
-pub async fn send_message(i: &mut Inner, channel: ChannelId, text: String) -> Result<(), String> {
+/// Sends a message, or a reply in the thread started by message `thread`.
+pub async fn send_message(
+    i: &mut Inner,
+    channel: ChannelId,
+    text: String,
+    thread: Option<u64>,
+) -> Result<(), String> {
     let text = text.trim().to_owned();
     if text.is_empty() {
         return Ok(());
     }
+    let content = match thread {
+        Some(root) => Content::reply(text, root),
+        None => Content::text(text),
+    };
     let client = i.client()?;
-    match client.send_content(channel, &Content::text(text.clone())).await {
+    match client.send_content(channel, &content).await {
         // Someone changed the channel meanwhile: catch up, then try once more.
         Err(anarchy_core::Error::StaleEpoch { .. }) => {
             client.sync_and_store(channel).await.map_err(err)?;
-            client
-                .send_content(channel, &Content::text(text))
-                .await
-                .map_err(err)?;
+            client.send_content(channel, &content).await.map_err(err)?;
         }
         other => {
             other.map_err(err)?;

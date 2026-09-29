@@ -53,6 +53,9 @@ const mock = (startLocked) => {
     { id: "c1", kind: "channel", space: "sp1", name: "acme-rebrand", topic: "Logo, type and the launch deck", trust: "sealed", unread: false, messages: [
       { sender: "Ines Bauer", ts: now - 3 * 60 * min, text: "Moodboard is in the drive, three directions." },
       { sender: "ME", ts: now - 2 * 60 * min, text: "Going with the second one. Warmer, less corporate." },
+      { sender: "Ines Bauer", ts: now - 110 * min, text: "Do we keep the serif for headlines?", thread: 2 },
+      { sender: "ME", ts: now - 100 * min, text: "Yes, only headlines. Body stays in the sans.", thread: 2 },
+      { sender: "Tomás Ruiz", ts: now - 40 * min, text: "Exported both weights to the drive.", thread: 2 },
       { sender: "Tomás Ruiz", ts: now - 30 * min, text: "Agreed. I'll mock the deck cover with it." },
     ] },
     { id: "c2", kind: "channel", space: "sp1", name: "invoices", topic: "What's out, what's paid", trust: "sealed", unread: true, messages: [
@@ -168,10 +171,10 @@ const mock = (startLocked) => {
       open = channel;
       const c = channels.find((x) => x.id === channel);
       c.unread = false;
-      return c.messages.map((m, i) => ({ seq: i + 1, sender: m.sender === "ME" ? me() : m.sender, mine: m.sender === "ME", ts_ms: m.ts, text: m.text }));
+      return c.messages.map((m, i) => ({ seq: i + 1, sender: m.sender === "ME" ? me() : m.sender, mine: m.sender === "ME", ts_ms: m.ts, text: m.text, thread: m.thread ?? null }));
     },
     blur: async () => { open = null; },
-    send_message: async ({ channel, text }) => { await wait(120); channels.find((x) => x.id === channel).messages.push({ sender: "ME", ts: Date.now(), text }); },
+    send_message: async ({ channel, text, thread }) => { await wait(120); channels.find((x) => x.id === channel).messages.push({ sender: "ME", ts: Date.now(), text, thread: thread ?? null }); },
     create_channel: async ({ space, name, topic, trust }) => { const id = `c${channels.length + 1}`; channels.push({ id, kind: "channel", space, name: name.trim().toLowerCase().replace(/\s+/g, "-"), topic, trust, unread: false, messages: [] }); return id; },
     create_desk: async ({ space, name }) => { const id = `k${channels.length + 1}`; channels.push({ id, kind: "channel", space, desk: "collections", name, trust: "company", unread: false, messages: [] }); return id; },
     desk_items: async ({ channel }) => (channel === "k1" ? items : channel === "f1" ? driveItems : []),
@@ -370,7 +373,18 @@ await page.fill("#ask-input", "acme deck");
 await page.press("#ask-input", "Enter");
 await page.waitForTimeout(300);
 await shot("13l-ask");
-await page.click("#ask-close");
+await page.click('#channel-list .side-item >> text="acme-rebrand"');
+await page.click(".thread-sum");
+await visible("#thread");
+await page.fill("#thread-input", "Perfect, locking it.");
+await page.press("#thread-input", "Enter");
+await page.waitForTimeout(300);
+await shot("13o-thread");
+await page.click("#thread-close");
+await page.click("#sidebar-toggle");
+await page.waitForTimeout(150);
+await shot("13p-tabs-no-sidebar");
+await page.click("#sidebar-toggle");
 await page.click("#rail-me");
 await shot("13m-me-popover");
 await page.click("#me-settings");

@@ -94,7 +94,7 @@ op!(set_notifications(prefs: ops::NotificationPrefs) -> ());
 op!(list_channels() -> Vec<ops::ChannelView>);
 op!(open_channel(channel: ChannelId) -> Vec<ops::MessageView>);
 op!(blur() -> ());
-op!(send_message(channel: ChannelId, text: String) -> ());
+op!(send_message(channel: ChannelId, text: String, thread: Option<u64>) -> ());
 op!(create_channel(space: Option<SpaceId>, name: String, topic: String, trust: Trust) -> ChannelId);
 op!(sync_all() -> ops::SyncReport);
 op!(people(channel: Option<ChannelId>) -> Vec<ops::Person>);

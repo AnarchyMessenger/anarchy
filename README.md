@@ -44,6 +44,10 @@ Sign up with Google, email or anonymously, then say what it's for, lock the devi
 |---|---|
 | ![Desk mention](docs/screens/desk-mention.png) | ![Ask](docs/screens/ask.png) |
 
+| Thread beside the conversation | Tabs, sidebar hidden (`Ctrl \`) |
+|---|---|
+| ![Thread](docs/screens/thread.png) | ![Tabs](docs/screens/tabs.png) |
+
 | A space's channel | Privacy |
 |---|---|
 | ![Channel in a space](docs/screens/space-channel.png) | ![Privacy settings](docs/screens/privacy.png) |
@@ -67,6 +71,10 @@ A file uploaded through the real picker, encrypted in chunks, then fetched and d
 The client's payment page (above, and after "Mark as paid" below) is the real server's page on a phone-sized Chromium, decrypting a link made by the real app.
 
 ![Payment link after it's paid](docs/screens/pay-link-paid.png)
+
+A thread in the real app: the reply went through the channel's MLS group like any message, and the thread joined the tabs because Maya replied in it.
+
+![Real app, thread](docs/screens/real-app-thread.png)
 
 And search in the real app (`Ctrl K`), over what this device decrypted:
 

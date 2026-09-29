@@ -394,6 +394,7 @@ async function showApp() {
   go("home");
   await refreshChannels();
   startPolling();
+  refreshDeskNeeds().then(renderTabs);
   // Brings the local file share back up if it was on.
   invoke("mount_info").then((m) => { mount = m; }).catch(() => {});
 }
@@ -492,6 +493,7 @@ $("share-copy").addEventListener("click", (e) => { e.stopPropagation(); copy(`@$
 async function refreshChannels() {
   channels = await invoke("list_channels");
   renderSide();
+  renderTabs();
   renderHomeSpaces();
   const dmUnread = channels.some((c) => c.kind === "dm" && c.unread && c.id !== current);
   show("home-dot", dmUnread);
@@ -526,7 +528,9 @@ function renderSide() {
 async function openChannel(id) {
   const c = channels.find((x) => x.id === id);
   if (!c) return;
+  if (thread && thread.channel !== id) closeThread();
   current = id;
+  addTab({ channel: id });
   markNav();
   if (c.desk === "files") return openDrive(c);
   if (c.desk) return openDesk(c);
@@ -547,26 +551,45 @@ async function openChannel(id) {
   const messages = await invoke("open_channel", { channel: id });
   if (!dm) invoke("channel_members", { channel: id }).then((m) => { $("convo-count").textContent = String(m.length); });
   renderMessages(messages, c);
+  renderThread();
   refreshChannels();
 }
 
 function renderMessages(messages, c) {
+  convo = { channel: c, messages };
   const t = $("transcript");
   const atBottom = t.scrollHeight - t.scrollTop - t.clientHeight < 40;
   const rows = [];
+  const threads = threadsOf(messages);
+  const known = new Set(messages.map((m) => m.seq));
+  const placed = new Set();
   let lastDay = "", lastSender = "", lastTs = 0;
   for (const m of messages) {
     const day = dayFmt.format(m.ts_ms);
+    if (m.thread != null) {
+      // Replies live in their thread. One whose first message is from before
+      // this person joined (unreadable to them) gets a stand-in row instead.
+      if (known.has(m.thread) || placed.has(m.thread)) continue;
+      placed.add(m.thread);
+      if (day !== lastDay) { rows.push(el("div", { class: "day", text: day })); lastDay = day; }
+      rows.push(el("div", { class: "msg orphan" }, el("span", { class: "orphan-mark" }, icon("thread")),
+        el("div", {}, el("p", { class: "fine", text: "Replies to a message from before you joined" }), threadSummary(c, m.thread, threads.get(m.thread)))));
+      lastSender = "";
+      continue;
+    }
     if (day !== lastDay) { rows.push(el("div", { class: "day", text: day })); lastDay = day; lastSender = ""; }
-    const cont = m.sender === lastSender && m.ts_ms - lastTs < 5 * 60 * 1000;
+    const cont = m.sender === lastSender && m.ts_ms - lastTs < 5 * 60 * 1000 && !threads.has(lastSeqOf(rows));
     const look = m.mine ? { color: profile?.color, avatar: profile?.avatar } : c.kind === "dm" ? { color: c.peer?.color, avatar: c.peer?.avatar } : {};
-    rows.push(el("div", { class: `msg${cont ? " cont" : ""}` },
+    const row = el("div", { class: `msg${cont ? " cont" : ""}`, "data-seq": String(m.seq) },
       avatarEl(m.sender, look),
       el("div", {},
         cont ? null : el("header", {}, el("strong", { text: m.sender }), el("time", { text: timeFmt.format(m.ts_ms) })),
         el("div", { class: "body" }, ...mentionChips(m.text)),
-        ...deskCards(m.text))));
-    lastSender = m.sender; lastTs = m.ts_ms;
+        ...deskCards(m.text),
+        threads.has(m.seq) ? threadSummary(c, m.seq, threads.get(m.seq)) : null),
+      el("div", { class: "msg-acts" }, el("button", { class: "icon-btn sm", type: "button", title: "Reply in thread", "aria-label": "Reply in thread", onclick: () => openThread(c.id, m.seq) }, icon("thread"))));
+    rows.push(row);
+    lastSender = threads.has(m.seq) ? "" : m.sender; lastTs = m.ts_ms;
   }
   if (!messages.length) {
     rows.push(c.kind === "dm"
@@ -577,6 +600,205 @@ function renderMessages(messages, c) {
   t.replaceChildren(...rows);
   if (atBottom || messages.length < 30) t.scrollTop = t.scrollHeight;
 }
+function lastSeqOf(rows) { const r = rows[rows.length - 1]; return r?.dataset?.seq ? Number(r.dataset.seq) : -1; }
+// Root seq -> its replies, oldest first.
+function threadsOf(messages) {
+  const out = new Map();
+  for (const m of messages) if (m.thread != null) { if (!out.has(m.thread)) out.set(m.thread, []); out.get(m.thread).push(m); }
+  return out;
+}
+function threadSummary(c, root, replies) {
+  const who = [...new Map(replies.map((r) => [r.sender, r])).values()].slice(-3);
+  const last = replies[replies.length - 1];
+  const unseen = replies.filter((r) => !r.mine && r.seq > (threadSeen[`${c.id}:${root}`] || 0)).length;
+  return el("button", { class: `thread-sum${unseen ? " new" : ""}`, type: "button", onclick: () => openThread(c.id, root) },
+    el("span", { class: "who" }, ...who.map((r) => avatarEl(r.sender, r.mine ? { color: profile?.color, avatar: profile?.avatar, size: "sm" } : { size: "sm" }))),
+    el("strong", { text: `${replies.length} ${replies.length === 1 ? "reply" : "replies"}` }),
+    el("small", { text: unseen ? `${unseen} new` : `Last ${sinceFmt(last.ts_ms)}` }));
+}
+function sinceFmt(ts) {
+  const m = Math.round((Date.now() - ts) / 60000);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : shortDate.format(ts);
+}
+
+// ---------- threads ----------
+// A reply names the message that starts its thread (its seq in the channel's
+// log). The thread opens beside the conversation, and can be kept as a tab.
+
+let convo = null; // { channel, messages } on screen
+let thread = null; // { channel, root }
+let threadSeen = readStore("anarchy.threadSeen", {});
+function openThread(channelId, root) {
+  if (current !== channelId) { goTo(channelId).then(() => openThread(channelId, root)); return; }
+  openAsk(false);
+  thread = { channel: channelId, root };
+  show("thread", true);
+  document.querySelector(".main")?.classList.add("with-panel");
+  renderThread();
+  renderTabs();
+  $("thread-input").focus();
+}
+function closeThread() {
+  thread = null;
+  show("thread", false);
+  document.querySelector(".main")?.classList.remove("with-panel");
+  renderTabs();
+}
+function renderThread() {
+  if (!thread || !convo || convo.channel.id !== thread.channel) return;
+  const c = convo.channel;
+  const root = convo.messages.find((m) => m.seq === thread.root && m.thread == null);
+  const replies = convo.messages.filter((m) => m.thread === thread.root);
+  $("thread-where").textContent = c.kind === "dm" ? `With ${c.name}` : `#${c.name}`;
+  const line = (m, big) => el("div", { class: `thread-msg${big ? " root" : ""}` },
+    avatarEl(m.sender, m.mine ? { color: profile?.color, avatar: profile?.avatar, size: big ? undefined : "sm" } : c.kind === "dm" && !m.mine ? { color: c.peer?.color, avatar: c.peer?.avatar, size: big ? undefined : "sm" } : { size: big ? undefined : "sm" }),
+    el("div", {}, el("header", {}, el("strong", { text: m.sender }), el("time", { text: `${shortDate.format(m.ts_ms)} ${timeFmt.format(m.ts_ms)}` })), el("div", { class: "body" }, ...mentionChips(m.text)), ...deskCards(m.text)));
+  $("thread-log").replaceChildren(
+    root ? line(root, true) : el("p", { class: "fine thread-orphan", text: "This thread starts with a message from before you joined. You can read the replies sent since." }),
+    el("div", { class: "thread-count", text: replies.length ? `${replies.length} ${replies.length === 1 ? "reply" : "replies"}` : "No replies yet" }),
+    ...replies.map((m) => line(m, false)));
+  $("thread-log").scrollTop = $("thread-log").scrollHeight;
+  const last = replies[replies.length - 1];
+  if (last) { threadSeen[`${c.id}:${thread.root}`] = last.seq; writeStore("anarchy.threadSeen", threadSeen); }
+  $("thread-input").placeholder = root && !root.mine ? `Reply to ${root.sender}…` : "Reply in thread…";
+}
+$("thread-close").addEventListener("click", closeThread);
+$("thread-tab").addEventListener("click", () => { if (thread) { addTab({ channel: thread.channel, thread: thread.root }); renderTabs(); } });
+$("thread-input").addEventListener("input", () => { $("thread-send").disabled = !$("thread-input").value.trim(); mentionInput($("thread-input")); });
+$("thread-input").addEventListener("blur", () => setTimeout(closeMention, 120));
+$("thread-input").addEventListener("keydown", (e) => {
+  if (mentionKey(e)) return;
+  if (e.key === "Escape") { e.preventDefault(); closeThread(); composer.focus(); return; }
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("thread-form").requestSubmit(); }
+});
+$("thread-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("thread-input").value.trim();
+  if (!text || !thread) return;
+  const { channel, root } = thread;
+  $("thread-input").value = ""; $("thread-send").disabled = true;
+  try {
+    await invoke("send_message", { channel, text, thread: root });
+    await forwardToDesks(text, channels.find((c) => c.id === channel));
+    // Taking part in a thread puts it in the working set.
+    addTab({ channel, thread: root });
+  } catch (err) { $("thread-input").value = text; alert(`Not sent: ${err}`); }
+  await openChannel(channel);
+});
+
+// ---------- tabs: the working set ----------
+// The sidebar is the whole tree; the tabs are what's live. Opening a
+// conversation or desk adds it (at most MAX_TABS, the least recently used goes
+// first); threads join when you reply or keep them. Each tab carries its
+// status: unread, new replies, what a desk needs. Stored on this device only.
+
+const MAX_TABS = 8;
+let tabs = readStore("anarchy.tabs", []);
+function readStore(key, fallback) { try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; } catch { return fallback; } }
+function writeStore(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private mode: fine */ } }
+const tabKey = (t) => (t.thread != null ? `${t.channel}:${t.thread}` : t.channel);
+function addTab(t) {
+  const key = tabKey(t);
+  const at = tabs.find((x) => tabKey(x) === key);
+  if (at) at.used = Date.now();
+  else {
+    tabs.push({ channel: t.channel, thread: t.thread ?? null, used: Date.now() });
+    while (tabs.length > MAX_TABS) {
+      const active = activeTabKey();
+      const victim = tabs.filter((x) => tabKey(x) !== active).sort((a, b) => a.used - b.used)[0];
+      tabs = tabs.filter((x) => x !== victim);
+    }
+  }
+  writeStore("anarchy.tabs", tabs);
+}
+function closeTab(t, e) {
+  e?.stopPropagation();
+  const key = tabKey(t);
+  const idx = tabs.findIndex((x) => tabKey(x) === key);
+  const wasActive = activeTabKey() === key;
+  tabs = tabs.filter((x) => tabKey(x) !== key);
+  writeStore("anarchy.tabs", tabs);
+  if (wasActive) {
+    const next = tabs[Math.min(idx, tabs.length - 1)];
+    if (next) openTab(next);
+    else { if (thread) closeThread(); current = null; invoke("blur"); showStart(); renderSide(); }
+  }
+  renderTabs();
+}
+function activeTabKey() {
+  if (!current) return null;
+  if (thread && thread.channel === current && tabs.some((x) => x.channel === current && x.thread === thread.root)) return `${current}:${thread.root}`;
+  return current;
+}
+async function openTab(t) {
+  if (t.thread != null) { openThread(t.channel, t.thread); return; }
+  if (thread) closeThread();
+  await goTo(t.channel);
+}
+const deskNeeds = new Map(); // desk id -> count, refreshed as desks are opened or polled
+async function refreshDeskNeeds() {
+  const today = isoToday();
+  for (const t of tabs) {
+    const c = channels.find((x) => x.id === t.channel);
+    if (c?.desk !== "collections" || t.thread != null) continue;
+    try {
+      const items = await invoke("desk_items", { channel: c.id });
+      const late = items.filter((i) => i.kind === "invoice" && invoiceState(i.data, today) === "overdue").length;
+      const claims = desk?.channel === c.id ? invoices().filter((i) => claimOf(i)).length : 0;
+      deskNeeds.set(c.id, late + claims);
+    } catch { /* keep the last count */ }
+  }
+}
+function renderTabs() {
+  const live = tabs.filter((t) => channels.some((c) => c.id === t.channel));
+  if (live.length !== tabs.length && channels.length) { tabs = live; writeStore("anarchy.tabs", tabs); }
+  const active = activeTabKey();
+  $("tab-list").replaceChildren(...live.map((t) => {
+    const c = channels.find((x) => x.id === t.channel);
+    const key = tabKey(t);
+    let lead, name, status = null;
+    if (t.thread != null) {
+      lead = el("span", { class: "tab-icon" }, icon("thread"));
+      const root = convo?.channel.id === c.id ? convo.messages.find((m) => m.seq === t.thread && m.thread == null) : null;
+      name = root ? root.text.slice(0, 28) : `Thread in ${c.kind === "dm" ? c.name : `#${c.name}`}`;
+      const replies = convo?.channel.id === c.id ? convo.messages.filter((m) => m.thread === t.thread) : [];
+      const unseen = replies.filter((r) => !r.mine && r.seq > (threadSeen[key] || 0)).length;
+      if (unseen && key !== active) status = el("span", { class: "tab-badge", text: String(unseen) });
+    } else if (c.kind === "dm") {
+      lead = avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, size: "xs" });
+      name = c.name;
+    } else if (c.desk) {
+      lead = el("span", { class: "tab-icon is-desk" }, icon(DESK_ICON[c.desk] || "receipt"));
+      name = c.name;
+      const n = deskNeeds.get(c.id);
+      if (n) status = el("span", { class: "tab-badge warn", title: `${n} need you`, text: String(n) });
+    } else {
+      lead = el("span", { class: "tab-icon hash", text: "#" });
+      name = c.name;
+    }
+    if (!status && t.thread == null && c.unread && c.id !== current) status = el("span", { class: "unread-dot", "aria-label": "unread" });
+    const sp = c.space ? spaces.find((x) => x.id === c.space) : null;
+    return el("div", { class: `tab${key === active ? " active" : ""}`, role: "tab", "aria-selected": String(key === active), tabindex: "0", title: sp ? `${name} · ${sp.name}` : name,
+      "data-color": sp ? colorFor(sp.id) : undefined, onclick: () => openTab(t), onauxclick: (e) => { if (e.button === 1) closeTab(t, e); },
+      onkeydown: (e) => { if (e.key === "Enter") openTab(t); } },
+      sp ? el("span", { class: "tab-space", "aria-hidden": "true" }) : null,
+      lead, el("span", { class: "tab-name", text: name }), status,
+      el("button", { class: "tab-x", type: "button", "aria-label": `Close ${name}`, onclick: (e) => closeTab(t, e) }, icon("x")));
+  }));
+  show("tabs", true);
+}
+function setSidebar(hidden) {
+  $("workspace").classList.toggle("no-sidebar", hidden);
+  $("sidebar-toggle").setAttribute("aria-pressed", String(hidden));
+  $("sidebar-toggle").title = hidden ? "Show sidebar (Ctrl \\)" : "Hide sidebar (Ctrl \\)";
+  writeStore("anarchy.sidebarHidden", hidden);
+}
+$("sidebar-toggle").addEventListener("click", () => setSidebar(!$("workspace").classList.contains("no-sidebar")));
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "\\") { e.preventDefault(); setSidebar(!$("workspace").classList.contains("no-sidebar")); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "w" && current) { e.preventDefault(); const t = tabs.find((x) => tabKey(x) === activeTabKey()); if (t) closeTab(t); }
+});
+setSidebar(readStore("anarchy.sidebarHidden", false));
 
 const composer = $("message");
 function fitComposer() { composer.style.height = "auto"; composer.style.height = `${Math.min(composer.scrollHeight, 160)}px`; $("send").disabled = !composer.value.trim(); }
@@ -755,6 +977,7 @@ const KIND_OF_DESK = { collections: "Collections", files: "Files" };
 
 const STOP = new Set("the a an and or of to in on for with is are was were be what who when where which how much many my our your me i we you it this that there any all do does did have has from about show find tell please status check update latest new give list".split(" "));
 function openAsk(on = true) {
+  if (on && thread) closeThread();
   show("ask", on);
   document.querySelector(".main")?.classList.toggle("with-ask", on);
   if (!on) return;
@@ -1228,6 +1451,8 @@ function renderDesk() {
   $("check-all").checked = rows.length > 0 && rows.every((i) => desk.selected.has(i.id));
   renderBulk();
   renderNotes(all);
+  deskNeeds.set(desk.channel, all.filter((i) => i.state === "overdue").length + all.filter((i) => claimOf(i)).length);
+  renderTabs();
 }
 
 function renderBulk() {

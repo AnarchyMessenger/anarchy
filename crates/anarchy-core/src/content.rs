@@ -21,6 +21,11 @@ pub enum Trust {
 pub enum Content {
     Text {
         body: String,
+        /// Set on a reply: the sequence number of the message that starts the
+        /// thread, in this channel's log. Clients that don't know threads show
+        /// replies inline, as ordinary messages.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thread: Option<u64>,
     },
     /// Sets or renames the channel. The latest one wins.
     ChannelInfo {
@@ -42,9 +47,7 @@ pub enum Content {
     },
     /// Several records at once: the current state, re-shared when someone joins
     /// (they can't read messages from before they were added).
-    Items {
-        items: Vec<ItemRecord>,
-    },
+    Items { items: Vec<ItemRecord> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,7 +109,26 @@ pub fn fold_items<'a>(history: impl IntoIterator<Item = (u64, u64, &'a [u8])>) -
 
 impl Content {
     pub fn text(body: impl Into<String>) -> Self {
-        Content::Text { body: body.into() }
+        Content::Text {
+            body: body.into(),
+            thread: None,
+        }
+    }
+
+    /// A reply in the thread started by message `root`.
+    pub fn reply(body: impl Into<String>, root: u64) -> Self {
+        Content::Text {
+            body: body.into(),
+            thread: Some(root),
+        }
+    }
+
+    /// The thread a reply belongs to.
+    pub fn thread(&self) -> Option<u64> {
+        match self {
+            Content::Text { thread, .. } => *thread,
+            _ => None,
+        }
     }
 
     pub fn encode(&self) -> Vec<u8> {
@@ -118,13 +140,14 @@ impl Content {
     pub fn decode(bytes: &[u8]) -> Self {
         serde_json::from_slice(bytes).unwrap_or_else(|_| Content::Text {
             body: String::from_utf8_lossy(bytes).into_owned(),
+            thread: None,
         })
     }
 
     /// The searchable text, if any.
     pub fn text_body(&self) -> Option<&str> {
         match self {
-            Content::Text { body } => Some(body),
+            Content::Text { body, .. } => Some(body),
             Content::ChannelInfo { .. } | Content::Item { .. } | Content::Items { .. } => None,
         }
     }
@@ -133,6 +156,19 @@ impl Content {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn replies_carry_their_thread_and_old_messages_still_decode() {
+        let reply = Content::reply("on it", 7);
+        assert_eq!(Content::decode(&reply.encode()).thread(), Some(7));
+        let old = br#"{"t":"text","body":"hi"}"#;
+        assert_eq!(Content::decode(old), Content::text("hi"));
+        assert!(
+            !String::from_utf8(Content::text("hi").encode())
+                .unwrap()
+                .contains("thread")
+        );
+    }
 
     #[test]
     fn items_fold_latest_write_wins() {

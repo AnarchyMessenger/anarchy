@@ -149,14 +149,7 @@ async fn direct_conversations_follow_the_receivers_privacy_setting() {
     assert_eq!(peer.email, None, "handles never reveal email addresses");
     assert!(skipped.is_empty());
 
-    maya.send_content(
-        dm,
-        &Content::Text {
-            body: "hi tomas".into(),
-        },
-    )
-    .await
-    .unwrap();
+    maya.send_content(dm, &Content::text("hi tomas")).await.unwrap();
     tomas.accept_invites().await.unwrap();
     let got = tomas.sync_and_store(dm).await.unwrap();
     assert_eq!(
