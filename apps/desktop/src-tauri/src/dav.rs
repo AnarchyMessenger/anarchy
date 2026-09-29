@@ -313,7 +313,8 @@ impl DriveFs {
             return Ok(list.clone());
         }
         let list = on_engine(&self.engine, |i| Box::pin(ops::spaces(i))).await?;
-        let mut named: Vec<(String, SpaceId)> = Vec::new();
+        // Your own files come first; the nil id stands for them (see `drive`).
+        let mut named: Vec<(String, SpaceId)> = vec![("My files".to_owned(), SpaceId::nil())];
         for s in list {
             let base = clean(&s.name);
             let mut name = base.clone();
@@ -343,7 +344,11 @@ impl DriveFs {
     async fn drive(&self, space: SpaceId) -> FsResult<Drive> {
         let (channel, items) = on_engine(&self.engine, move |i| {
             Box::pin(async move {
-                let channel = ops::ensure_drive(i, space).await?;
+                let channel = if space.is_nil() {
+                    ops::ensure_personal(i, "files".into()).await?
+                } else {
+                    ops::ensure_drive(i, space).await?
+                };
                 let items = ops::desk_items(i, channel).await?;
                 Ok((channel, items))
             })

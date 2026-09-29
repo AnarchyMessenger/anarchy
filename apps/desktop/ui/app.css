@@ -882,3 +882,100 @@ svg.i.flip { transform: scaleX(-1); }
 @container (max-width: 760px) { .notes { grid-template-columns: 1fr; } .note-pages { display: none; } }
 /* One width for everything that docks on the right: People, the assistant, threads. */
 .thread { width: min(380px, 100%); }
+
+/* ---------- sections: compact and dark, apart from the moving tabs ---------- */
+.folders { align-items: center; }
+.folder-tabs { align-self: center; margin-bottom: 0; gap: 2px; padding: 3px; border-radius: 10px; background: var(--ink); box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 1px 2px rgba(26,24,20,.2); }
+.folder { height: 28px; padding: 0 10px; gap: 6px; border: 0; border-radius: 7px; font-size: 12.5px; font-weight: 560; color: color-mix(in srgb, var(--surface) 72%, transparent); }
+.folder:hover { color: var(--surface); background: color-mix(in srgb, var(--surface) 12%, transparent); }
+.folder.active { background: var(--surface); color: var(--ink); border: 0; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+.folder.active::after { display: none; }
+.folder svg.i { width: 14px; height: 14px; }
+.folder .tab-badge.warn { background: var(--public); color: #fff; }
+.folder.active .tab-badge.warn { background: var(--public-soft); color: var(--public); }
+.folders .tab-list { border-left: 0; padding-left: 2px; }
+/* Every icon on the top edge sits on one line: rail, sidebar toggle, sections, right strip. */
+.tools { padding-top: 4px; }
+.rail { padding-top: 4px; }
+
+/* ---------- desk: notes on the right ---------- */
+.desk { grid-template-columns: minmax(0, 1fr) 280px; }
+.desk > .desk-notes { order: 2; border-right: 0; border-left: 1px solid var(--border); }
+
+/* ---------- right-hand panels float inside the page, with room around them ---------- */
+.main.dock-right { padding-right: 348px; }
+.main > .ask, .main > #drawer-people, .main > .thread {
+  top: 10px; right: 10px; bottom: 10px; width: 328px; border-radius: 16px;
+  border: 1px solid var(--border); overflow: hidden;
+  background: color-mix(in srgb, var(--surface-sunken) 70%, var(--surface));
+  box-shadow: 0 24px 48px -28px rgba(26,24,20,.45), 0 2px 6px rgba(26,24,20,.06), inset 0 1px 0 rgba(255,255,255,.55);
+}
+.main.dock-right > .ask, .main.dock-right > #drawer-people, .main.dock-right > .thread { width: 328px; box-shadow: 0 24px 48px -28px rgba(26,24,20,.45), 0 2px 6px rgba(26,24,20,.06), inset 0 1px 0 rgba(255,255,255,.55); }
+/* The assistant's edge carries the frame's gradient. */
+.main > .ask { border: 1.5px solid transparent; background:
+  linear-gradient(color-mix(in srgb, var(--surface-sunken) 70%, var(--surface)), color-mix(in srgb, var(--surface-sunken) 70%, var(--surface))) padding-box,
+  linear-gradient(150deg, var(--fa), var(--fb) 50%, var(--fc)) border-box; }
+.ask .ask-head, .thread .ask-head, #drawer-people .side-head { background: transparent; border-bottom-color: color-mix(in srgb, var(--border) 70%, transparent); }
+.ask .ask-composer, .thread .ask-composer { background: var(--surface); }
+[data-theme="dark"] .main > .ask, [data-theme="dark"] .main > #drawer-people, [data-theme="dark"] .main > .thread { box-shadow: 0 24px 48px -24px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.06); }
+
+/* ---------- Home: three cards ---------- */
+.home-today { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .home-today { grid-template-columns: 1fr 1fr; } }
+
+/* ---------- agenda: quick add, search, day ---------- */
+.agenda { position: relative; }
+.agenda-search { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 999px; background: var(--surface); box-shadow: 0 0 0 1px var(--border); color: var(--ink-faint); }
+.agenda-search input { border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 13px; width: 110px; }
+.agenda-results { position: absolute; z-index: 30; right: 300px; top: 64px; width: 320px; padding: 6px; border: 1px solid var(--border); box-shadow: 0 12px 32px -12px rgb(0 0 0 / .28); max-height: 360px; overflow-y: auto; }
+.quick-event { position: absolute; z-index: 30; width: 290px; padding: 12px; display: grid; gap: 8px; border: 1px solid var(--border); box-shadow: 0 16px 40px -16px rgb(0 0 0 / .35); }
+.quick-event .text-input { height: 34px; }
+.qe-when { margin: 0; }
+.qe-row { display: flex; align-items: center; gap: 6px; }
+.qe-row .text-input { width: 88px; padding: 0 6px; }
+.qe-row .inline-check { height: auto; font-size: 12.5px; }
+.qe-actions { display: flex; align-items: center; gap: 8px; }
+.ev-swatch.sm { width: 20px; height: 20px; }
+.cal-grid.day { display: block; }
+.day-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 2; background: var(--surface); }
+.day-top .ev { width: auto; }
+.day-hours { position: relative; margin: 0 16px 16px 70px; }
+.day-hour { position: absolute; left: 0; right: 0; height: 52px; border-top: 1px solid var(--border); cursor: pointer; }
+.day-hour:hover { background: color-mix(in srgb, var(--surface-sunken) 50%, transparent); }
+.day-hlabel { position: absolute; left: -58px; top: -8px; font-size: 11px; color: var(--ink-faint); font-family: var(--font-mono); }
+.day-ev { position: absolute; left: 6px; right: 6px; z-index: 1; overflow: hidden; }
+.day-now { position: absolute; left: -6px; right: 0; height: 2px; background: var(--primary); z-index: 2; }
+.day-now::before { content: ""; position: absolute; left: -4px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--primary); }
+
+/* ---------- tasks board ---------- */
+.board-view { display: flex; flex-direction: column; min-height: 0; }
+.board-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 18px 22px 12px; }
+.board-head .hero-line { font-size: 26px; }
+.board { flex: 1; min-height: 0; display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding: 4px 22px 22px; }
+.bcol { flex: 0 0 280px; display: flex; flex-direction: column; max-height: 100%; border-radius: 14px; background: color-mix(in srgb, var(--surface-sunken) 75%, var(--surface)); border: 1px solid transparent; }
+.bcol.over { border-color: var(--ink); background: color-mix(in srgb, var(--surface-selected) 60%, var(--surface-sunken)); }
+.bcol-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; font-size: 13px; }
+.bcol-head .n { color: var(--ink-faint); font-size: 12px; margin-left: auto; }
+.bcol-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint); }
+.bcol.done .bcol-dot { background: var(--sealed); }
+.col-cards { display: flex; flex-direction: column; gap: 8px; padding: 4px 8px; overflow-y: auto; min-height: 24px; }
+.bcard { position: relative; display: grid; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--surface); box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgba(26,24,20,.05); cursor: grab; font-size: 13.5px; }
+.bcard:hover { box-shadow: 0 0 0 1px var(--border-strong, var(--border)), 0 4px 10px -4px rgba(26,24,20,.15); }
+.bcard.dragging { opacity: .45; }
+.bcard.done .bcard-title { color: var(--ink-muted); text-decoration: line-through; }
+.bcard-label { width: 34px; height: 6px; border-radius: 3px; background: var(--ev-ink); }
+.bcard-title { overflow-wrap: anywhere; }
+.bcard-meta { display: flex; align-items: center; gap: 8px; color: var(--ink-muted); font-size: 12px; }
+.bcard-due { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: 5px; background: var(--surface-sunken); }
+.bcard-due svg.i, .bcard-notes svg.i { width: 12px; height: 12px; }
+.bcard-due.late { background: var(--danger-soft); color: var(--danger); }
+.bcard-who { margin-left: auto; }
+.bcard-who .avatar { width: 20px; height: 20px; font-size: 9px; }
+.col-add { padding: 6px 8px 10px; }
+.col-add .text-input { width: 100%; resize: none; font-size: 13px; }
+.col-add .fine { margin: 4px 2px 0; }
+.col-add-btn { display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--ink-muted); font: inherit; font-size: 13px; cursor: pointer; }
+.col-add-btn:hover { background: var(--surface-selected); color: var(--ink); }
+.day-ev { flex-direction: row; flex-wrap: wrap; align-content: flex-start; align-items: baseline; gap: 0 8px; }
+.qe-row .text-input { width: 108px; }
+.day-hours { margin-top: 14px; }

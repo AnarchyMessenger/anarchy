@@ -515,7 +515,7 @@ function belongsHere(c) {
   return view === "home" ? c.kind === "dm" : view === "space" && c.kind === "channel" && c.space === currentSpace?.id;
 }
 function hideMain() {
-  for (const v of ["view-start", "view-convo", "view-space-empty", "view-desk", "view-drive", "view-settings", "view-agenda", "view-notes"]) show(v, false);
+  for (const v of ["view-start", "view-convo", "view-space-empty", "view-desk", "view-drive", "view-settings", "view-agenda", "view-notes", "view-board"]) show(v, false);
   show("view-desks", false);
 }
 function showStart() {
@@ -593,6 +593,7 @@ async function openChannel(id) {
   if (c.desk === "files") return openDrive(c);
   if (c.desk === "agenda") return openAgenda();
   if (c.desk === "notes") return openNotes();
+  if (c.desk === "tasks") return openBoard(c);
   if (c.desk) return openDesk(c);
   hideMain(); show("view-convo");
   const dm = c.kind === "dm";
@@ -876,6 +877,7 @@ function sectionNow() {
   if (!$("view-notes").hidden) return note?.file ? "files" : "notes";
   if (!cur) return "overview";
   if (cur.desk === "files") return "files";
+  if (cur.desk === "tasks" && cur.kind === "personal") return "tasks";
   if (cur.desk) return "desks";
   return "chats";
 }
@@ -888,7 +890,7 @@ function renderFolders() {
     const now = sectionNow();
     const unread = channels.some((c) => c.unread && c.id !== current && belongsHere(c));
     folders = view === "home"
-      ? [{ key: "overview", label: "Overview", icon: "home" }, { key: "chats", label: "Chats", icon: "chat", dot: unread }, { key: "agenda", label: "Agenda", icon: "calendar" }, { key: "notes", label: "Notes", icon: "note" }]
+      ? [{ key: "overview", label: "Overview", icon: "home" }, { key: "chats", label: "Chats", icon: "chat", dot: unread }, { key: "agenda", label: "Agenda", icon: "calendar" }, { key: "notes", label: "Notes", icon: "note" }, { key: "files", label: "Files", icon: "folder" }, { key: "tasks", label: "Tasks", icon: "board" }]
       : [{ key: "overview", label: "Overview", icon: "home" }, { key: "chats", label: "Channels", icon: "chat", dot: unread }, { key: "files", label: "Files", icon: "folder" }, { key: "desks", label: "Desks", icon: "receipt", n: [...deskNeeds.entries()].filter(([id]) => channels.find((c) => c.id === id)?.space === currentSpace?.id).reduce((a, [, n]) => a + n, 0) }];
     folders = folders.map((f) => ({ ...f, active: f.key === now, go: () => openSection(f.key) }));
   }
@@ -911,7 +913,8 @@ async function openSection(key) {
   if (key === "overview") { current = null; invoke("blur"); showStart(); renderSide(); return; }
   if (key === "agenda") return openAgenda();
   if (key === "notes") return openNotes();
-  if (key === "files") return openDriveOf(currentSpace);
+  if (key === "files") return view === "home" ? openPersonal("files") : openDriveOf(currentSpace);
+  if (key === "tasks") return openPersonal("tasks");
   if (key === "desks") {
     const already = sectionNow() === "desks";
     const last = lastOpen((c) => here(c) && c.desk && c.desk !== "files");
@@ -1055,7 +1058,7 @@ $("composer").addEventListener("submit", async (e) => {
 // text, so a mention never reveals a desk to people outside it. The message is
 // also copied into the desk's activity, because the sender chose to address it.
 
-const DESK_ICON = { collections: "receipt", files: "folder", agenda: "calendar", notes: "note" };
+const DESK_ICON = { collections: "receipt", files: "folder", agenda: "calendar", notes: "note", tasks: "board" };
 function desksInScope() {
   const here = channels.find((c) => c.id === current);
   const space = view === "space" ? currentSpace?.id : here?.space;
@@ -1122,6 +1125,10 @@ async function deskSummary(d) {
     const late = inv.filter((i) => i.state === "overdue");
     if (!inv.length) return "No invoices yet";
     return `${money(open.reduce((n, i) => n + i.amount, 0))} outstanding · ${late.length} overdue · ${inv.filter((i) => i.state === "paid").length} paid`;
+  }
+  if (d.desk === "tasks") {
+    const st = taskStats(items);
+    return `${st.open} open · ${st.late ? `${st.late} late · ` : ""}${st.week} due this week`;
   }
   if (d.desk === "files") {
     const files = items.filter((i) => i.kind === "file" && !i.data.deleted);
@@ -1203,7 +1210,7 @@ function mentionKey(e) {
   if (e.key === "Escape") { e.preventDefault(); closeMention(); return true; }
   return false;
 }
-const KIND_OF_DESK = { collections: "Collections", files: "Files" };
+const KIND_OF_DESK = { collections: "Collections", files: "Files", tasks: "Tasks" };
 
 // ---------- Ask ----------
 // The pull-out panel where the AI will live. Until a model is connected it's
@@ -1376,6 +1383,14 @@ async function loadAgenda() {
       dues.push({ due: true, date: i.data.due, title: `${i.data.number} due · ${i.data.customer}`, channel: d.id, amount: i.data.amount });
     }
   }
+  for (const d of channels.filter((c) => c.desk === "tasks")) {
+    const items = await invoke("desk_items", { channel: d.id }).catch(() => []);
+    const done = new Set(boardColumns(items).filter((c) => c.done).map((c) => c.id));
+    for (const i of items) {
+      if (i.kind !== "card" || i.data.deleted || !i.data.due || done.has(i.data.column)) continue;
+      dues.push({ due: true, task: true, date: i.data.due, title: i.data.title, channel: d.id });
+    }
+  }
   agenda.dues = dues;
 }
 async function openAgenda() {
@@ -1404,6 +1419,12 @@ function renderAgenda() {
   const heads = [...Array(7)].map((_, k) => { const d = mondayOf(new Date()); d.setDate(d.getDate() + k); return el("div", { class: "cal-dow", text: weekdayFmt.format(d) }); });
   const grid = $("cal-grid");
   grid.className = `cal-grid ${agenda.mode}`;
+  if (agenda.mode === "day") {
+    grid.className = "cal-grid day";
+    renderDay(isoOf(c), grid);
+    requestAnimationFrame(() => { grid.scrollTop = 1.5 * HOUR_PX; });
+    return;
+  }
   if (agenda.mode === "month") {
     const first = new Date(c.getFullYear(), c.getMonth(), 1, 12);
     const start = mondayOf(first);
@@ -1413,7 +1434,7 @@ function renderAgenda() {
       if (k === 35 && d.getMonth() !== c.getMonth()) break;
       const iso = isoOf(d);
       const evs = dayEvents(iso);
-      cells.push(el("div", { class: `cal-cell${d.getMonth() !== c.getMonth() ? " out" : ""}${iso === today ? " today" : ""}`, onclick: () => openEvent(null, iso) },
+      cells.push(el("div", { class: `cal-cell${d.getMonth() !== c.getMonth() ? " out" : ""}${iso === today ? " today" : ""}`, onclick: (e) => quickAdd(iso, e.currentTarget) },
         el("span", { class: "cal-day", text: String(d.getDate()) }),
         ...evs.slice(0, 3).map(chip),
         evs.length > 3 ? el("button", { class: "cal-more", type: "button", text: `${evs.length - 3} more`, onclick: (x) => { x.stopPropagation(); agenda.mode = "week"; agenda.cursor = d; renderAgenda(); } }) : null));
@@ -1425,7 +1446,7 @@ function renderAgenda() {
       const d = new Date(start); d.setDate(start.getDate() + k);
       const iso = isoOf(d);
       const evs = dayEvents(iso);
-      return el("div", { class: `cal-col${iso === today ? " today" : ""}`, onclick: () => openEvent(null, iso) },
+      return el("div", { class: `cal-col${iso === today ? " today" : ""}`, onclick: (e) => quickAdd(iso, e.currentTarget) },
         el("div", { class: "cal-col-head" }, el("span", { text: weekdayFmt.format(d) }), el("strong", { text: String(d.getDate()) })),
         ...(evs.length ? evs.map((e) => { const b = chip(e); b.classList.add("big"); if (!e.due && !e.all_day && e.end) b.append(el("span", { class: "ev-range", text: `${e.start}–${e.end}` })); if (e.where) b.append(el("span", { class: "ev-where", text: e.where })); return b; }) : [el("p", { class: "fine cal-free", text: "Free" })]));
     });
@@ -1433,8 +1454,9 @@ function renderAgenda() {
   }
 }
 function renderAgendaSide() { /* the calendar shows it; no sidebar outside chats */ }
-$("agenda-prev").addEventListener("click", () => { const c = agenda.cursor; agenda.cursor = agenda.mode === "month" ? new Date(c.getFullYear(), c.getMonth() - 1, 1, 12) : new Date(c.getTime() - 7 * 864e5); renderAgenda(); });
-$("agenda-next-btn").addEventListener("click", () => { const c = agenda.cursor; agenda.cursor = agenda.mode === "month" ? new Date(c.getFullYear(), c.getMonth() + 1, 1, 12) : new Date(c.getTime() + 7 * 864e5); renderAgenda(); });
+const stepDays = () => (agenda.mode === "day" ? 1 : 7);
+$("agenda-prev").addEventListener("click", () => { const c = agenda.cursor; agenda.cursor = agenda.mode === "month" ? new Date(c.getFullYear(), c.getMonth() - 1, 1, 12) : new Date(c.getTime() - stepDays() * 864e5); renderAgenda(); });
+$("agenda-next-btn").addEventListener("click", () => { const c = agenda.cursor; agenda.cursor = agenda.mode === "month" ? new Date(c.getFullYear(), c.getMonth() + 1, 1, 12) : new Date(c.getTime() + stepDays() * 864e5); renderAgenda(); });
 $("agenda-today").addEventListener("click", () => { agenda.cursor = new Date(); renderAgenda(); });
 for (const b of document.querySelectorAll(".agenda-mode button")) b.addEventListener("click", () => { agenda.mode = b.dataset.mode; writeStore("anarchy.agendaMode", agenda.mode); renderAgenda(); });
 
@@ -1746,6 +1768,252 @@ async function editDriveFile(f) {
   renderNote(); renderFolders();
 }
 
+// Home's own Files and Tasks: personal desks like the agenda and notes.
+async function openPersonal(kind) {
+  const id = await personalDesk(kind).catch((err) => { alert(String(err)); return null; });
+  if (!id) return;
+  if (!channels.some((c) => c.id === id)) await refreshChannels();
+  await openChannel(id);
+}
+
+// ---------- tasks: a board of cards ----------
+// Cards are records (kind "card") with a column, an order, a due date, who's on
+// it and a label. Columns are one "settings" record. Drag cards between
+// columns; the last column counts as done.
+
+const DEFAULT_COLUMNS = [{ id: "todo", name: "To do" }, { id: "doing", name: "Doing" }, { id: "done", name: "Done", done: true }];
+function boardColumns(items) {
+  const cols = items.find((i) => i.kind === "settings" && i.id === "columns")?.data?.list;
+  const list = cols && cols.length ? cols : DEFAULT_COLUMNS;
+  return list.map((c, k) => ({ ...c, done: c.done ?? k === list.length - 1 }));
+}
+function taskStats(items) {
+  const done = new Set(boardColumns(items).filter((c) => c.done).map((c) => c.id));
+  const cards = items.filter((i) => i.kind === "card" && !i.data.deleted);
+  const open = cards.filter((c) => !done.has(c.data.column));
+  const today = isoToday(), week = addDays(today, 7);
+  return { total: cards.length, open: open.length, done: cards.length - open.length,
+    late: open.filter((c) => c.data.due && c.data.due < today).length, week: open.filter((c) => c.data.due && c.data.due >= today && c.data.due <= week).length };
+}
+let board = { channel: null, name: "", items: [], query: "", personal: false };
+async function openBoard(c) {
+  if (thread) closeThread();
+  hideMain(); show("view-board");
+  current = c.id; invoke("blur");
+  if (board.channel !== c.id) { board = { channel: c.id, name: c.name, items: [], query: "", personal: c.kind === "personal" }; $("board-search").value = ""; }
+  board.items = await invoke("desk_items", { channel: c.id });
+  renderBoard(); renderFolders(); renderTabs(); refreshChannels();
+}
+function boardCards() { return board.items.filter((i) => i.kind === "card" && !i.data.deleted).map((i) => ({ id: i.id, ...i.data })); }
+function renderBoard() {
+  const cols = boardColumns(board.items);
+  const st = taskStats(board.items);
+  const sp = spaces.find((x) => x.id === channels.find((c) => c.id === board.channel)?.space);
+  $("board-kind").textContent = board.personal ? "Your tasks · only your devices can read them" : `${sp?.name || ""} · ${board.name}`;
+  $("board-headline").replaceChildren(st.total ? `${st.open} open, ` : "Nothing on the board ", el("span", { class: "soft", text: st.total ? `${st.late ? `${st.late} late, ` : ""}${st.week} due this week.` : "yet." }));
+  const q = board.query.toLowerCase();
+  const all = boardCards().filter((c) => !q || `${c.title} ${c.who || ""} ${c.notes || ""}`.toLowerCase().includes(q));
+  const today = isoToday();
+  $("board").replaceChildren(...cols.map((col) => {
+    const cards = all.filter((c) => (c.column || cols[0].id) === col.id).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const list = el("div", { class: "col-cards", "data-col": col.id });
+    for (const c of cards) {
+      const late = c.due && c.due < today && !col.done;
+      list.append(el("div", { class: `bcard${col.done ? " done" : ""}`, draggable: "true", "data-id": c.id, tabindex: "0",
+        ondragstart: (e) => { e.dataTransfer.setData("text/plain", c.id); e.dataTransfer.effectAllowed = "move"; e.currentTarget.classList.add("dragging"); },
+        ondragend: (e) => e.currentTarget.classList.remove("dragging"),
+        onclick: () => openCard(c), onkeydown: (e) => { if (e.key === "Enter") openCard(c); } },
+        c.color && c.color !== "ink" ? el("span", { class: `bcard-label c-${c.color}` }) : null,
+        el("span", { class: "bcard-title", text: c.title }),
+        (c.due || c.who || c.notes) ? el("span", { class: "bcard-meta" },
+          c.due ? el("span", { class: `bcard-due${late ? " late" : ""}` }, icon("calendar"), shortDate.format(asDate(c.due))) : null,
+          c.notes ? el("span", { class: "bcard-notes", title: "Has notes" }, icon("note")) : null,
+          c.who ? el("span", { class: "bcard-who", title: c.who }, avatarEl(c.who, { size: "sm" })) : null) : null));
+    }
+    const adder = el("div", { class: "col-add" });
+    const openAdder = () => {
+      const ta = el("textarea", { class: "text-input", rows: "2", placeholder: "What needs doing?" });
+      const done = () => { adder.replaceChildren(addBtn); };
+      ta.addEventListener("keydown", async (e) => {
+        if (e.key === "Escape") { done(); return; }
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); const t = ta.value.trim(); if (!t) return done(); await addCard(col.id, t); openAdderAgain(col.id); }
+      });
+      ta.addEventListener("blur", () => setTimeout(() => { if (!ta.value.trim()) done(); }, 150));
+      adder.replaceChildren(ta, el("p", { class: "fine", text: "Enter to add, Esc to stop" }));
+      ta.focus();
+    };
+    const addBtn = el("button", { class: "col-add-btn", type: "button", onclick: openAdder }, icon("plus"), el("span", { text: "Add a card" }));
+    adder.append(addBtn);
+    const column = el("section", { class: `bcol${col.done ? " done" : ""}`, "data-col": col.id,
+      ondragover: (e) => { e.preventDefault(); e.currentTarget.classList.add("over"); },
+      ondragleave: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.classList.remove("over"); },
+      ondrop: (e) => { e.preventDefault(); e.currentTarget.classList.remove("over"); moveCard(e.dataTransfer.getData("text/plain"), col.id, e.clientY, list); } },
+      el("header", { class: "bcol-head" }, el("span", { class: "bcol-dot" }), el("strong", { text: col.name }), el("span", { class: "n", text: String(cards.length) })),
+      list, adder);
+    return column;
+  }));
+}
+let pendingAdder = null;
+function openAdderAgain(colId) { pendingAdder = colId; }
+async function putCards(recs) {
+  await invoke("put_items", { channel: board.channel, items: recs });
+  board.items = await invoke("desk_items", { channel: board.channel });
+  renderBoard();
+  if (pendingAdder) { const col = document.querySelector(`.bcol[data-col="${pendingAdder}"] .col-add-btn`); pendingAdder = null; col?.click(); }
+}
+async function addCard(colId, title) {
+  const last = boardCards().filter((c) => c.column === colId).reduce((m, c) => Math.max(m, c.order ?? 0), 0);
+  await putCards([{ id: crypto.randomUUID(), kind: "card", data: { title, column: colId, order: last + 1, color: "ink", added: Date.now() } }]);
+}
+// Drops a card in a column, between the cards above and below the pointer.
+async function moveCard(id, colId, y, list) {
+  const card = boardCards().find((c) => c.id === id);
+  if (!card) return;
+  const others = [...list.querySelectorAll(".bcard")].filter((n) => n.dataset.id !== id);
+  const below = others.find((n) => { const r = n.getBoundingClientRect(); return y < r.top + r.height / 2; });
+  const orderOf = (n) => boardCards().find((c) => c.id === n?.dataset.id)?.order ?? 0;
+  let order;
+  if (!others.length) order = 1;
+  else if (!below) order = orderOf(others[others.length - 1]) + 1;
+  else { const idx = others.indexOf(below); order = idx === 0 ? orderOf(below) - 1 : (orderOf(others[idx - 1]) + orderOf(below)) / 2; }
+  const { id: _, ...data } = card;
+  const moved = data.column !== colId;
+  await putCards([{ id, kind: "card", data: { ...data, column: colId, order } }]);
+  if (moved && !board.personal) {
+    const col = boardColumns(board.items).find((c) => c.id === colId);
+    try { await invoke("send_message", { channel: board.channel, text: `Moved \u201c${card.title}\u201d to ${col?.name || colId}.` }); } catch { /* the move is saved either way */ }
+  }
+}
+let editingCard = null, cardColor = "ink";
+function openCard(c) {
+  editingCard = c || null;
+  const cols = boardColumns(board.items);
+  $("dlg-card-title").textContent = c ? "Card" : "New card";
+  $("cd-title").value = c?.title || "";
+  $("cd-col").replaceChildren(...cols.map((col) => el("option", { value: col.id, text: col.name, selected: (c?.column || cols[0].id) === col.id })));
+  $("cd-due").value = c?.due || "";
+  $("cd-who").value = c?.who || "";
+  $("cd-notes").value = c?.notes || "";
+  cardColor = c?.color || "ink";
+  paintCardColors();
+  show("card-delete", !!c);
+  setError("card-error", "");
+  const sp = channels.find((x) => x.id === board.channel)?.space;
+  if (sp) invoke("space_members", { space: sp }).then((m) => $("cd-people").replaceChildren(...m.map((p) => el("option", { value: p.name })))).catch(() => {});
+  $("dlg-card").showModal();
+  $("cd-title").focus();
+}
+function paintCardColors() {
+  $("cd-colors").replaceChildren(...EV_COLORS.map((c) => el("button", { class: `ev-swatch c-${c}`, type: "button", role: "radio", "aria-checked": String(c === cardColor), "aria-label": c, onclick: () => { cardColor = c; paintCardColors(); } })));
+}
+$("board-new").addEventListener("click", () => openCard(null));
+$("board-search").addEventListener("input", () => { board.query = $("board-search").value; renderBoard(); });
+$("board-add-col").addEventListener("click", async () => {
+  const name = prompt("Name the new column", "Review");
+  if (!name?.trim()) return;
+  const cols = boardColumns(board.items).map(({ id, name: n }) => ({ id, name: n }));
+  cols.splice(cols.length - 1, 0, { id: crypto.randomUUID().slice(0, 8), name: name.trim() });
+  await putCards([{ id: "columns", kind: "settings", data: { list: cols } }]);
+});
+$("card-cancel").addEventListener("click", () => $("dlg-card").close());
+$("card-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const title = $("cd-title").value.trim();
+  if (!title) return setError("card-error", "Give the card a title.");
+  const colId = $("cd-col").value;
+  const base = editingCard ? (({ id, ...d }) => d)(editingCard) : { added: Date.now(), order: boardCards().filter((c) => c.column === colId).reduce((m, c) => Math.max(m, c.order ?? 0), 0) + 1 };
+  const data = { ...base, title, column: colId, due: $("cd-due").value || null, who: $("cd-who").value.trim() || null, notes: $("cd-notes").value.trim(), color: cardColor };
+  try { await putCards([{ id: editingCard?.id || crypto.randomUUID(), kind: "card", data }]); $("dlg-card").close(); } catch (err) { setError("card-error", String(err)); }
+});
+$("card-delete").addEventListener("click", async () => {
+  if (!editingCard) return;
+  const { id, ...data } = editingCard;
+  await putCards([{ id, kind: "card", data: { ...data, deleted: true } }]);
+  $("dlg-card").close();
+});
+
+// ---------- agenda: quick add, day view, search ----------
+let quick = null; // { iso, start }
+let qeColor = "ink";
+function paintQuickColors() {
+  $("qe-colors").replaceChildren(...EV_COLORS.map((c) => el("button", { class: `ev-swatch sm c-${c}`, type: "button", role: "radio", "aria-checked": String(c === qeColor), "aria-label": c, onclick: () => { qeColor = c; paintQuickColors(); } })));
+}
+// Opens a small form by the day (or hour) you clicked; "More options" opens the full one.
+function quickAdd(iso, anchor, start) {
+  const pop = $("quick-event");
+  quick = { iso, start };
+  qeColor = "ink";
+  $("qe-title").value = "";
+  $("qe-when").textContent = new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long" }).format(asDate(iso));
+  const s = start || "09:00";
+  const [h, m] = s.split(":").map(Number);
+  $("qe-start").value = s; $("qe-end").value = `${pad2(Math.min(23, h + 1))}:${pad2(m)}`;
+  $("qe-allday").checked = false; $("qe-start").disabled = $("qe-end").disabled = false;
+  paintQuickColors();
+  const host = $("view-agenda").getBoundingClientRect(), r = anchor.getBoundingClientRect();
+  const left = Math.min(Math.max(8, r.left - host.left), host.width - 300);
+  const top = Math.min(r.top - host.top + Math.min(r.height, 40), host.height - 230);
+  pop.style.left = `${left}px`; pop.style.top = `${top}px`;
+  show(pop, true);
+  $("qe-title").focus();
+}
+function closeQuick() { quick = null; show("quick-event", false); }
+$("qe-allday").addEventListener("change", () => { $("qe-start").disabled = $("qe-end").disabled = $("qe-allday").checked; });
+$("qe-title").addEventListener("keydown", (e) => { if (e.key === "Escape") closeQuick(); });
+$("qe-more").addEventListener("click", () => {
+  const iso = quick?.iso;
+  const draft = { title: $("qe-title").value, start: $("qe-start").value, end: $("qe-end").value, all_day: $("qe-allday").checked, color: qeColor };
+  closeQuick();
+  openEvent(null, iso);
+  $("ev-title").value = draft.title; $("ev-start").value = draft.start; $("ev-end").value = draft.end; $("ev-allday").checked = draft.all_day; evColor = draft.color; paintEvColors();
+  for (const id of ["ev-start", "ev-end"]) $(id).disabled = draft.all_day;
+});
+$("quick-event").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const title = $("qe-title").value.trim();
+  if (!title || !quick) return $("qe-title").focus();
+  const allDay = $("qe-allday").checked;
+  const data = { title, date: quick.iso, all_day: allDay, start: allDay ? "" : $("qe-start").value, end: allDay ? "" : $("qe-end").value, where: "", notes: "", color: qeColor };
+  closeQuick();
+  await putEvent(crypto.randomUUID(), data);
+});
+document.addEventListener("mousedown", (e) => { if (quick && !e.target.closest("#quick-event")) closeQuick(); });
+$("agenda-q").addEventListener("input", () => {
+  const q = $("agenda-q").value.trim().toLowerCase();
+  const box = $("agenda-results");
+  if (!q) { show(box, false); return; }
+  const hits = [...events(), ...agenda.dues].filter((e) => `${e.title} ${e.where || ""} ${e.notes || ""}`.toLowerCase().includes(q)).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 12);
+  box.replaceChildren(...(hits.length ? hits.map((e) => el("button", { class: "sr-item", type: "button", onmousedown: (x) => x.preventDefault(), onclick: () => { show(box, false); $("agenda-q").value = ""; agenda.cursor = asDate(e.date); agenda.mode = "day"; renderAgenda(); if (!e.due) openEvent(e); } },
+    el("span", { class: `ev-dot ${e.due ? "due" : `c-${e.color || "ink"}`}` }), el("span", { class: "lines" }, el("span", { text: e.title }), el("small", { text: `${dateFmt.format(asDate(e.date))}${e.start ? ` · ${e.start}` : ""}` }))))
+    : [el("p", { class: "sr-empty", text: "Nothing on your agenda matches." })]));
+  show(box, true);
+});
+$("agenda-q").addEventListener("blur", () => setTimeout(() => show("agenda-results", false), 150));
+// Day view: hours from 7 to 22, events placed by their times.
+const DAY_FROM = 7, DAY_TO = 22, HOUR_PX = 52;
+function renderDay(iso, grid) {
+  const evs = dayEvents(iso);
+  const allDay = evs.filter((e) => e.due || e.all_day || !e.start);
+  const timed = evs.filter((e) => !e.due && !e.all_day && e.start);
+  const mins = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+  const hours = el("div", { class: "day-hours", style: `height:${(DAY_TO - DAY_FROM) * HOUR_PX}px` });
+  for (let h = DAY_FROM; h < DAY_TO; h++) {
+    hours.append(el("div", { class: "day-hour", style: `top:${(h - DAY_FROM) * HOUR_PX}px`, onclick: (e) => quickAdd(iso, e.currentTarget, `${pad2(h)}:00`) }, el("span", { class: "day-hlabel", text: `${pad2(h)}:00` })));
+  }
+  for (const e of timed) {
+    const top = Math.max(0, (mins(e.start) - DAY_FROM * 60) / 60 * HOUR_PX);
+    const len = Math.max(26, ((e.end ? mins(e.end) : mins(e.start) + 60) - mins(e.start)) / 60 * HOUR_PX - 3);
+    const b = chip(e); b.classList.add("big", "day-ev"); b.style.top = `${top}px`; b.style.height = `${len}px`;
+    b.append(el("span", { class: "ev-range", text: `${e.start}${e.end ? `–${e.end}` : ""}${e.where ? ` · ${e.where}` : ""}` }));
+    hours.append(b);
+  }
+  if (iso === isoToday()) {
+    const now = new Date(); const m = now.getHours() * 60 + now.getMinutes();
+    if (m >= DAY_FROM * 60 && m <= DAY_TO * 60) hours.append(el("div", { class: "day-now", style: `top:${(m - DAY_FROM * 60) / 60 * HOUR_PX}px` }));
+  }
+  grid.replaceChildren(el("div", { class: "day-top" }, el("strong", { text: new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long" }).format(asDate(iso)) }), ...allDay.map(chip)), hours);
+}
+
 // Home: what's on today, next to your spaces.
 async function renderHomeToday() {
   const box = $("home-today");
@@ -1762,6 +2030,10 @@ async function renderHomeToday() {
   $("today-events").replaceChildren(...(evs.length ? evs.map((e) => el("button", { class: "today-row", type: "button", onclick: () => { openAgenda().then(() => openEvent(e)); } },
     el("span", { class: `ev-dot c-${e.color || "ink"}` }), el("strong", { text: e.title }), el("small", { text: e.all_day ? "All day" : `${e.start}${e.end ? `–${e.end}` : ""}` })))
     : [el("button", { class: "today-row empty", type: "button", onclick: () => openAgenda(), text: "Nothing on today. Plan something" })]));
+  const chats = channels.filter((c) => c.kind === "dm").sort((a, b) => (b.last_ts || 0) - (a.last_ts || 0)).slice(0, 3);
+  $("today-chats").replaceChildren(...(chats.length ? chats.map((c) => el("button", { class: "today-row", type: "button", onclick: () => openChannel(c.id).then(() => composer.focus()) },
+    avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, size: "sm" }), el("strong", { text: c.name }), el("small", { text: c.unread ? "New" : c.last_ts ? sinceFmt(c.last_ts) : "" })))
+    : [el("button", { class: "today-row empty", type: "button", onclick: () => $("new-dm").click(), text: "No chats yet. Message someone" })]));
   $("today-notes").replaceChildren(...(recent.length ? recent.map((p) => el("button", { class: "today-row", type: "button", onclick: () => openNotes(p.id) },
     el("span", { class: "note-emoji", text: p.icon || "📝" }), el("strong", { text: p.title || "Untitled" }), el("small", { text: sinceFmt(p.updated || 0) })))
     : [el("button", { class: "today-row empty", type: "button", onclick: () => $("note-new").click(), text: "No pages yet. Start one" })]));
@@ -1829,8 +2101,9 @@ async function openDrive(c) {
 function renderDrive() {
   const files = driveFiles();
   const total = files.reduce((n, f) => n + (f.data.file_key?.size || 0), 0);
-  $("drive-kind").textContent = `${currentSpace?.name || ""} · Files`;
-  $("drive-headline").replaceChildren(`${files.length} ${files.length === 1 ? "file" : "files"}, ${sizeFmt(total)}.`, el("span", { class: "soft", text: " Only people in this space can open them." }));
+  const mine = channels.find((c) => c.id === drive.channel)?.kind === "personal";
+  $("drive-kind").textContent = mine ? "Your files" : `${currentSpace?.name || ""} · Files`;
+  $("drive-headline").replaceChildren(`${files.length} ${files.length === 1 ? "file" : "files"}, ${sizeFmt(total)}.`, el("span", { class: "soft", text: mine ? " Only your devices can open them." : " Only people in this space can open them." }));
   // Breadcrumbs.
   const parts = drive.folder.split("/").filter(Boolean);
   const crumbs = [el("button", { type: "button", text: "Files", onclick: () => { drive.folder = "/"; renderDrive(); } })];
@@ -1959,6 +2232,14 @@ async function renderSpaceOverview() {
   const today = isoToday();
   let owed = 0, late = 0;
   const cards = deskData.map(({ d, items }) => {
+    if (d.desk === "tasks") {
+      const st = taskStats(items);
+      return el("button", { class: "ov-desk", type: "button", onclick: () => openChannel(d.id) },
+        el("span", { class: "top" }, icon("board"), d.name),
+        el("span", { class: "big" }, `${st.open} open`, el("span", { text: ` · ${st.done} done` })),
+        el("span", { class: "flags" }, st.late ? el("span", { class: "flag-pill bad", text: `${st.late} late` }) : null, st.week ? el("span", { class: "flag-pill warn", text: `${st.week} due this week` }) : null,
+          !st.late && !st.week ? el("span", { class: "flag-pill good", text: st.total ? "Nothing due soon" : "No cards yet" }) : null));
+    }
     const inv = items.filter((i) => i.kind === "invoice").map((i) => ({ ...i.data, state: invoiceState(i.data, today) }));
     const open = inv.filter((i) => i.state === "open" || i.state === "overdue");
     const overdue = inv.filter((i) => i.state === "overdue");
@@ -2507,7 +2788,14 @@ $("notes-brief").addEventListener("click", () => {
 $("desk-people").addEventListener("click", () => openPeople(true));
 
 // New desk.
-function openNewDesk() { $("desk-new-name").value = "Collections"; setError("desk-error", ""); $("dlg-desk").showModal(); $("desk-new-name").select(); }
+let newDeskKind = "collections";
+function openNewDesk() { pickDeskKind("collections"); setError("desk-error", ""); $("dlg-desk").showModal(); $("desk-new-name").select(); }
+function pickDeskKind(kind) {
+  newDeskKind = kind;
+  for (const b of document.querySelectorAll("#dlg-desk .kind[data-kind]")) b.setAttribute("aria-checked", String(b.dataset.kind === kind));
+  $("desk-new-name").value = KIND_OF_DESK[kind] || "Desk";
+}
+for (const b of document.querySelectorAll("#dlg-desk .kind[data-kind]")) b.addEventListener("click", () => pickDeskKind(b.dataset.kind));
 
 $("space-empty-desk").addEventListener("click", openNewDesk);
 $("desk-cancel").addEventListener("click", () => $("dlg-desk").close());
@@ -2515,7 +2803,7 @@ $("desk-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   await busy($("desk-create"), "Creating…", async () => {
     try {
-      const id = await invoke("create_desk", { space: currentSpace?.id ?? null, name: $("desk-new-name").value, kind: "collections" });
+      const id = await invoke("create_desk", { space: currentSpace?.id ?? null, name: $("desk-new-name").value, kind: newDeskKind });
       $("dlg-desk").close();
       await refreshChannels();
       await openChannel(id);

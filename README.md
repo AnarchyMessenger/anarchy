@@ -60,6 +60,10 @@ Sign up with Google, email or anonymously, then say what it's for, lock the devi
 |---|---|
 | ![Drive file in the editor](docs/screens/drive-edit.png) | ![Assistant](docs/screens/ask.png) |
 
+| Tasks board (a desk) | Agenda quick add |
+|---|---|
+| ![Tasks](docs/screens/tasks.png) | ![Quick add](docs/screens/agenda-quick-add.png) |
+
 | A space's channel | Privacy |
 |---|---|
 | ![Channel in a space](docs/screens/space-channel.png) | ![Privacy settings](docs/screens/privacy.png) |

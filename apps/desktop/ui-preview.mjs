@@ -71,6 +71,9 @@ const mock = (startLocked) => {
   channels.push({ id: "f1", kind: "channel", space: "sp1", desk: "files", name: "Files", topic: "", trust: "company", unread: false, messages: [] });
   channels.push({ id: "pa", kind: "personal", space: null, desk: "agenda", name: "Agenda", topic: "", trust: "sealed", unread: false, messages: [] });
   channels.push({ id: "pn", kind: "personal", space: null, desk: "notes", name: "Notes", topic: "", trust: "sealed", unread: false, messages: [] });
+  channels.push({ id: "pf", kind: "personal", space: null, desk: "files", name: "My files", topic: "", trust: "sealed", unread: false, messages: [] });
+  channels.push({ id: "pt", kind: "personal", space: null, desk: "tasks", name: "Tasks", topic: "", trust: "sealed", unread: false, messages: [] });
+  channels.push({ id: "kt", kind: "channel", space: "sp1", desk: "tasks", name: "Launch plan", topic: "", trust: "company", unread: false, messages: [] });
   const dayIso = (k) => { const d = new Date(now + k * 864e5); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
   const ev = (id, k, title, start, end, color, where = "") => ({ id, kind: "event", data: { title, date: dayIso(k), start, end, all_day: !start, color, where }, seq: 1, updated_ms: now });
   const agendaItems = [
@@ -79,6 +82,17 @@ const mock = (startLocked) => {
     ev("e6", -2, "Dentist", "08:30", "09:00", "ink"), ev("e7", 6, "Ava's birthday", "", "", "plum"), ev("e8", 9, "Quarterly review", "11:30", "12:30", "ember"), ev("e9", -6, "Portfolio shoot", "13:00", "17:00", "ocean"),
   ];
   const page = (id, title, icon, blocks, ago) => ({ id, kind: "page", data: { title, icon, blocks, updated: now - ago * 60_000 }, seq: 1, updated_ms: now });
+  const card = (id, title, column, order, extra = {}) => ({ id, kind: "card", data: { title, column, order, color: "ink", ...extra }, seq: 1, updated_ms: now });
+  const launchCards = [
+    card("t1", "Final logo files to Acme", "todo", 1, { due: dayIso(2), who: "Ines Bauer", color: "ember" }),
+    card("t2", "Write launch post", "todo", 2, { who: "Maya Chen" }),
+    card("t3", "Deck cover, second pass", "doing", 1, { due: dayIso(-1), who: "Tomás Ruiz", color: "ocean", notes: "Use direction 2" }),
+    card("t4", "Brand guidelines PDF", "doing", 2, { due: dayIso(5), who: "Ines Bauer" }),
+    card("t5", "Kickoff with Acme", "done", 1, { who: "Maya Chen", color: "spring" }),
+    card("t6", "Moodboard, three directions", "done", 2, { who: "Ines Bauer" }),
+  ];
+  const myCards = [card("m1", "Renew passport", "todo", 1, { due: dayIso(9), color: "plum" }), card("m2", "Send the Q3 VAT return", "doing", 1, { due: dayIso(3), color: "ember" }), card("m3", "Book the dentist", "done", 1)];
+  const myFiles = [];
   const noteItems = [
     page("n1", "Acme rebrand, direction 2", "🎯", [
       { id: "a", type: "p", text: "Warmer, less corporate. Keep the serif for headlines only." },
@@ -202,8 +216,8 @@ const mock = (startLocked) => {
     send_message: async ({ channel, text, thread }) => { await wait(120); channels.find((x) => x.id === channel).messages.push({ sender: "ME", ts: Date.now(), text, thread: thread ?? null }); },
     create_channel: async ({ space, name, topic, trust }) => { const id = `c${channels.length + 1}`; channels.push({ id, kind: "channel", space, name: name.trim().toLowerCase().replace(/\s+/g, "-"), topic, trust, unread: false, messages: [] }); return id; },
     create_desk: async ({ space, name }) => { const id = `k${channels.length + 1}`; channels.push({ id, kind: "channel", space, desk: "collections", name, trust: "company", unread: false, messages: [] }); return id; },
-    desk_items: async ({ channel }) => (channel === "k1" ? items : channel === "f1" ? driveItems : channel === "pa" ? agendaItems : channel === "pn" ? noteItems : []),
-    ensure_personal: async ({ kind }) => (kind === "agenda" ? "pa" : "pn"),
+    desk_items: async ({ channel }) => (channel === "k1" ? items : channel === "f1" ? driveItems : channel === "pa" ? agendaItems : channel === "pn" ? noteItems : channel === "kt" ? launchCards : channel === "pt" ? myCards : channel === "pf" ? myFiles : []),
+    ensure_personal: async ({ kind }) => ({ agenda: "pa", notes: "pn", files: "pf", tasks: "pt" })[kind],
     save_text_file: async () => { await wait(80); },
     ensure_drive: async () => "f1",
     pick_and_upload: async ({ folder }) => { driveItems.push(file(`x${driveItems.length + 10}`, "Q4 plan.pdf", folder, 540_000, "application/pdf", me(), 0)); return ["Q4 plan.pdf"]; },
@@ -218,7 +232,7 @@ const mock = (startLocked) => {
       }
       return { kind: "none", data: "" };
     },
-    put_items: async ({ channel, items: put }) => { const list = channel === "pa" ? agendaItems : channel === "pn" ? noteItems : items; for (const r of put) { const at = list.findIndex((i) => i.id === r.id); const item = { ...r, seq: 99, updated_ms: Date.now() }; if (at >= 0) list[at] = item; else list.unshift(item); } },
+    put_items: async ({ channel, items: put }) => { const list = channel === "pa" ? agendaItems : channel === "pn" ? noteItems : channel === "kt" ? launchCards : channel === "pt" ? myCards : items; for (const r of put) { const at = list.findIndex((i) => i.id === r.id); const item = { ...r, seq: 99, updated_ms: Date.now() }; if (at >= 0) list[at] = item; else list.unshift(item); } },
     pay_links: async () => payLinks,
     create_pay_link: async () => { const id = `L${payLinks.length + 1}`; payLinks.push({ id, expires_at_ms: now + 90 * 864e5, revoked: false, views: 0, last_viewed_at_ms: null, claimed_paid_at_ms: null }); return { id, url: `https://chat.studiochen.fr/p/${id}#k3y` }; },
     update_pay_link: async () => {},
@@ -280,6 +294,7 @@ async function pick(list, name) {
 async function openCollections() {
   await page.click('.folder >> text=/^Desks/');
   await page.waitForTimeout(150);
+  if (await page.isHidden("#view-desks") && await page.isHidden("#view-desk")) { await page.click('.folder >> text=/^Desks/'); await page.waitForTimeout(150); }
   if (!(await page.isHidden("#view-desks"))) await page.click('#desks-grid .ov-desk >> text="Collections"');
   await page.waitForSelector("#view-desk:not([hidden])", { timeout: 5000 });
 }
@@ -348,9 +363,19 @@ await shot("08b-agenda-month");
 await page.click('.agenda-mode button[data-mode="week"]');
 await shot("08c-agenda-week");
 await page.click('.agenda-mode button[data-mode="month"]');
+await page.click(".cal-cell.today", { position: { x: 60, y: 100 } });
+await visible("#quick-event");
+await page.fill("#qe-title", "Call with Northwind");
+await shot("08d-quick-add");
+await page.press("#qe-title", "Enter");
+await page.waitForTimeout(200);
+await page.click('.agenda-mode button[data-mode="day"]');
+await page.waitForTimeout(200);
+await shot("08d2-agenda-day");
+await page.click('.agenda-mode button[data-mode="month"]');
 await page.click("#event-new");
 await page.fill("#ev-title", "Call with Northwind");
-await shot("08d-new-event");
+await shot("08d3-new-event");
 await page.click("#event-cancel");
 await folder("Notes");
 await visible("#view-notes");
@@ -372,6 +397,14 @@ await page.keyboard.press("Enter");
 await page.keyboard.type("Pack the camera");
 await page.waitForTimeout(900);
 await shot("08g-notes-typed");
+await folder("Files");
+await visible("#view-drive");
+await shot("08i-my-files");
+await folder("Tasks");
+await visible("#view-board");
+await page.waitForTimeout(200);
+await shot("08j-my-tasks");
+await folder("Notes");
 await page.click("#tool-ask");
 await page.click("#ask-brief");
 await page.waitForTimeout(300);
@@ -527,6 +560,24 @@ await folder("Desks");
 await visible("#view-desks");
 await page.waitForTimeout(300);
 await shot("13r-desks");
+await page.click('#desks-grid .ov-desk >> text="Launch plan"');
+await visible("#view-board");
+await page.waitForTimeout(200);
+await shot("13s-tasks-board");
+await page.dragAndDrop('.bcard[data-id="t2"]', '.bcol[data-col="doing"] .col-cards');
+await page.waitForTimeout(250);
+const moved = await page.$('.bcol[data-col="doing"] .bcard[data-id="t2"]');
+if (!moved) throw new Error("drag and drop didn't move the card");
+await page.click('.bcol[data-col="todo"] .col-add-btn');
+await page.keyboard.type("Send invoice after sign-off");
+await page.keyboard.press("Enter");
+await page.waitForTimeout(250);
+await page.keyboard.press("Escape");
+await shot("13t-tasks-after-drag-and-add");
+await page.click('.bcard[data-id="t3"]');
+await visible("#dlg-card");
+await shot("13u-task-card");
+await page.click("#card-cancel");
 await folder("Overview");
 await page.click("#rail-me");
 await shot("13m-me-popover");

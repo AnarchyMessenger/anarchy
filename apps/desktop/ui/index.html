@@ -57,6 +57,7 @@
   <symbol id="i-apps" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="5" cy="5" r="1.9"/><circle cx="12" cy="5" r="1.9"/><circle cx="19" cy="5" r="1.9"/><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/><circle cx="5" cy="19" r="1.9"/><circle cx="12" cy="19" r="1.9"/><circle cx="19" cy="19" r="1.9"/></g></symbol>
   <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
   <symbol id="i-note" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></symbol>
+  <symbol id="i-board" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/><path d="M5.5 8h1.5M11 8h1.5M17 8h1.5"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8.5 7 10 4-1.5 7-5.5 7-10V6z"/></symbol>
   <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
@@ -329,6 +330,7 @@
             </div>
             <div class="home-today" id="home-today">
               <section class="today-card"><p class="block-label"><svg class="i"><use href="#i-calendar"/></svg>Today</p><div id="today-events"></div></section>
+              <section class="today-card"><p class="block-label"><svg class="i"><use href="#i-chat"/></svg>Recent chats</p><div id="today-chats"></div></section>
               <section class="today-card"><p class="block-label"><svg class="i"><use href="#i-note"/></svg>Recent pages</p><div id="today-notes"></div></section>
             </div>
             <div class="home-spaces" id="home-spaces-wrap" hidden><p class="block-label">Your spaces</p><div class="space-grid" id="home-spaces"></div></div>
@@ -378,10 +380,31 @@
             <div><p class="hero-kind" id="agenda-kind">Agenda</p><h1 class="agenda-title" id="agenda-title"></h1></div>
             <span class="spacer"></span>
             <div class="navseg" role="group" aria-label="Move"><button type="button" id="agenda-prev" aria-label="Previous"><svg class="i"><use href="#i-arrow-left"/></svg></button><button type="button" id="agenda-today">Today</button><button type="button" id="agenda-next-btn" aria-label="Next"><svg class="i flip"><use href="#i-arrow-left"/></svg></button></div>
-            <div class="navseg agenda-mode" role="tablist" aria-label="View"><button type="button" role="tab" data-mode="week">Week</button><button type="button" role="tab" data-mode="month">Month</button></div>
+            <label class="agenda-search" title="Search the agenda"><svg class="i"><use href="#i-search"/></svg><input id="agenda-q" placeholder="Search" aria-label="Search the agenda"></label>
+            <div class="navseg agenda-mode" role="tablist" aria-label="View"><button type="button" role="tab" data-mode="day">Day</button><button type="button" role="tab" data-mode="week">Week</button><button type="button" role="tab" data-mode="month">Month</button></div>
             <button class="btn-ink inline" id="event-new" type="button"><svg class="i"><use href="#i-plus"/></svg><span>Add event</span></button>
           </div>
+          <div class="agenda-results panel" id="agenda-results" hidden></div>
           <div class="cal-grid" id="cal-grid"></div>
+          <form class="quick-event panel" id="quick-event" novalidate hidden>
+            <input class="text-input" id="qe-title" placeholder="Add a title" aria-label="Title" autocomplete="off">
+            <p class="qe-when fine" id="qe-when"></p>
+            <div class="qe-row"><input class="text-input" id="qe-start" type="time" aria-label="Starts"><span class="fine">to</span><input class="text-input" id="qe-end" type="time" aria-label="Ends"><label class="inline-check"><input type="checkbox" id="qe-allday"> All day</label></div>
+            <div class="ev-colors" id="qe-colors" role="radiogroup" aria-label="Colour"></div>
+            <div class="qe-actions"><button class="link" type="button" id="qe-more">More options</button><span class="spacer"></span><button class="btn-ink inline sm" type="submit">Save</button></div>
+          </form>
+        </div>
+
+        <!-- Tasks: a board of cards in columns, for a space or for yourself -->
+        <div class="view board-view" id="view-board" hidden>
+          <div class="board-head">
+            <div><p class="hero-kind" id="board-kind">Tasks</p><h1 class="hero-line" id="board-headline"></h1></div>
+            <span class="spacer"></span>
+            <label class="search pill"><svg class="i"><use href="#i-search"/></svg><input id="board-search" placeholder="Filter cards" aria-label="Filter cards"></label>
+            <button class="btn-outline pill" id="board-add-col" type="button"><svg class="i"><use href="#i-plus"/></svg><span>Column</span></button>
+            <button class="btn-ink inline" id="board-new" type="button"><svg class="i"><use href="#i-plus"/></svg><span>New card</span></button>
+          </div>
+          <div class="board" id="board"></div>
         </div>
 
         <!-- Notes: pages with blocks, like a notebook; also edits text files from the drive -->
@@ -640,6 +663,7 @@
     <p class="fine">A desk is a workspace for one job: the records, the numbers and what needs you, with the conversation beside it. Later you'll describe how you work and Anarchy will draft the desk; for now, start from one of these.</p>
     <div class="kind-grid" role="radiogroup" aria-label="Kind of desk">
       <button type="button" class="kind" role="radio" data-kind="collections" aria-checked="true"><svg class="i"><use href="#i-receipt"/></svg><strong>Collections</strong><small>Invoices out, who paid, reminders.</small></button>
+      <button type="button" class="kind" role="radio" data-kind="tasks" aria-checked="false"><svg class="i"><use href="#i-board"/></svg><strong>Tasks</strong><small>A board of cards: to do, doing, done.</small></button>
       <button type="button" class="kind" disabled><svg class="i"><use href="#i-phone"/></svg><strong>Front desk</strong><small>Calls, texts, bookings.</small><span class="tag">Needs a phone partner</span></button>
       <button type="button" class="kind" disabled><svg class="i"><use href="#i-lifebuoy"/></svg><strong>Help desk</strong><small>Questions in, answers from your docs.</small><span class="tag">Needs the Brain</span></button>
       <button type="button" class="kind" disabled><svg class="i"><use href="#i-truck"/></svg><strong>Dispatch</strong><small>Jobs, crews, schedule changes.</small><span class="tag">Later</span></button>
@@ -687,6 +711,22 @@
     </div>
     <p class="error" id="paydetails-error" hidden></p>
     <div class="modal-actions"><button class="btn-outline" type="button" id="paydetails-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="paydetails-save">Save</button></div>
+  </form>
+</dialog>
+
+<dialog class="modal panel" id="dlg-card" aria-labelledby="dlg-card-title">
+  <form id="card-form" novalidate>
+    <h2 id="dlg-card-title">Card</h2>
+    <div class="form-grid">
+      <label class="field span2" for="cd-title">Title<input class="text-input" id="cd-title" maxlength="200" autocomplete="off"></label>
+      <label class="field" for="cd-col">Column<select class="text-input" id="cd-col"></select></label>
+      <label class="field" for="cd-due"><span>Due <span class="optional">· optional</span></span><input class="text-input" id="cd-due" type="date"></label>
+      <label class="field span2" for="cd-who"><span>Who's on it <span class="optional">· optional</span></span><input class="text-input" id="cd-who" maxlength="80" autocomplete="off" list="cd-people"><datalist id="cd-people"></datalist></label>
+      <div class="field span2"><span>Label</span><div class="ev-colors" id="cd-colors" role="radiogroup" aria-label="Label"></div></div>
+      <label class="field span2" for="cd-notes"><span>Notes <span class="optional">· optional</span></span><textarea class="text-input" id="cd-notes" rows="4"></textarea></label>
+    </div>
+    <p class="error" id="card-error" hidden></p>
+    <div class="modal-actions"><button class="btn-outline danger" type="button" id="card-delete">Delete</button><span class="spacer"></span><button class="btn-outline" type="button" id="card-cancel">Cancel</button><button class="btn-ink inline" type="submit">Save</button></div>
   </form>
 </dialog>
 
