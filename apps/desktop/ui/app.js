@@ -407,7 +407,6 @@ function paintMe() {
   $("me-name").textContent = name;
   $("me-avatar").replaceChildren(avatarEl(name, { color: p.color, avatar: p.avatar }));
   $("share-policy").textContent = p.dm_policy === "anyone" ? "Anyone with it can message you." : "Only people in your spaces can message you.";
-  show("nav-invites", isCompanyServer() && !p.is_guest);
   const kind = USAGE_KIND[p.usage];
   $("start-create-sub").textContent = kind === "freelance" ? "A place for clients and projects." : kind === "personal" ? "For friends and family." : kind === "community" ? "For a group, club or server." : "Channels and people, for one purpose.";
 }
@@ -425,7 +424,7 @@ function go(which) {
   view = which;
   show("side-home", which === "home");
   show("side-space", which === "space");
-  show("side-settings", which === "settings");
+  closeDrawers();
   renderRail();
   if (which === "settings") {
     hideMain();
@@ -447,7 +446,7 @@ function belongsHere(c) {
 }
 function hideMain() {
   for (const v of ["view-start", "view-convo", "view-space-empty", "view-desk", "view-drive", "view-settings"]) show(v, false);
-  document.querySelector(".workspace").classList.remove("focus");
+  show("view-desks", false);
 }
 function showStart() {
   hideMain();
@@ -457,12 +456,7 @@ function showStart() {
   if (view === "space") renderSpaceOverview();
 }
 // The "Overview" row is active whenever nothing more specific is open.
-function markNav() {
-  const cur = channels.find((c) => c.id === current);
-  $("nav-overview").classList.toggle("active", view === "space" && !current);
-  $("nav-files").classList.toggle("active", view === "space" && cur?.desk === "files");
-  $("nav-home-overview").classList.toggle("active", view === "home" && !current);
-}
+function markNav() { renderFolders(); }
 function openSpace(s) {
   currentSpace = s;
   $("space-name").textContent = s.name;
@@ -472,8 +466,6 @@ function openSpace(s) {
   go("space");
 }
 $("rail-home").addEventListener("click", () => go("home"));
-$("nav-overview").addEventListener("click", () => { current = null; invoke("blur"); showStart(); renderSide(); });
-$("nav-home-overview").addEventListener("click", () => { current = null; invoke("blur"); showStart(); renderSide(); });
 $("rail-settings").addEventListener("click", () => go("settings"));
 // The person's card: name, handle to share, and a way into settings.
 function toggleMe(open) {
@@ -692,7 +684,7 @@ $("thread-form").addEventListener("submit", async (e) => {
 // first); threads join when you reply or keep them. Each tab carries its
 // status: unread, new replies, what a desk needs. Stored on this device only.
 
-const MAX_TABS = 8;
+const MAX_TABS = 6;
 let tabs = readStore("anarchy.tabs", []);
 function readStore(key, fallback) { try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; } catch { return fallback; } }
 function writeStore(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private mode: fine */ } }
@@ -786,19 +778,148 @@ function renderTabs() {
       el("button", { class: "tab-x", type: "button", "aria-label": `Close ${name}`, onclick: (e) => closeTab(t, e) }, icon("x")));
   }));
   show("tabs", true);
+  renderFolders();
+  show("tool-chats-dot", !pinned && drawer !== "chats" && channels.some((c) => c.unread && c.id !== current && belongsHere(c)));
 }
-function setSidebar(hidden) {
-  $("workspace").classList.toggle("no-sidebar", hidden);
-  $("sidebar-toggle").setAttribute("aria-pressed", String(hidden));
-  $("sidebar-toggle").title = hidden ? "Show sidebar (Ctrl \\)" : "Hide sidebar (Ctrl \\)";
-  writeStore("anarchy.sidebarHidden", hidden);
-}
-$("sidebar-toggle").addEventListener("click", () => setSidebar(!$("workspace").classList.contains("no-sidebar")));
 document.addEventListener("keydown", (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === "\\") { e.preventDefault(); setSidebar(!$("workspace").classList.contains("no-sidebar")); }
+  if ((e.ctrlKey || e.metaKey) && e.key === "\\") { e.preventDefault(); toggleDrawer("chats"); }
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "w" && current) { e.preventDefault(); const t = tabs.find((x) => tabKey(x) === activeTabKey()); if (t) closeTab(t); }
 });
-setSidebar(readStore("anarchy.sidebarHidden", false));
+
+// ---------- folders: the space's sections ----------
+// Overview, Channels, Files and Desks sit on top of the canvas like folder
+// tabs; the working set follows them. In settings, the folders are its pages.
+
+let settingsAt = "profile";
+const SETTINGS_PAGES = [["profile", "Profile"], ["privacy", "Privacy"], ["account", "Account & device"], ["appearance", "Appearance"], ["notifications", "Notifications"], ["files", "Files on this computer"], ["devices", "Devices"], ["invites", "Guest invites"]];
+function sectionNow() {
+  const cur = channels.find((c) => c.id === current);
+  if (!$("view-desks").hidden) return "desks";
+  if (!cur) return "overview";
+  if (cur.desk === "files") return "files";
+  if (cur.desk) return "desks";
+  return "chats";
+}
+function renderFolders() {
+  let folders;
+  if (view === "settings") {
+    folders = SETTINGS_PAGES.filter(([k]) => k !== "invites" || (isCompanyServer() && !profile?.is_guest))
+      .map(([k, label]) => ({ key: k, label, active: settingsAt === k, go: () => settingsPage(k) }));
+  } else {
+    const now = sectionNow();
+    const unread = channels.some((c) => c.unread && c.id !== current && belongsHere(c));
+    folders = view === "home"
+      ? [{ key: "overview", label: "Overview", icon: "home" }, { key: "chats", label: "Chats", icon: "chat", dot: unread }]
+      : [{ key: "overview", label: "Overview", icon: "home" }, { key: "chats", label: "Channels", icon: "chat", dot: unread }, { key: "files", label: "Files", icon: "folder" }, { key: "desks", label: "Desks", icon: "receipt", n: [...deskNeeds.entries()].filter(([id]) => channels.find((c) => c.id === id)?.space === currentSpace?.id).reduce((a, [, n]) => a + n, 0) }];
+    folders = folders.map((f) => ({ ...f, active: f.key === now, go: () => openSection(f.key) }));
+  }
+  $("folder-tabs").replaceChildren(...folders.map((f) => el("button", { class: `folder${f.active ? " active" : ""}`, type: "button", role: "tab", "aria-selected": String(!!f.active), onclick: f.go },
+    f.icon ? icon(f.icon) : null, el("span", { text: f.label }),
+    f.n ? el("span", { class: "tab-badge warn", text: String(f.n) }) : f.dot ? el("span", { class: "unread-dot", "aria-label": "unread" }) : null)));
+  show("tab-list", view !== "settings");
+  show("tools", view !== "settings");
+  $("workspace").classList.toggle("no-tools", view === "settings");
+}
+// The last thing of a kind you had open here, from the working set.
+function lastOpen(pred) {
+  return [...tabs].filter((t) => t.thread == null).sort((a, b) => b.used - a.used).map((t) => channels.find((c) => c.id === t.channel)).find((c) => c && pred(c));
+}
+async function openSection(key) {
+  if (thread) closeThread();
+  const here = (c) => (view === "home" ? c.kind === "dm" : c.space === currentSpace?.id);
+  if (key === "overview") { current = null; invoke("blur"); showStart(); renderSide(); return; }
+  if (key === "files") return openDriveOf(currentSpace);
+  if (key === "desks") {
+    const already = sectionNow() === "desks";
+    const last = lastOpen((c) => here(c) && c.desk && c.desk !== "files");
+    if (last && !already) return openChannel(last.id);
+    return showDesks();
+  }
+  // Chats / Channels: pick up where you left off, else the first one, else the list.
+  const last = lastOpen((c) => here(c) && !c.desk) || channels.find((c) => here(c) && !c.desk && (view === "home" ? true : c.kind === "channel"));
+  if (last) { await openChannel(last.id); composer.focus(); } else toggleDrawer("chats", true);
+}
+async function showDesks() {
+  const sp = currentSpace;
+  current = null; invoke("blur");
+  hideMain(); show("view-desks");
+  renderFolders(); renderTabs();
+  const desks = channels.filter((c) => c.space === sp.id && c.desk && c.desk !== "files");
+  $("desks-kind").textContent = `${sp.name} · Desks`;
+  $("desks-headline").replaceChildren(desks.length ? `${desks.length} ${desks.length === 1 ? "desk" : "desks"}. ` : "No desks yet. ", el("span", { class: "soft", text: desks.length ? "Each one holds a job: its records, its rules and who works it." : "A desk holds a job: invoices, requests, jobs." }));
+  const cards = await Promise.all(desks.map(async (d) => el("button", { class: "ov-desk", type: "button", onclick: () => openChannel(d.id) },
+    el("span", { class: "top" }, icon(DESK_ICON[d.desk] || "receipt"), d.name),
+    el("span", { class: "big" }, await deskSummary(d)),
+    deskNeeds.get(d.id) ? el("span", { class: "flags" }, el("span", { class: "flag-pill warn", text: `${deskNeeds.get(d.id)} need you` })) : el("span", { class: "flags" }, el("span", { class: "flag-pill good", text: "Nothing waiting" })))));
+  if (currentSpace !== sp) return;
+  $("desks-grid").replaceChildren(...cards, el("button", { class: "ov-desk add", type: "button", onclick: openNewDesk }, el("span", { class: "top" }, icon("plus"), "Set up a desk"), el("span", { class: "fine", text: "Front desk, help desk, dispatch and more are on the way." })));
+}
+$("desks-new").addEventListener("click", () => openNewDesk());
+
+// ---------- drawers: chats and people pop over from the left ----------
+
+let drawer = null; // "chats" | "people" | null
+let pinned = readStore("anarchy.chatsPinned", false);
+function toggleDrawer(name, force) {
+  const open = force ?? drawer !== name;
+  if (open && name !== "chats" && pinned) { /* the pinned list stays; the other panel opens over the canvas */ }
+  drawer = open ? name : null;
+  if (open) openAsk(false);
+  paintDrawers();
+  if (open && name === "people") renderPeopleDrawer();
+}
+function closeDrawers() { drawer = null; paintDrawers(); }
+function paintDrawers() {
+  const chatsOn = pinned || drawer === "chats";
+  show("drawer-chats", chatsOn);
+  show("drawer-people", drawer === "people");
+  $("workspace").classList.toggle("chats-pinned", pinned);
+  $("drawer-chats").classList.toggle("pinned", pinned);
+  $("tool-chats").setAttribute("aria-expanded", String(chatsOn));
+  if (chatsOn) show("tool-chats-dot", false);
+  $("tool-people").setAttribute("aria-expanded", String(drawer === "people"));
+  for (const b of document.querySelectorAll(".drawer-pin")) { b.setAttribute("aria-pressed", String(pinned)); b.title = pinned ? "Unpin: pop over instead" : "Keep open"; }
+}
+$("tool-chats").addEventListener("click", () => { if (pinned) { pinned = false; writeStore("anarchy.chatsPinned", false); closeDrawers(); } else toggleDrawer("chats"); });
+$("tool-people").addEventListener("click", () => toggleDrawer("people"));
+for (const b of document.querySelectorAll(".drawer-pin")) b.addEventListener("click", () => { pinned = !pinned; writeStore("anarchy.chatsPinned", pinned); if (!pinned) drawer = null; paintDrawers(); });
+// Picking something in a pop-over closes it; clicking the canvas does too.
+$("drawer-chats").addEventListener("click", (e) => { if (!pinned && e.target.closest(".side-item")) setTimeout(closeDrawers, 0); });
+$("main").addEventListener("mousedown", (e) => { if (drawer && !e.target.closest(".drawer")) closeDrawers(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && drawer && !document.querySelector("dialog[open]")) closeDrawers(); });
+paintDrawers();
+
+async function renderPeopleDrawer() {
+  const list = $("drawer-people-list");
+  show("people-dm-form", view === "home");
+  show("space-invite", view === "space" && !profile?.is_guest);
+  if (view === "home") {
+    $("people-title").textContent = "People you talk to";
+    const dms = channels.filter((c) => c.kind === "dm");
+    list.replaceChildren(...(dms.length ? dms.map((c) => el("button", { class: "person-row", type: "button", onclick: () => { closeDrawers(); openChannel(c.id); } },
+      avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar }), el("span", { class: "lines" }, el("strong", { text: c.name }), el("small", { text: c.peer?.handle ? `@${c.peer.handle}` : "" })))) : [el("p", { class: "fine", text: "Nobody yet. Message someone by their handle." })]));
+    return;
+  }
+  const sp = currentSpace;
+  $("people-title").textContent = "People";
+  list.replaceChildren(el("p", { class: "fine", text: "Loading…" }));
+  let members = [];
+  try { members = await invoke("space_members", { space: sp.id }); } catch (err) { list.replaceChildren(el("p", { class: "error", text: String(err) })); return; }
+  if (currentSpace !== sp) return;
+  const mine = handleOf(profile);
+  list.replaceChildren(...members.map((m) => {
+    const me = m.handle && m.handle === mine;
+    return el("div", { class: "person-row" }, avatarEl(m.name, { color: m.color, avatar: m.avatar }),
+      el("span", { class: "lines" }, el("strong", {}, m.name, me ? el("span", { class: "fine", text: " · you" }) : null, m.is_agent ? el("span", { class: "flag-pill warn", text: "AI" }) : null), el("small", { text: m.handle ? `@${m.handle}` : m.is_guest ? "Guest" : "" })),
+      !me && m.handle ? el("button", { class: "btn-outline sm", type: "button", text: "Message", onclick: async (e) => { closeDrawers(); await startDm(m.handle, "people-dm-error", e.currentTarget); } }) : null);
+  }));
+}
+$("people-dm-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const h = $("people-dm").value.trim();
+  if (h) { await startDm(h, "people-dm-error", e.submitter); closeDrawers(); }
+});
+
 
 const composer = $("message");
 function fitComposer() { composer.style.height = "auto"; composer.style.height = `${Math.min(composer.scrollHeight, 160)}px`; $("send").disabled = !composer.value.trim(); }
@@ -978,7 +1099,9 @@ const KIND_OF_DESK = { collections: "Collections", files: "Files" };
 const STOP = new Set("the a an and or of to in on for with is are was were be what who when where which how much many my our your me i we you it this that there any all do does did have has from about show find tell please status check update latest new give list".split(" "));
 function openAsk(on = true) {
   if (on && thread) closeThread();
+  if (on) { drawer = null; paintDrawers(); }
   show("ask", on);
+  $("tool-ask").setAttribute("aria-expanded", String(on));
   document.querySelector(".main")?.classList.toggle("with-ask", on);
   if (!on) return;
   const sp = view === "space" ? currentSpace : null;
@@ -1229,7 +1352,6 @@ $("folder-form").addEventListener("submit", async (e) => {
   drive.folder = path;
   renderDrive();
 });
-$("nav-files").addEventListener("click", () => openDriveOf(currentSpace));
 
 // ---------- space overview ----------
 
@@ -2011,10 +2133,10 @@ function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = nu
 
 function settingsPage(page) {
   for (const p of document.querySelectorAll(".page")) show(p, p.dataset.page === page);
-  for (const b of $("side-settings").querySelectorAll(".side-item")) b.classList.toggle("active", b.dataset.page === page);
+  settingsAt = page;
+  renderFolders();
   ({ profile: loadProfile, privacy: loadPrivacy, account: loadAccount, notifications: loadNotifications, files: loadMount, devices: loadDevices, appearance: () => {}, invites: () => { show("invite-result", false); setError("invite-error", ""); } })[page]();
 }
-for (const b of $("side-settings").querySelectorAll(".side-item")) b.addEventListener("click", () => settingsPage(b.dataset.page));
 
 let edit = {};
 function loadProfile() {
