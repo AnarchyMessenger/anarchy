@@ -95,6 +95,51 @@ Pick **one** to launch, for one kind of customer. Recommendation: collections
 for French SMEs (a live legal deadline, low risk, measurable in euros), unless
 the target is trades, where the front desk wins.
 
+## The client side: what people outside the company see
+
+Most desks exist to deal with people who will never install Anarchy:
+customers, suppliers, patients, tenants. Each desk has an **outside** (what
+they touch) and an **inside** (the desk the team works). Not built yet.
+
+**Outside: web, no account, one thing at a time.**
+
+- **Links that do one thing:** pay this invoice, approve this quote, sign
+  this, pick a slot, upload the missing document. Sent by email or SMS; open
+  on a phone with no sign-in. This is most client interaction, and it
+  converts better than any portal.
+- **Client portal** per client per space, reached by magic link: open
+  invoices, shared files, the status of their job, a message thread. It's a
+  list of those links plus history, not a second app.
+- **Chat widget** or QR code on the company's site or van, feeding the desk
+  inbox. Phone and email land in the same inbox (partners, see Limits).
+- **Branding is the company's, not ours.** Its name, logo and colour;
+  "via Anarchy" only in the footer.
+
+**Inside: the desk's Clients tab.**
+
+- One conversation per client across channels (email, SMS, widget, portal,
+  calls), newest first, grouped by state: *needs you*, *agent handling*,
+  *waiting on client*.
+- A client card (a desk item) beside the thread: contact, open invoices,
+  jobs, files, consent to be contacted by AI.
+- The agent drafts; a person sends, unless the desk's rules let the agent
+  send that kind of message alone. Drafts show **Approve · Edit · Send**.
+
+**Rules the UI enforces.**
+
+- Anything a client can see carries the amber *Public* trust badge ("Client
+  can see this"), and **Preview as client** shows exactly their view.
+- Messages written by the agent say so to the client (EU AI Act transparency).
+- Internal notes never share a composer with client replies: two tabs, two
+  colours, so nobody pastes a margin note into a customer email.
+
+**Encryption, honestly.** Clients have no device keys. Portal content can
+be encrypted with a key in the link's fragment (the server never sees it),
+but the page's JavaScript comes from the server, so a hostile server could
+serve code that reads it. Email and SMS are plaintext anyway. So
+client-facing desks are Company trust, and the portal says what's encrypted
+and what isn't.
+
 ## Limits we say out loud
 
 - Phone numbers and calls need a telecom partner, per-country number rules, and

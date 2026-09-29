@@ -47,6 +47,7 @@
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></symbol>
   <symbol id="i-at" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-4 7.5"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8.5 7 10 4-1.5 7-5.5 7-10V6z"/></symbol>
   <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
@@ -272,6 +273,7 @@
             <button class="side-item" data-page="account">Account &amp; device</button>
             <button class="side-item" data-page="appearance">Appearance</button>
             <button class="side-item" data-page="notifications">Notifications</button>
+            <button class="side-item" data-page="files">Files on this computer</button>
             <button class="side-item" data-page="devices">Devices</button>
             <button class="side-item" data-page="invites" id="nav-invites">Guest invites</button>
           </div>
@@ -343,7 +345,7 @@
           <div class="ov-inner">
             <div class="ov-hero">
               <div><p class="hero-kind" id="drive-kind">Files</p><h1 class="hero-line" id="drive-headline"></h1></div>
-              <div class="row-actions"><button class="btn-ink inline" id="drive-upload" type="button"><svg class="i"><use href="#i-upload"/></svg>Upload</button><button class="btn-outline pill" id="drive-folder" type="button"><svg class="i"><use href="#i-folder"/></svg>New folder</button><span class="fine">Drop files anywhere here. They're encrypted on this computer before they leave it.</span></div>
+              <div class="row-actions"><button class="btn-ink inline" id="drive-upload" type="button"><svg class="i"><use href="#i-upload"/></svg>Upload</button><button class="btn-outline pill" id="drive-folder" type="button"><svg class="i"><use href="#i-folder"/></svg>New folder</button><button class="btn-outline pill" id="drive-mount" type="button"><svg class="i"><use href="#i-external"/></svg><span>Open in <span class="os-files">file manager</span></span></button><span class="fine">Drop files anywhere here. They're encrypted on this computer before they leave it.</span></div>
             </div>
             <div class="desk-tools"><nav class="crumbs" id="drive-crumbs" aria-label="Folder"></nav><span class="spacer"></span><label class="search pill"><svg class="i"><use href="#i-search"/></svg><input id="drive-search" placeholder="Search files in this space" aria-label="Search files"></label></div>
             <table class="grid files" id="drive-table">
@@ -461,6 +463,25 @@
               <label class="toggle"><input type="checkbox" id="n-mentions"><span><strong>Only when I'm mentioned</strong><small>Messages that include @<span id="n-handle">you</span>. Direct messages always notify.</small></span></label>
               <label class="toggle"><input type="checkbox" id="n-previews"><span><strong>Show message text</strong><small>Off shows "New message from …", for shared screens.</small></span></label>
             </div>
+          </div>
+
+          <div class="page" data-page="files" hidden>
+            <h1 class="page-title">Files on this computer</h1>
+            <p class="page-sub">Open your spaces' drives from <span class="os-files">your file manager</span> like a network disk: one folder per space. Anarchy decrypts files as they're opened and encrypts them before they're saved; it has to be running.</p>
+            <div class="toggles">
+              <label class="toggle"><input type="checkbox" id="m-enabled"><span><strong>Show the drive in <span class="os-files">your file manager</span></strong><small>A share only this computer can reach, at a secret address.</small></span></label>
+            </div>
+            <div class="mount-box" id="m-box" hidden>
+              <div class="row-actions"><button class="btn-ink inline" id="m-open" type="button"><svg class="i"><use href="#i-folder"/></svg><span>Open in <span class="os-files">file manager</span></span></button><button class="btn-outline pill" id="m-copy" type="button"><svg class="i"><use href="#i-copy"/></svg><span>Copy address</span></button><span class="saved" id="m-copied" hidden>Copied</span></div>
+              <dl class="facts-list">
+                <div><dt>Address</dt><dd><code id="m-url"></code></dd></div>
+                <div id="m-win-row"><dt>In Explorer</dt><dd><code id="m-win"></code></dd></div>
+              </dl>
+              <p class="fine" id="m-how"></p>
+              <div class="callout"><svg class="i"><use href="#i-shield"/></svg><p>Anything running on this computer as you can read the drive while it's shown, as with any mounted disk, and your system may keep copies of opened files in its cache. Files are never readable on the server.</p></div>
+              <div class="row-actions"><button class="btn-outline sm" id="m-rotate" type="button">New address</button><span class="fine">Disconnects anything using the old one.</span></div>
+            </div>
+            <p class="error" id="m-error" hidden></p>
           </div>
 
           <div class="page" data-page="devices" hidden>

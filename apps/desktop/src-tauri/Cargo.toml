@@ -21,6 +21,12 @@ open = "5"
 tauri-plugin-notification = "2"
 # Native open/save pickers for the drive (used from Rust only).
 tauri-plugin-dialog = "2"
+# Serves the drives to the OS file manager over WebDAV on 127.0.0.1 (Apache-2.0).
+dav-server = { version = "0.11", default-features = false, features = ["hyper"] }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+bytes = "1"
+futures-util = "0.3"
 uuid.workspace = true
 base64.workspace = true
 tauri = { version = "2", features = [] }

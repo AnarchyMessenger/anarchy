@@ -790,7 +790,7 @@ pub async fn ensure_drive(i: &mut Inner, space: SpaceId) -> Result<ChannelId, St
 }
 
 /// 200 MB per file for now: chunks go through Postgres.
-const MAX_FILE: u64 = 200 * 1024 * 1024;
+pub const MAX_FILE: u64 = 200 * 1024 * 1024;
 
 fn mime_for(name: &str) -> &'static str {
     let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
@@ -834,29 +834,46 @@ pub async fn upload_path(
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
+    store_file(i, channel, &bytes, &name, &folder, None).await?;
+    Ok(name)
+}
+
+/// Encrypts `bytes`, uploads the chunks and writes the file's record. Passing
+/// the `id` of an existing record replaces that file (latest write wins).
+pub async fn store_file(
+    i: &mut Inner,
+    channel: ChannelId,
+    bytes: &[u8],
+    name: &str,
+    folder: &str,
+    id: Option<String>,
+) -> Result<String, String> {
+    if bytes.len() as u64 > MAX_FILE {
+        return Err("Files up to 200 MB for now".into());
+    }
     let by = i
         .saved()
         .and_then(|s| s.display_name.clone())
         .unwrap_or_else(|| "Someone".into());
     let client = i.client()?;
-    let mut data = client.upload_file(channel, &bytes).await.map_err(err)?;
+    let mut data = client.upload_file(channel, bytes).await.map_err(err)?;
     data["name"] = serde_json::json!(name);
     data["folder"] = serde_json::json!(folder);
-    data["mime"] = serde_json::json!(mime_for(&name));
+    data["mime"] = serde_json::json!(mime_for(name));
     data["by"] = serde_json::json!(by);
     data["added"] = serde_json::json!(crate::engine::now_ms());
-    let id = uuid::Uuid::new_v4().to_string();
+    let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     put_items(
         i,
         channel,
         vec![ItemRecord {
-            id,
+            id: id.clone(),
             kind: "file".into(),
             data,
         }],
     )
     .await?;
-    Ok(name)
+    Ok(id)
 }
 
 async fn file_bytes(

@@ -604,3 +604,7 @@ form.start-card { cursor: default; }
 .preview-body img { max-width: 100%; max-height: 60vh; object-fit: contain; }
 .preview-body pre { align-self: stretch; justify-self: stretch; margin: 0; padding: 14px; font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .preview-body p { color: var(--ink-muted); }
+
+/* ---------- files on this computer ---------- */
+.mount-box { display: grid; gap: 14px; margin-top: 14px; max-width: 640px; }
+.mount-box code { font-family: var(--font-mono); font-size: 12px; word-break: break-all; }

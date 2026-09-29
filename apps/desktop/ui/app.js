@@ -394,6 +394,8 @@ async function showApp() {
   go("home");
   await refreshChannels();
   startPolling();
+  // Brings the local file share back up if it was on.
+  invoke("mount_info").then((m) => { mount = m; }).catch(() => {});
 }
 
 function paintMe() {
@@ -1384,6 +1386,12 @@ function startPolling() {
         await refreshChannels();
         if (current && (!$("view-convo").hidden || !$("view-desk").hidden)) await openChannel(current);
       }
+      // Files can change from the file manager, or from others, without a text message.
+      if (drive && !$("view-drive").hidden) {
+        const items = await invoke("desk_items", { channel: drive.channel });
+        const sig = (xs) => xs.map((x) => `${x.id}:${x.seq}`).join();
+        if (sig(items) !== sig(drive.items)) { drive.items = items; renderDrive(); }
+      }
     } catch (err) {
       if (/signed out|sign in required/i.test(String(err))) { status = await invoke("status"); if (!status.session) showAuth(); }
     } finally { syncing = false; }
@@ -1396,7 +1404,7 @@ function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = nu
 function settingsPage(page) {
   for (const p of document.querySelectorAll(".page")) show(p, p.dataset.page === page);
   for (const b of $("side-settings").querySelectorAll(".side-item")) b.classList.toggle("active", b.dataset.page === page);
-  ({ profile: loadProfile, privacy: loadPrivacy, account: loadAccount, notifications: loadNotifications, devices: loadDevices, appearance: () => {}, invites: () => { show("invite-result", false); setError("invite-error", ""); } })[page]();
+  ({ profile: loadProfile, privacy: loadPrivacy, account: loadAccount, notifications: loadNotifications, files: loadMount, devices: loadDevices, appearance: () => {}, invites: () => { show("invite-result", false); setError("invite-error", ""); } })[page]();
 }
 for (const b of $("side-settings").querySelectorAll(".side-item")) b.addEventListener("click", () => settingsPage(b.dataset.page));
 
@@ -1485,6 +1493,52 @@ for (const id of ["n-desktop", "n-mentions", "n-previews"]) {
     await invoke("set_notifications", { prefs });
   });
 }
+
+// ---------- files on this computer (local WebDAV share) ----------
+
+const OS = /Mac/.test(navigator.platform) ? "mac" : /Win/.test(navigator.platform) ? "win" : "linux";
+for (const n of document.querySelectorAll(".os-files")) n.textContent = { mac: "Finder", win: "File Explorer", linux: "Files" }[OS];
+const MOUNT_HOW = {
+  mac: "Finder mounts it as \u201cAnarchy\u201d under Locations. To add it by hand: Go \u2192 Connect to Server (\u2318K), paste the address.",
+  win: "Explorer opens it by address. To give it a drive letter: This PC \u2192 Map network drive, paste the address. Files up to 50 MB unless you raise Windows' WebClient limit.",
+  linux: "Files (GNOME) and Dolphin open it as a network location. Other file managers: connect to the address with dav:// in place of http://.",
+};
+let mount = null;
+function paintMount() {
+  $("m-enabled").checked = !!mount?.enabled;
+  show("m-box", !!mount?.running);
+  $("m-url").textContent = mount?.url || "";
+  $("m-win").textContent = mount?.windows || "";
+  show("m-win-row", OS === "win");
+  $("m-how").textContent = MOUNT_HOW[OS];
+}
+async function loadMount() {
+  setError("m-error", ""); show("m-copied", false);
+  try { mount = await invoke("mount_info"); } catch (err) { setError("m-error", String(err)); }
+  paintMount();
+}
+async function setMount(enabled, newAddress = false) {
+  setError("m-error", "");
+  try { mount = await invoke("set_mount", { enabled, newAddress }); } catch (err) { setError("m-error", String(err)); }
+  paintMount();
+}
+async function openMount() {
+  try { await invoke("open_mount"); } catch (err) { alert(`Couldn't open it: ${err}\n\nAddress: ${mount?.url || ""}`); }
+}
+$("m-enabled").addEventListener("change", () => setMount($("m-enabled").checked));
+$("m-rotate").addEventListener("click", () => setMount(true, true));
+$("m-open").addEventListener("click", openMount);
+$("m-copy").addEventListener("click", async () => {
+  await navigator.clipboard.writeText(OS === "win" ? mount.windows : mount.url);
+  show("m-copied", true);
+});
+$("drive-mount").addEventListener("click", async () => {
+  if (!mount?.running) {
+    await setMount(true);
+    if (!mount?.running) return;
+  }
+  openMount();
+});
 
 async function loadDevices() {
   setError("device-error", "");

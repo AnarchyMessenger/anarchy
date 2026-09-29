@@ -1,6 +1,7 @@
 // Hides the console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod dav;
 mod engine;
 mod ops;
 mod storage;
@@ -22,6 +23,8 @@ struct AppState {
     /// Paths the person dropped on the window. Only these (or ones picked in the
     /// native dialog) can be uploaded, so the web view can't name arbitrary files.
     dropped: Arc<Mutex<HashSet<PathBuf>>>,
+    /// The drive's local WebDAV share, while it's on.
+    mount: Arc<tokio::sync::Mutex<Option<dav::Running>>>,
 }
 
 type R<T> = Result<T, String>;
@@ -210,6 +213,133 @@ async fn save_file_as(
     Ok(true)
 }
 
+#[derive(serde::Serialize)]
+struct MountInfo {
+    enabled: bool,
+    running: bool,
+    /// For macOS "Connect to Server" and Linux file managers.
+    url: String,
+    /// For Explorer's address bar or "Map network drive".
+    windows: String,
+}
+
+fn mount_info_of(prefs: &dav::MountPrefs, running: Option<&dav::Running>) -> MountInfo {
+    let (port, token) = running
+        .map(|r| (r.port, r.token.clone()))
+        .unwrap_or((prefs.port, prefs.token.clone()));
+    let path = dav::prefix(&token);
+    MountInfo {
+        enabled: prefs.enabled,
+        running: running.is_some(),
+        url: if running.is_some() {
+            format!("http://127.0.0.1:{port}{path}/")
+        } else {
+            String::new()
+        },
+        windows: if running.is_some() {
+            format!("\\\\127.0.0.1@{port}\\DavWWWRoot{}", path.replace('/', "\\"))
+        } else {
+            String::new()
+        },
+    }
+}
+
+async fn mount_prefs(state: &AppState, update: Option<(bool, bool)>) -> R<dav::MountPrefs> {
+    state
+        .engine
+        .run(move |i| {
+            Box::pin(async move {
+                if i.is_locked() {
+                    return Err("Unlock Anarchy first".to_string());
+                }
+                let mut prefs: dav::MountPrefs = engine::read_json(i.device(), "mount").unwrap_or_default();
+                if prefs.token.is_empty() {
+                    prefs.token = dav::MountPrefs::new_token();
+                }
+                if let Some((enabled, new_address)) = update {
+                    prefs.enabled = enabled;
+                    if new_address {
+                        prefs.token = dav::MountPrefs::new_token();
+                    }
+                }
+                engine::write_json(i.device(), "mount", &prefs)?;
+                Ok(prefs)
+            })
+        })
+        .await
+}
+
+/// Starts or stops the share to match the saved setting.
+async fn apply_mount(state: &AppState, mut prefs: dav::MountPrefs) -> R<MountInfo> {
+    let mut running = state.mount.lock().await;
+    let stale = running.as_ref().is_some_and(|r| r.token != prefs.token);
+    if !prefs.enabled || stale {
+        *running = None;
+    }
+    if prefs.enabled && running.is_none() {
+        let r = dav::start(state.engine.clone(), &prefs).await?;
+        if r.port != prefs.port {
+            prefs.port = r.port;
+            let saved = prefs.clone();
+            state
+                .engine
+                .run(move |i| Box::pin(async move { engine::write_json(i.device(), "mount", &saved) }))
+                .await?;
+        }
+        *running = Some(r);
+    }
+    Ok(mount_info_of(&prefs, running.as_ref()))
+}
+
+/// The share's state; starts it if it's on and not running yet (after unlock).
+#[tauri::command]
+async fn mount_info(state: tauri::State<'_, AppState>) -> R<MountInfo> {
+    let prefs = mount_prefs(&state, None).await?;
+    apply_mount(&state, prefs).await
+}
+
+#[tauri::command]
+async fn set_mount(state: tauri::State<'_, AppState>, enabled: bool, new_address: bool) -> R<MountInfo> {
+    let prefs = mount_prefs(&state, Some((enabled, new_address))).await?;
+    apply_mount(&state, prefs).await
+}
+
+/// Mounts the share with the system's own WebDAV client and opens it.
+#[tauri::command]
+async fn open_mount(state: tauri::State<'_, AppState>) -> R<()> {
+    let info = mount_info(state).await?;
+    if !info.running {
+        return Err("Turn on \"Files on this computer\" first".into());
+    }
+    tokio::task::spawn_blocking(move || open_share(&info))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn open_share(info: &MountInfo) -> R<()> {
+    use std::process::Command;
+    let run = |cmd: &mut Command| -> R<()> {
+        let out = cmd.output().map_err(|e| e.to_string())?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+        }
+    };
+    if cfg!(target_os = "macos") {
+        run(Command::new("osascript").args(["-e", &format!("mount volume \"{}\"", info.url)]))?;
+        run(Command::new("open").arg("/Volumes/Anarchy"))
+    } else if cfg!(target_os = "windows") {
+        // Needs the WebClient service, which Windows starts on demand.
+        run(Command::new("explorer").arg(&info.windows)).or(Ok(()))
+    } else {
+        let dav = info.url.replacen("http://", "dav://", 1);
+        // Already mounted is fine.
+        let _ = Command::new("gio").args(["mount", &dav]).output();
+        run(Command::new("gio").args(["open", &dav])).or_else(|_| run(Command::new("xdg-open").arg(&dav)))
+    }
+}
+
 #[tauri::command]
 async fn cancel_sign_in(state: tauri::State<'_, AppState>) -> R<()> {
     state.cancel_sign_in.notify_waiters();
@@ -243,6 +373,7 @@ fn main() {
                 engine: Engine::start(dir, notify),
                 cancel_sign_in: Arc::new(Notify::new()),
                 dropped: Arc::new(Mutex::new(HashSet::new())),
+                mount: Arc::new(tokio::sync::Mutex::new(None)),
             });
             Ok(())
         })
@@ -265,6 +396,9 @@ fn main() {
             pick_and_upload,
             upload_dropped,
             save_file_as,
+            mount_info,
+            set_mount,
+            open_mount,
             create_desk,
             desk_items,
             put_items,

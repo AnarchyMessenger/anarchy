@@ -71,8 +71,11 @@ file's key, name, folder and chunk list are a record in the drive's MLS channel,
 so they're end-to-end encrypted and re-shared to people added later like any
 desk record. Upload is from the native file picker or by dropping files on the
 window (only paths the OS reported as dropped are accepted). Search covers file
-names and folders on the device. The rest of this section is the plan the
-first version simplifies:
+names and folders on the device. Settings → *Files on this computer* shows
+the drives in Finder, File Explorer or Files as a network disk, one folder
+per space (D19): the app serves them over WebDAV on 127.0.0.1 and encrypts or
+decrypts in its own process. The rest of this section is the plan the first
+version simplifies:
 
 - **Client-side encryption.** A file is split into 1 MiB chunks, each encrypted with AES-256-GCM using a random **file key**. Chunk IDs are random, not content hashes, so identical files don't reveal that they match. File names and metadata are encrypted too.
 - **Key hierarchy:** *file key* is wrapped by the *folder key*, which is wrapped by the *channel or team group key*, derived from MLS exporter secrets. Personal folders use the user's own key. Sharing a folder means wrapping its key for the target group, and nothing gets re-encrypted.
@@ -219,6 +222,7 @@ mcp_audit(id, client_id, user_id, tool, channels_touched[], ts)
 | D16 | **A passphrase can lock the device, and save it where there's no keychain.** | Decided 2026-09-28 | The device database key is wrapped with a key derived from the passphrase (Argon2id, 64 MiB, 3 passes; XChaCha20-Poly1305) in `device.key`, and the keychain copy is deleted. The app opens locked and runs nothing but `unlock` until then. This isn't an account password: sign-in stays email, SSO or anonymous, and the server never sees the passphrase. There's no reset; forgetting it means signing in again as a new device. Anonymous accounts can't be recovered at all, and the app says so before creating one and before signing out. |
 | D17 | **A desk is a channel of encrypted records.** | Decided 2026-09-28 | Desk records (an invoice, a request) are `item` messages in the desk's MLS channel, latest write per id wins, so desks get end-to-end encryption, membership and an audit trail from what exists. Because MLS hides earlier messages from newcomers, adding someone re-shares the current state as one snapshot. Last-write-wins can lose a concurrent edit to the same record; the epoch check orders writes, and field-level merges come if real use needs them. |
 | D18 | **A file's key lives in the drive's MLS channel, not in a key hierarchy (yet).** | Decided 2026-09-29 | Putting each file's key inside its record reuses what's proven (MLS membership, re-share on join, the audit trail) instead of building folder keys now. Costs: removing someone doesn't re-encrypt files they could already open (they keep keys, not bytes: the server stops serving them the chunks); deleting marks the record and leaves the chunks until garbage collection exists; chunks sit in Postgres, capped at 200 MB a file, until the object store lands. The folder-key hierarchy above comes with sharing across spaces and external links. |
+| D19 | **The drive mounts through a local WebDAV share first; native file providers later.** | Decided 2026-09-29 | Finder, Explorer and GNOME/KDE all mount WebDAV with nothing to install, so the desktop app serves the drives on 127.0.0.1 (one folder per space) and decrypts/encrypts in its own process. Access needs a secret first path segment and a loopback `Host` header, so web pages can't reach it (CSRF, DNS rebinding); other programs running as the same person can, as with any mounted disk. Costs: files are held in memory while open (200 MB cap), nothing works offline or with the app closed, no placeholders or "free up space", the OS may cache opened files unencrypted, and Windows' WebClient caps files at 50 MB by default. The end state is the native APIs OneDrive and Dropbox use: Windows Cloud Files (cfapi), macOS File Provider, FUSE on Linux, with an encrypted local cache. |
 
 ## 12. Open decisions
 
