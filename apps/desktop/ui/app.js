@@ -814,7 +814,8 @@ async function refreshDeskNeeds() {
       const items = await invoke("desk_items", { channel: c.id });
       const late = items.filter((i) => i.kind === "invoice" && invoiceState(i.data, today) === "overdue").length;
       const claims = desk?.channel === c.id ? invoices().filter((i) => claimOf(i)).length : 0;
-      deskNeeds.set(c.id, late + claims);
+      const asks = items.filter((i) => i.kind === "request" && !i.data.deleted && i.data.status === "new").length;
+      deskNeeds.set(c.id, late + claims + asks);
     } catch { /* keep the last count */ }
   }
 }
@@ -2430,6 +2431,7 @@ async function openDesk(c) {
   renderDesk();
   renderDeskView();
   refreshChannels();
+  pullIntake(true).then((n) => { if (n && desk?.channel === c.id) renderDeskView(); });
 }
 
 function renderDesk() {
@@ -2832,8 +2834,15 @@ function renderDeskView() {
   if (desk.view === "clients") renderClients();
   if (desk.view === "time") renderTime();
   paintTimerPill();
+  paintViewCounts();
 }
 for (const b of document.querySelectorAll("#desk-views button")) b.addEventListener("click", () => { desk.view = b.dataset.v; renderDeskView(); });
+// New requests show as a count on the Clients view.
+function paintViewCounts() {
+  const n = requests().filter((r) => r.status === "new").length;
+  const b = document.querySelector('#desk-views button[data-v="clients"]');
+  b.replaceChildren("Clients", n ? el("span", { class: "n", text: String(n) }) : "");
+}
 
 function renderClients() {
   const all = clients();
@@ -2856,6 +2865,7 @@ function renderClients() {
   show("clients-empty", all.length === 0);
   // Customers on invoices who have no card yet: one click makes one.
   const loose = [...new Set(inv.map((i) => i.customer).filter((n) => n && !clientByName(n)))];
+  renderRequests();
   $("client-grid").replaceChildren(...shown.map(({ c, st }) => el("button", { class: "client-card", type: "button", onclick: () => openClient(c) },
     el("span", { class: "cc-top" }, avatarEl(c.name, { size: "sm" }), el("span", { class: "lines" }, el("strong", { text: c.name }), el("small", { text: [c.contact, c.email].filter(Boolean).join(" · ") || "No contact yet" }))),
     el("span", { class: "cc-figs" },
@@ -2869,8 +2879,10 @@ function renderClients() {
 $("client-search").addEventListener("input", () => { desk.clientQuery = $("client-search").value; renderClients(); });
 
 let editingClient = null;
+let clientPreset = {};
 function openClient(c, preset = {}) {
   editingClient = c || null;
+  clientPreset = preset;
   const v = c || preset;
   $("dlg-client-title").textContent = c ? c.name : "New client";
   $("cl-name").value = v.name || ""; $("cl-contact").value = v.contact || ""; $("cl-email").value = v.email || "";
@@ -2907,11 +2919,15 @@ $("client-form").addEventListener("submit", async (e) => {
   const rateRaw = $("cl-rate").value.trim();
   const rate = rateRaw ? moneyIn(rateRaw) : null;
   if (rateRaw && rate == null) return setError("client-error", "Enter a rate like 80 or 92.50.");
-  const { id: _id, ...prev } = editingClient || {}; void _id;
+  const { id: _id, ...prev } = editingClient || { fromRequest: clientPreset.fromRequest }; void _id;
   const data = { ...prev, name, contact: $("cl-contact").value.trim(), email, phone: $("cl-phone").value.trim(), address: $("cl-address").value.trim(), notes: $("cl-notes").value.trim(), rate, added: editingClient?.added || Date.now() };
   await busy($("client-save"), "Saving…", async () => {
     try {
-      await putRecords([{ id: editingClient?.id || crypto.randomUUID(), kind: "client", data }]);
+      const { fromRequest, ...clean } = data;
+      const cid = editingClient?.id || crypto.randomUUID();
+      await putRecords([{ id: cid, kind: "client", data: clean }]);
+      const req = fromRequest && requests().find((x) => x.id === fromRequest);
+      if (req) { const { id: rid, ...rd } = req; await putRecords([{ id: rid, kind: "request", data: { ...rd, status: "client", client: cid } }]); }
       await logActivity(editingClient ? `Updated the client card for ${name}.` : `Added ${name} as a client.`);
       $("dlg-client").close();
       renderDeskView();
@@ -2927,6 +2943,136 @@ $("client-delete").addEventListener("click", async () => {
   $("dlg-client").close();
   renderDeskView();
 });
+
+
+// ---------- intake forms ----------
+// One form per Collections desk. Its private key lives in the desk's records
+// (end-to-end encrypted); the public key goes to the page. Answers wait on the
+// server sealed to that key; a member's device opens them, saves them as
+// "request" records and deletes them from the server.
+
+const FIELD_TYPES = [["text", "Short answer"], ["longtext", "Long answer"], ["email", "Email"], ["phone", "Phone"], ["choice", "Pick one"]];
+const DEFAULT_FIELDS = [
+  { id: "name", label: "Your name", type: "text", required: true },
+  { id: "company", label: "Company", type: "text", required: false },
+  { id: "email", label: "Email", type: "email", required: true },
+  { id: "phone", label: "Phone", type: "phone", required: false },
+  { id: "need", label: "What do you need?", type: "longtext", required: true },
+];
+function intakeForm() { const r = desk.items.find((i) => i.kind === "form" && i.id === "intake"); return r ? { ...r.data } : null; }
+function requests() { return desk.items.filter((i) => i.kind === "request" && !i.data.deleted).map((i) => ({ id: i.id, ...i.data })).sort((a, b) => b.at - a.at); }
+let fmDraft = null;
+function openIntakeForm() {
+  const f = intakeForm();
+  fmDraft = { title: f?.title || "Start a project", intro: f?.intro || "", fields: (f?.fields || DEFAULT_FIELDS).map((x) => ({ ...x })) };
+  $("fm-title").value = fmDraft.title; $("fm-intro").value = fmDraft.intro;
+  renderFmFields();
+  const live = f?.link && f.status !== "closed";
+  show("fm-link", !!live); show("form-withdraw", !!live);
+  if (live) {
+    $("fm-link-state").textContent = `Open until ${shortDay(isoOf(new Date(f.link.expires)))}. ${requests().length} ${requests().length === 1 ? "request" : "requests"} so far.`;
+    $("fm-link-actions").replaceChildren(el("button", { class: "btn-ink inline sm", type: "button", onclick: (e) => copyText(f.link.url, e.currentTarget) }, icon("copy"), "Copy link"));
+  }
+  $("form-save").textContent = live ? "Save changes" : "Publish";
+  setError("form-error", "");
+  $("dlg-form").showModal();
+}
+async function copyText(text, btn) { try { await navigator.clipboard.writeText(text); const t = btn.lastChild.textContent; btn.lastChild.textContent = "Copied"; setTimeout(() => { btn.lastChild.textContent = t; }, 1500); } catch { prompt("Copy the link:", text); } }
+function renderFmFields() {
+  $("fm-fields").replaceChildren(...fmDraft.fields.map((q, k) => el("div", { class: "fm-row" },
+    el("input", { class: "text-input", value: q.label, maxlength: "80", "aria-label": "Question", oninput: (e) => { q.label = e.target.value; } }),
+    (() => { const sel = el("select", { class: "text-input", "aria-label": "Kind of answer", onchange: (e) => { q.type = e.target.value; renderFmFields(); } }, ...FIELD_TYPES.map(([v, l]) => el("option", { value: v, text: l }))); sel.value = q.type; return sel; })(),
+    el("label", { class: "fm-req" }, el("input", { type: "checkbox", checked: !!q.required, onchange: (e) => { q.required = e.target.checked; } }), "Needed"),
+    el("button", { class: "icon-btn", type: "button", title: "Remove", "aria-label": "Remove", disabled: fmDraft.fields.length <= 1, onclick: () => { fmDraft.fields.splice(k, 1); renderFmFields(); } }, icon("x")),
+    q.type === "choice" ? el("input", { class: "text-input fm-options", value: (q.options || []).join(", "), placeholder: "Options, separated by commas", "aria-label": "Options", oninput: (e) => { q.options = e.target.value.split(",").map((o) => o.trim()).filter(Boolean); } }) : null)));
+}
+$("fm-add").addEventListener("click", () => { if (fmDraft.fields.length >= 30) return; fmDraft.fields.push({ id: crypto.randomUUID().slice(0, 8), label: "", type: "text", required: false }); renderFmFields(); $("fm-fields").lastElementChild?.querySelector("input")?.focus(); });
+$("intake-open").addEventListener("click", openIntakeForm);
+$("form-cancel").addEventListener("click", () => $("dlg-form").close());
+$("form-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  fmDraft.title = $("fm-title").value.trim(); fmDraft.intro = $("fm-intro").value.trim();
+  if (!fmDraft.title) return setError("form-error", "Give the form a title.");
+  if (fmDraft.fields.some((q) => !q.label.trim())) return setError("form-error", "Every question needs a label.");
+  if (fmDraft.fields.some((q) => q.type === "choice" && !(q.options || []).length)) return setError("form-error", "\"Pick one\" questions need options.");
+  const prev = intakeForm();
+  await busy($("form-save"), "Publishing…", async () => {
+    try {
+      const keys = prev?.private_key && prev.status !== "closed" ? { public_key: prev.public_key, private_key: prev.private_key } : await invoke("new_form_keys");
+      const fields = fmDraft.fields.map((q) => ({ id: q.id, label: q.label.trim(), type: q.type, required: !!q.required, ...(q.type === "choice" ? { options: q.options } : {}) }));
+      const page = { v: 1, from: businessName(), title: fmDraft.title, intro: fmDraft.intro, fields, public_key: keys.public_key };
+      let link = prev?.status !== "closed" ? prev?.link : null;
+      if (link) await invoke("update_form", { channel: desk.channel, url: link.url, form: page });
+      else {
+        const expires = Date.now() + 365 * 864e5;
+        const made = await invoke("create_form", { channel: desk.channel, form: page, expiresAtMs: expires });
+        link = { id: made.id, url: made.url, expires };
+      }
+      await putRecords([{ id: "intake", kind: "form", data: { title: fmDraft.title, intro: fmDraft.intro, fields, ...keys, link, status: "open", created: prev?.created || Date.now() } }]);
+      await logActivity(prev?.link && prev.status !== "closed" ? "Updated the intake form." : "Published an intake form.");
+      openIntakeForm();
+    } catch (err) { setError("form-error", String(err)); }
+  });
+});
+$("form-withdraw").addEventListener("click", async () => {
+  const f = intakeForm();
+  if (!f?.link || !confirm("Close the form? The link stops working. Requests already in stay here.")) return;
+  try {
+    await invoke("revoke_form", { channel: desk.channel, id: f.link.id });
+    await putRecords([{ id: "intake", kind: "form", data: { ...f, status: "closed" } }]);
+    await logActivity("Closed the intake form.");
+    $("dlg-form").close();
+    renderDeskView();
+  } catch (err) { setError("form-error", String(err)); }
+});
+
+// Picks answers up from the server: save first, then delete there.
+let intakeAt = 0;
+async function pullIntake(force = false) {
+  const f = desk && intakeForm();
+  if (!f?.link || f.status === "closed" || (!force && Date.now() - intakeAt < 30000)) return 0;
+  intakeAt = Date.now();
+  const ch = desk.channel;
+  let got;
+  try { got = await invoke("form_answers", { channel: ch, id: f.link.id, privateKey: f.private_key }); } catch (e) { console.warn(e); return 0; }
+  if (!got.length || desk?.channel !== ch) return 0;
+  await putRecords(got.map((a) => ({ id: `req-${f.link.id}-${a.sub}`, kind: "request", data: { at: a.at_ms, answers: a.data.answers || {}, labels: a.data.labels || {}, status: "new" } })));
+  for (const a of got) await invoke("forget_form_answer", { channel: ch, id: f.link.id, sub: a.sub }).catch(() => {});
+  await logActivity(`${got.length} new ${got.length === 1 ? "request" : "requests"} from the intake form.`);
+  return got.length;
+}
+// The answer whose question looks like `kind` (by type first, then by label).
+function answerOf(r, kind) {
+  const f = intakeForm();
+  const fields = f?.fields || [];
+  const byType = { email: "email", phone: "phone" }[kind];
+  const match = fields.find((q) => byType && q.type === byType) || fields.find((q) => ({ name: /name|nom/i, company: /company|business|société|entreprise/i, need: /need|project|message|besoin/i }[kind] || /$^/).test(q.label));
+  return match ? (r.answers[match.id] || "").trim() : "";
+}
+function renderRequests() {
+  const list = requests().filter((r) => r.status === "new");
+  show("requests", list.length > 0);
+  if (!list.length) return;
+  $("requests").replaceChildren(el("p", { class: "block-label", text: `New requests · ${list.length}` }), ...list.map((r) => {
+    const name = answerOf(r, "company") || answerOf(r, "name") || "Someone";
+    return el("div", { class: "request" },
+      el("div", { class: "req-top" }, el("strong", { text: name }), el("small", { class: "fine", text: sinceFmt(r.at) })),
+      el("dl", { class: "req-answers" }, ...Object.entries(r.answers).filter(([, v]) => v).map(([k, v]) => el("div", {}, el("dt", { text: r.labels[k] || k }), el("dd", { text: v })))),
+      el("div", { class: "row-actions" },
+        el("button", { class: "btn-ink inline sm", type: "button", onclick: () => requestToClient(r) }, icon("plus"), "Make a client card"),
+        el("button", { class: "btn-outline inline sm", type: "button", onclick: () => setRequest(r, "dismissed") }, "Dismiss")));
+  }));
+}
+async function setRequest(r, status, extra = {}) {
+  const { id, ...data } = r;
+  await putRecords([{ id, kind: "request", data: { ...data, status, ...extra } }]);
+  renderClients();
+}
+function requestToClient(r) {
+  const company = answerOf(r, "company"), person = answerOf(r, "name");
+  const need = answerOf(r, "need");
+  openClient(null, { name: company || person, contact: company ? person : "", email: answerOf(r, "email"), phone: answerOf(r, "phone"), notes: need ? `From the intake form: ${need}` : "", fromRequest: r.id });
+}
 
 // Time: a running timer is a record with no end, so it shows on every device;
 // only the person who started it sees the Stop button.
@@ -3486,6 +3632,7 @@ function startPolling() {
         await refreshLinks();
         if (JSON.stringify(desk.links) !== before) renderDesk();
       }
+      if (desk && !$("view-desk").hidden && await pullIntake()) renderDeskView();
       // Files can change from the file manager, or from others, without a text message.
       if (drive && !$("view-drive").hidden) {
         const items = await invoke("desk_items", { channel: drive.channel });

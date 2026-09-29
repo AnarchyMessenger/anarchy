@@ -88,6 +88,12 @@ op!(create_pay_link(channel: ChannelId, page: serde_json::Value, expires_at_ms: 
 op!(update_pay_link(channel: ChannelId, url: String, page: serde_json::Value) -> ());
 op!(pay_links(channel: ChannelId) -> Vec<anarchy_proto::PayLinkStatus>);
 op!(revoke_pay_link(channel: ChannelId, id: String) -> ());
+op!(new_form_keys() -> ops::FormKeys);
+op!(create_form(channel: ChannelId, form: serde_json::Value, expires_at_ms: u64) -> ops::PayLinkView);
+op!(update_form(channel: ChannelId, url: String, form: serde_json::Value) -> ());
+op!(revoke_form(channel: ChannelId, id: String) -> ());
+op!(form_answers(channel: ChannelId, id: String, private_key: String) -> Vec<ops::FormAnswer>);
+op!(forget_form_answer(channel: ChannelId, id: String, sub: i64) -> ());
 op!(compose_email(to: String, subject: String, body: String) -> ());
 op!(workspace_info(server: String) -> ops::Workspace);
 op!(discover_server(email: String) -> Option<String>);
@@ -422,6 +428,12 @@ fn main() {
             update_pay_link,
             pay_links,
             revoke_pay_link,
+            new_form_keys,
+            create_form,
+            update_form,
+            revoke_form,
+            form_answers,
+            forget_form_answer,
             workspace_info,
             discover_server,
             sign_in_sso,

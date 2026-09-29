@@ -25,10 +25,10 @@ use crate::{ApiError, ApiResult, AppState, now_ms, require_member};
 
 /// The sealed page: a few hundred bytes of JSON in practice.
 const MAX_SEALED: usize = 16 * 1024;
-const MIN_LIFETIME_MS: u64 = 60 * 60 * 1000;
+pub(crate) const MIN_LIFETIME_MS: u64 = 60 * 60 * 1000;
 const MAX_LIFETIME_MS: u64 = 180 * 24 * 60 * 60 * 1000;
 
-fn decode_sealed(sealed: &str) -> ApiResult<Vec<u8>> {
+pub(crate) fn decode_sealed(sealed: &str) -> ApiResult<Vec<u8>> {
     let bytes = STANDARD
         .decode(sealed)
         .map_err(|_| ApiError::bad_request("sealed must be base64"))?;
@@ -39,7 +39,7 @@ fn decode_sealed(sealed: &str) -> ApiResult<Vec<u8>> {
     Ok(bytes)
 }
 
-fn new_id() -> ApiResult<String> {
+pub(crate) fn new_id() -> ApiResult<String> {
     let mut raw = [0u8; 16];
     getrandom::fill(&mut raw).map_err(|_| ApiError::unavailable("no randomness"))?;
     Ok(URL_SAFE_NO_PAD.encode(raw))
@@ -180,7 +180,7 @@ pub async fn public_paid(State(s): State<AppState>, Path(id): Path<String>) -> A
 const PAGE_CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; \
      img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-fn page(content_type: &'static str, body: &'static str) -> Response {
+pub(crate) fn page(content_type: &'static str, body: &'static str) -> Response {
     (
         [
             (header::CONTENT_TYPE, content_type),

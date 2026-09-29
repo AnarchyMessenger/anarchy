@@ -186,6 +186,12 @@ and what isn't.
   person; people on the desk see a live card, and the message lands in the
   desk's activity. The sparkle in the sidebar (`Ctrl J`) opens **Ask**, which
   for now searches what this device can decrypt and answers with desk figures.
+- **Clients, time and intake** (D29): the Collections desk has three views.
+  *Clients* are cards (contact, rate, notes, what they owe, unbilled time).
+  *Time* has a timer and manual entries; selected hours become a draft invoice.
+  An *intake form* is a public page whose answers are encrypted to a key only
+  the desk holds; they arrive as requests, and one click makes a client card.
+- **Pages** desks are a space's shared wiki, in the notes editor.
 - **Other kinds** (front desk, help desk, dispatch, purchasing) are shown in
   "Set up a desk" as not available yet, each with what it's waiting for.
 

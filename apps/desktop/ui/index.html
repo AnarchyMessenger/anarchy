@@ -523,8 +523,10 @@
                 <div><p class="hero-kind">Clients</p><h1 class="hero-line" id="clients-headline"></h1></div>
                 <span class="spacer"></span>
                 <label class="search pill"><svg class="i"><use href="#i-search"/></svg><input id="client-search" placeholder="Find a client" aria-label="Find a client"></label>
+                <button class="btn-outline inline" id="intake-open" type="button"><svg class="i"><use href="#i-link"/></svg>Intake form</button>
                 <button class="btn-ink inline" id="new-client" type="button"><svg class="i"><use href="#i-plus"/></svg>New client</button>
               </div>
+              <div class="requests" id="requests" hidden></div>
               <div class="client-grid" id="client-grid"></div>
               <div class="desk-empty" id="clients-empty" hidden><svg class="i"><use href="#i-user2"/></svg><strong>No clients yet</strong><p class="fine">Add the people you bill. Invoices and tracked time link to them, and intake forms can add them for you.</p></div>
             </div>
@@ -774,6 +776,27 @@
     <div class="client-history" id="cl-history" hidden></div>
     <p class="error" id="client-error" hidden></p>
     <div class="modal-actions"><button class="btn-outline danger" type="button" id="client-delete" hidden>Delete</button><span class="spacer"></span><button class="btn-outline" type="button" id="client-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="client-save">Save client</button></div>
+  </form>
+</dialog>
+
+<dialog class="modal panel wide" id="dlg-form" aria-labelledby="dlg-form-title">
+  <form id="form-form" novalidate>
+    <h2 id="dlg-form-title">Intake form</h2>
+    <p class="fine">A page anyone can fill in without an account: put the link on your site, in your email signature or in a QR code. Answers are encrypted in their browser to a key only this desk holds, then show up here as requests.</p>
+    <div class="form-grid">
+      <label class="field span2" for="fm-title">Title<input class="text-input" id="fm-title" maxlength="80" placeholder="Start a project with us"></label>
+      <label class="field span2" for="fm-intro"><span>Intro <span class="optional">· optional</span></span><textarea class="text-input" id="fm-intro" rows="2" maxlength="600" placeholder="Tell us a little about what you need. We reply within two working days."></textarea></label>
+    </div>
+    <p class="block-label">Questions</p>
+    <div class="fm-fields" id="fm-fields"></div>
+    <button class="btn-outline inline sm" type="button" id="fm-add"><svg class="i"><use href="#i-plus"/></svg>Add a question</button>
+    <div class="paylink" id="fm-link" hidden>
+      <div class="paylink-head"><svg class="i"><use href="#i-link"/></svg><strong>Form link</strong><span class="flag-pill warn">Anyone with it can see the form</span></div>
+      <p class="fine" id="fm-link-state"></p>
+      <div class="row-actions" id="fm-link-actions"></div>
+    </div>
+    <p class="error" id="form-error" hidden></p>
+    <div class="modal-actions"><button class="btn-outline danger" type="button" id="form-withdraw" hidden>Close the form</button><span class="spacer"></span><button class="btn-outline" type="button" id="form-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="form-save">Publish</button></div>
   </form>
 </dialog>
 

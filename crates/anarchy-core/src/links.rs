@@ -46,9 +46,14 @@ pub fn open(sealed: &str, key: &[u8; 32]) -> Result<serde_json::Value, Error> {
 
 /// The link id and key from a link made by [`crate::Client::create_pay_link`].
 pub fn parse_url(url: &str) -> Result<(String, [u8; 32]), Error> {
+    parse_url_at(url, "/p/")
+}
+
+/// Same for any sealed page, e.g. intake forms at `/f/`.
+pub fn parse_url_at(url: &str, prefix: &str) -> Result<(String, [u8; 32]), Error> {
     let (path, fragment) = url.split_once('#').ok_or_else(|| err("no key in the link"))?;
     let id = path
-        .rsplit_once("/p/")
+        .rsplit_once(prefix)
         .map(|(_, id)| id.to_owned())
         .filter(|id| !id.is_empty() && !id.contains('/'))
         .ok_or_else(|| err("not a pay link"))?;

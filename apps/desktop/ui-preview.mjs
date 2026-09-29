@@ -166,6 +166,12 @@ const mock = (startLocked) => {
     tentry("t3", "Packaging mockups", "c3", 1, 10, 210, 85),
     tentry("t4", "Retouching, batch 2", "c2", 2, 9, 180, 80),
     tentry("t5", "Brand audit", "c4", 4, 13, 150, 95, { billed: "i1041" }),
+    { id: "intake", kind: "form", seq: 1, updated_ms: now, data: { title: "Start a project", intro: "", fields: [
+      { id: "name", label: "Your name", type: "text", required: true }, { id: "company", label: "Company", type: "text" }, { id: "email", label: "Email", type: "email", required: true },
+      { id: "phone", label: "Phone", type: "phone" }, { id: "need", label: "What do you need?", type: "longtext", required: true }],
+      public_key: "PUB", private_key: "PRIV", link: { id: "F1", url: "https://chat.studiochen.fr/f/F1#k3y", expires: now + 300 * 864e5 }, status: "open", created: now - 20 * 864e5 } },
+    { id: "req-F1-7", kind: "request", seq: 1, updated_ms: now, data: { at: now - 42 * 60e3, status: "new", labels: { name: "Your name", company: "Company", email: "Email", phone: "Phone", need: "What do you need?" },
+      answers: { name: "Sofia Marchetti", company: "Casa Lume", email: "sofia@casalume.it", phone: "+39 02 555 0199", need: "A new identity for our lighting shop: logo, signage and a small website. Opening in March." } } },
   );
   const me = () => profile?.display_name || "You";
   const view = (c) => ({
@@ -219,6 +225,12 @@ const mock = (startLocked) => {
     rename_space: async ({ space, name }) => { const s = spaces.find((x) => x.id === space); s.name = name; return s; },
     leave_space: async ({ space }) => { spaces = spaces.filter((x) => x.id !== space); },
     notify: async () => {},
+    new_form_keys: async () => ({ public_key: "PUB", private_key: "PRIV" }),
+    create_form: async () => ({ id: "F1", url: "https://chat.studiochen.fr/f/F1#k3y" }),
+    update_form: async () => {},
+    revoke_form: async () => {},
+    form_answers: async () => [],
+    forget_form_answer: async () => {},
     create_space: async ({ name, kind }) => { const s = { id: `sp${spaces.length + 1}`, name, kind, role: "owner", members: 1, is_default: false }; spaces.push(s); return s; },
     join_space: async () => { throw "This invite code isn't valid; ask for a new one"; },
     create_space_invite: async ({ hours, maxUses }) => ({ code: "PQ4T-7HWN-K2XA-9MRD-3FZL-VE6B-YC", expires_at_ms: Date.now() + hours * 3600e3, max_uses: maxUses }),
@@ -531,6 +543,15 @@ await page.click('.client-card >> text="Trendy Terra"');
 await visible("#dlg-client");
 await shot("13i3-client-card");
 await page.click("#client-cancel");
+await page.click('.request button >> text="Make a client card"');
+await visible("#dlg-client");
+await shot("13i6-request-to-client");
+await page.click("#client-save");
+await page.waitForTimeout(250);
+await page.click("#intake-open");
+await visible("#dlg-form");
+await shot("13i7-intake-form");
+await page.click("#form-cancel");
 await page.click('#desk-views button[data-v="time"]');
 await visible("#desk-time");
 await page.fill("#tm-what", "Deck cover, second pass");

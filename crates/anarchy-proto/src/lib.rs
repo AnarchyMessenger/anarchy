@@ -489,3 +489,27 @@ pub struct PublicPayLink {
     pub sealed: String,
     pub claimed_paid_at_ms: Option<u64>,
 }
+
+/// `POST /v1/channels/{channel}/forms`: an intake form for people without an
+/// account. `sealed` is the form's definition, sealed like a pay link (key in
+/// the link's `#fragment`); it carries the public key answers are encrypted to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateForm {
+    pub sealed: String,
+    pub expires_at_ms: u64,
+}
+
+/// One answer to a form, as the server holds it: encrypted to the form's key,
+/// which only the desk's members have. Members delete it once imported.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FormSubmission {
+    pub id: i64,
+    pub sealed: String,
+    pub at_ms: u64,
+}
+
+/// `POST /f/{id}/submit`, public.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubmitForm {
+    pub sealed: String,
+}

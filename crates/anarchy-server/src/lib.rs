@@ -7,6 +7,7 @@
 pub mod accounts;
 pub mod auth;
 pub mod email;
+pub mod forms;
 pub mod links;
 
 use std::sync::Arc;
@@ -186,6 +187,27 @@ pub fn router(state: AppState) -> Router {
         .route("/p/{link}/paid", post(links::public_paid))
         .route("/pay-assets/pay.js", get(links::public_js))
         .route("/pay-assets/pay.css", get(links::public_css))
+        .route("/v1/channels/{channel}/forms", post(forms::create))
+        .route(
+            "/v1/channels/{channel}/forms/{form}",
+            axum::routing::put(forms::update),
+        )
+        .route("/v1/channels/{channel}/forms/{form}/revoke", post(forms::revoke))
+        .route(
+            "/v1/channels/{channel}/forms/{form}/submissions",
+            get(forms::submissions),
+        )
+        .route(
+            "/v1/channels/{channel}/forms/{form}/submissions/{sub}",
+            axum::routing::delete(forms::delete_submission),
+        )
+        .route("/f/{form}", get(forms::public_page))
+        .route("/f/{form}/sealed", get(forms::public_sealed))
+        .route(
+            "/f/{form}/submit",
+            post(forms::public_submit).layer(axum::extract::DefaultBodyLimit::max(64 * 1024)),
+        )
+        .route("/form-assets/form.js", get(forms::public_js))
         .route("/v1/devices/{device}/key_packages", post(upload_key_packages))
         .route("/v1/devices/{device}/key_packages/claim", post(claim_key_package))
         .route("/v1/devices/{device}/inbox", post(push_inbox).get(drain_inbox))

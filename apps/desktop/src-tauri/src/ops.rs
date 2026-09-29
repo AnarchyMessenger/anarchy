@@ -1410,3 +1410,94 @@ pub async fn pay_links(
 pub async fn revoke_pay_link(i: &mut Inner, channel: ChannelId, id: String) -> Result<(), String> {
     i.client()?.revoke_pay_link(channel, &id).await.map_err(err)
 }
+
+// ---------- intake forms ----------
+
+#[derive(Serialize)]
+pub struct FormKeys {
+    public_key: String,
+    private_key: String,
+}
+
+/// A key pair for a new form; the private half goes into the desk's records.
+pub async fn new_form_keys(_i: &mut Inner) -> Result<FormKeys, String> {
+    let (public_key, private_key) = anarchy_core::intake::new_keys().map_err(err)?;
+    Ok(FormKeys {
+        public_key,
+        private_key,
+    })
+}
+
+pub async fn create_form(
+    i: &mut Inner,
+    channel: ChannelId,
+    form: serde_json::Value,
+    expires_at_ms: u64,
+) -> Result<PayLinkView, String> {
+    let (id, url) = i
+        .client()?
+        .create_form(channel, &form, expires_at_ms)
+        .await
+        .map_err(err)?;
+    Ok(PayLinkView { id, url })
+}
+
+pub async fn update_form(
+    i: &mut Inner,
+    channel: ChannelId,
+    url: String,
+    form: serde_json::Value,
+) -> Result<(), String> {
+    i.client()?.update_form(channel, &url, &form).await.map_err(err)
+}
+
+pub async fn revoke_form(i: &mut Inner, channel: ChannelId, id: String) -> Result<(), String> {
+    i.client()?.revoke_form(channel, &id).await.map_err(err)
+}
+
+#[derive(Serialize)]
+pub struct FormAnswer {
+    sub: i64,
+    at_ms: u64,
+    data: serde_json::Value,
+}
+
+/// Answers waiting on the server, opened with the form's private key. Ones that
+/// don't open (junk sent straight at the endpoint) are deleted here, so they
+/// can't fill the form's queue.
+pub async fn form_answers(
+    i: &mut Inner,
+    channel: ChannelId,
+    id: String,
+    private_key: String,
+) -> Result<Vec<FormAnswer>, String> {
+    let client = i.client()?;
+    let mut out = Vec::new();
+    for s in client.form_submissions(channel, &id).await.map_err(err)? {
+        match anarchy_core::intake::open_submission(&s.sealed, &private_key) {
+            Ok(data) => out.push(FormAnswer {
+                sub: s.id,
+                at_ms: s.at_ms,
+                data,
+            }),
+            Err(_) => client
+                .delete_form_submission(channel, &id, s.id)
+                .await
+                .map_err(err)?,
+        }
+    }
+    Ok(out)
+}
+
+/// Call once the answer is saved in the desk.
+pub async fn forget_form_answer(
+    i: &mut Inner,
+    channel: ChannelId,
+    id: String,
+    sub: i64,
+) -> Result<(), String> {
+    i.client()?
+        .delete_form_submission(channel, &id, sub)
+        .await
+        .map_err(err)
+}

@@ -90,7 +90,8 @@ Pulled forward from phase 4:
 - [x] Personal agenda and Notion-style notes in personal channels; drive text files open in the same editor (D25).
 - [x] Tasks boards (desk kind and personal), personal Files, agenda quick-add and day view (D27).
 - [x] Reminders for events and due dates, notifications panel, sidebar to-dos (D28).
-- [ ] Shared pages in spaces (a wiki), time tracking into invoices, client cards, intake forms.
+- [x] Shared pages desks (a wiki), client cards, time tracking into invoices, intake forms with answers sealed to the desk (D29).
+- [ ] Real-time co-editing of pages (CRDT); client portal; quotes and e-signature links.
 - [ ] Mail: IMAP/SMTP with app passwords first, then Gmail and Microsoft OAuth; triage view with drafted replies.
 - [x] Threads (replies to a message, shown beside the conversation) and tabs for the working set with a collapsible sidebar (D22).
 - In-app agents (scribe: summaries, catch-up, meeting notes via call transcription).

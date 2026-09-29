@@ -829,6 +829,76 @@ impl Client {
         Ok(())
     }
 
+    // ---------- intake forms ----------
+
+    /// Publishes a form. `form` is what the page shows and must carry the
+    /// `public_key` answers are encrypted to (see [`crate::intake`]). Returns
+    /// the id and the link, whose `#fragment` is the definition's key.
+    pub async fn create_form(
+        &self,
+        channel: ChannelId,
+        form: &serde_json::Value,
+        expires_at_ms: u64,
+    ) -> Result<(String, String), Error> {
+        let (sealed, key) = crate::links::seal(form)?;
+        let created: anarchy_proto::PayLinkCreated = self
+            .post(
+                &format!("/v1/channels/{channel}/forms"),
+                &anarchy_proto::CreateForm {
+                    sealed,
+                    expires_at_ms,
+                },
+            )
+            .await?
+            .json()
+            .await?;
+        let url = format!("{}/f/{}#{key}", self.base, created.id);
+        Ok((created.id, url))
+    }
+
+    pub async fn update_form(
+        &self,
+        channel: ChannelId,
+        url: &str,
+        form: &serde_json::Value,
+    ) -> Result<(), Error> {
+        let (id, key) = crate::links::parse_url_at(url, "/f/")?;
+        let sealed = crate::links::seal_with(form, &key)?;
+        let req = self
+            .authed(
+                self.http
+                    .put(format!("{}/v1/channels/{channel}/forms/{id}", self.base)),
+            )
+            .json(&anarchy_proto::UpdatePayLink { sealed });
+        check(req.send().await?).await?;
+        Ok(())
+    }
+
+    pub async fn revoke_form(&self, channel: ChannelId, id: &str) -> Result<(), Error> {
+        self.post(&format!("/v1/channels/{channel}/forms/{id}/revoke"), &())
+            .await?;
+        Ok(())
+    }
+
+    /// Answers waiting on the server, still sealed to the form's key.
+    pub async fn form_submissions(
+        &self,
+        channel: ChannelId,
+        id: &str,
+    ) -> Result<Vec<anarchy_proto::FormSubmission>, Error> {
+        self.get(&format!("/v1/channels/{channel}/forms/{id}/submissions"), &[])
+            .await
+    }
+
+    pub async fn delete_form_submission(&self, channel: ChannelId, id: &str, sub: i64) -> Result<(), Error> {
+        let req = self.authed(self.http.delete(format!(
+            "{}/v1/channels/{channel}/forms/{id}/submissions/{sub}",
+            self.base
+        )));
+        check(req.send().await?).await?;
+        Ok(())
+    }
+
     /// Creates a desk: a channel in `space` whose info names the desk kind.
     pub async fn create_desk(
         &mut self,

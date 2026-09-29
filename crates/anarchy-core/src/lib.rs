@@ -7,6 +7,7 @@ pub mod client;
 pub mod content;
 pub mod device;
 pub mod files;
+pub mod intake;
 pub mod links;
 pub mod oidc;
 

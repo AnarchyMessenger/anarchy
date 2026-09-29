@@ -37,3 +37,12 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: v
 .foot { max-width: 460px; color: var(--faint); font-size: 12px; text-align: center; margin-top: 18px; }
 .via { white-space: nowrap; }
 .ended h1 { font-size: 20px; margin: 0 0 6px; }
+/* intake forms (/f/…) share this sheet */
+.intro { color: var(--muted); margin: -8px 0 18px; white-space: pre-line; }
+.q { display: grid; gap: 6px; margin: 0 0 14px; font-weight: 560; font-size: 14px; }
+.q .req { color: var(--brand); font-weight: 700; margin-left: 2px; }
+.q input, .q textarea, .q select { font: inherit; font-weight: 400; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; width: 100%; }
+.q textarea { min-height: 96px; resize: vertical; }
+.q input:focus, .q textarea:focus, .q select:focus { outline: 2px solid var(--ink); outline-offset: 1px; }
+.err { color: var(--bad); font-size: 13.5px; margin: 4px 0 0; }
+.hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
