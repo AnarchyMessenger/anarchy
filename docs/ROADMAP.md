@@ -84,6 +84,9 @@ Pulled forward from phase 4:
 
 - The Brain as an MLS member: ingest and audience-scoped search are done; still to do: deletion propagation, pgvector embeddings, triage, cooldowns.
 - Company MCP server: `search`, `get_thread`, `get_file`, `propose_action`; OAuth 2.1 clients, scopes, audit.
+- [x] Where agents will live, pulled forward: the Ask panel (search plus desk figures until a model is connected) and @-mentioning desks in channels and chats (D21).
+- [x] First client-facing surface: payment links for Collections, sealed with the key in the URL fragment (D20).
+- [ ] Threads (replies to a message, shown beside the conversation).
 - In-app agents (scribe: summaries, catch-up, meeting notes via call transcription).
 - AgentApproval flow, and model policy (local vs external, per channel class).
 - **Exit:** "What did we decide about X?" answered with sources, and no permission leaks in a red-team test.

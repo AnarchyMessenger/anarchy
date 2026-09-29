@@ -36,6 +36,14 @@ Sign up with Google, email or anonymously, then say what it's for, lock the devi
 |---|---|
 | ![Collections desk](docs/screens/desk.png) | ![Bulk actions](docs/screens/desk-bulk.png) |
 
+| Client says paid (payment link) | What the client sees |
+|---|---|
+| ![Client says paid](docs/screens/desk-client-says-paid.png) | ![Payment link](docs/screens/pay-link.png) |
+
+| @-mentioning a desk | Ask (sparkle, `Ctrl J`) |
+|---|---|
+| ![Desk mention](docs/screens/desk-mention.png) | ![Ask](docs/screens/ask.png) |
+
 | A space's channel | Privacy |
 |---|---|
 | ![Channel in a space](docs/screens/space-channel.png) | ![Privacy settings](docs/screens/privacy.png) |
@@ -55,6 +63,10 @@ The real app again, a Collections desk after a restart and unlock. The server's 
 A file uploaded through the real picker, encrypted in chunks, then fetched and decrypted to preview:
 
 ![Real app, drive](docs/screens/real-app-drive.png)
+
+The client's payment page (above, and after "Mark as paid" below) is the real server's page on a phone-sized Chromium, decrypting a link made by the real app.
+
+![Payment link after it's paid](docs/screens/pay-link-paid.png)
 
 And search in the real app (`Ctrl K`), over what this device decrypted:
 

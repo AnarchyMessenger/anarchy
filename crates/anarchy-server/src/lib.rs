@@ -7,6 +7,7 @@
 pub mod accounts;
 pub mod auth;
 pub mod email;
+pub mod links;
 
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -165,6 +166,23 @@ pub fn router(state: AppState) -> Router {
             post(upload_blob).layer(axum::extract::DefaultBodyLimit::max(MAX_BLOB + 1024)),
         )
         .route("/v1/channels/{channel}/blobs/{blob}", get(download_blob))
+        .route(
+            "/v1/channels/{channel}/pay_links",
+            post(links::create).get(links::list),
+        )
+        .route(
+            "/v1/channels/{channel}/pay_links/{link}",
+            axum::routing::put(links::update),
+        )
+        .route(
+            "/v1/channels/{channel}/pay_links/{link}/revoke",
+            post(links::revoke),
+        )
+        .route("/p/{link}", get(links::public_page))
+        .route("/p/{link}/sealed", get(links::public_sealed))
+        .route("/p/{link}/paid", post(links::public_paid))
+        .route("/pay-assets/pay.js", get(links::public_js))
+        .route("/pay-assets/pay.css", get(links::public_css))
         .route("/v1/devices/{device}/key_packages", post(upload_key_packages))
         .route("/v1/devices/{device}/key_packages/claim", post(claim_key_package))
         .route("/v1/devices/{device}/inbox", post(push_inbox).get(drain_inbox))
@@ -507,7 +525,7 @@ async fn is_member(db: &PgPool, channel: ChannelId, device: DeviceId) -> ApiResu
 }
 
 /// Non-members get 404, so the API doesn't reveal which channels exist.
-async fn require_member(db: &PgPool, channel: ChannelId, device: DeviceId) -> ApiResult<()> {
+pub(crate) async fn require_member(db: &PgPool, channel: ChannelId, device: DeviceId) -> ApiResult<()> {
     if is_member(db, channel, device).await? {
         Ok(())
     } else {

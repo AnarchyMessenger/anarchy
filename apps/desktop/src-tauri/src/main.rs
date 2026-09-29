@@ -79,6 +79,10 @@ op!(preview_file(channel: ChannelId, id: String) -> ops::Preview);
 op!(create_desk(space: Option<SpaceId>, name: String, kind: String) -> ChannelId);
 op!(desk_items(channel: ChannelId) -> Vec<anarchy_core::DeskItem>);
 op!(put_items(channel: ChannelId, items: Vec<anarchy_core::ItemRecord>) -> ());
+op!(create_pay_link(channel: ChannelId, page: serde_json::Value, expires_at_ms: u64) -> ops::PayLinkView);
+op!(update_pay_link(channel: ChannelId, url: String, page: serde_json::Value) -> ());
+op!(pay_links(channel: ChannelId) -> Vec<anarchy_proto::PayLinkStatus>);
+op!(revoke_pay_link(channel: ChannelId, id: String) -> ());
 op!(compose_email(to: String, subject: String, body: String) -> ());
 op!(workspace_info(server: String) -> ops::Workspace);
 op!(request_email_code(server: String, email: String) -> ());
@@ -403,6 +407,10 @@ fn main() {
             desk_items,
             put_items,
             compose_email,
+            create_pay_link,
+            update_pay_link,
+            pay_links,
+            revoke_pay_link,
             workspace_info,
             sign_in_sso,
             cancel_sign_in,

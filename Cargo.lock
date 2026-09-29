@@ -90,6 +90,7 @@ dependencies = [
 name = "anarchy-core"
 version = "0.0.1"
 dependencies = [
+ "aes-gcm",
  "anarchy-proto",
  "anarchy-testkit",
  "base64 0.22.1",

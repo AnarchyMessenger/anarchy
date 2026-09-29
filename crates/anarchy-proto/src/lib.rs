@@ -437,3 +437,43 @@ mod handle_tests {
 pub struct BlobRef {
     pub id: Uuid,
 }
+
+/// `POST /v1/channels/{channel}/pay_links`: a pay-this-invoice page for someone
+/// without an account. `sealed` is base64 of nonce ‖ AES-256-GCM ciphertext,
+/// made on a member's device; the key travels only in the link's `#fragment`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreatePayLink {
+    pub sealed: String,
+    pub expires_at_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PayLinkCreated {
+    pub id: String,
+}
+
+/// `PUT /v1/channels/{channel}/pay_links/{id}`: new content under the same
+/// link and key (e.g. after the invoice is marked paid).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdatePayLink {
+    pub sealed: String,
+}
+
+/// What members see about a link. The server never knows what's in it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PayLinkStatus {
+    pub id: String,
+    pub expires_at_ms: u64,
+    pub revoked: bool,
+    pub views: u32,
+    pub last_viewed_at_ms: Option<u64>,
+    /// When the person who opened it pressed "I've paid". A claim, not a payment.
+    pub claimed_paid_at_ms: Option<u64>,
+}
+
+/// `GET /p/{id}/sealed`, public: what the page decrypts in the browser.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PublicPayLink {
+    pub sealed: String,
+    pub claimed_paid_at_ms: Option<u64>,
+}

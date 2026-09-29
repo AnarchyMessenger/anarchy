@@ -608,3 +608,59 @@ form.start-card { cursor: default; }
 /* ---------- files on this computer ---------- */
 .mount-box { display: grid; gap: 14px; margin-top: 14px; max-width: 640px; }
 .mount-box code { font-family: var(--font-mono); font-size: 12px; word-break: break-all; }
+
+/* ---------- payment links ---------- */
+.row-link { display: inline-flex; margin-left: 6px; color: var(--ink-faint); vertical-align: -2px; }
+.row-link svg.i { width: 13px; height: 13px; }
+.says-paid { margin-left: 8px; }
+.paylink { margin-top: 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); display: grid; gap: 8px; }
+.paylink-head { display: flex; align-items: center; gap: 8px; }
+.paylink-head .flag-pill { margin-left: auto; }
+.paylink .fine { margin: 0; }
+
+/* ---------- you (rail popover) ---------- */
+.me-pop { position: fixed; left: 64px; bottom: 12px; z-index: 40; width: 260px; padding: 14px; display: grid; gap: 10px; border: 1px solid var(--border); box-shadow: 0 12px 32px -12px rgb(0 0 0 / .28); }
+.me-top { display: flex; align-items: center; gap: 10px; }
+.me-top .avatar { width: 40px; height: 40px; }
+.me-top strong { display: block; }
+.me-top code { font-size: 12.5px; color: var(--ink-muted); }
+.me-copy { justify-self: start; }
+.me-pop .fine { margin: 0; }
+.me-links { display: grid; border-top: 1px solid var(--border); padding-top: 6px; }
+
+/* ---------- Ask drawer ---------- */
+.ask-btn { color: var(--primary); }
+.ask-btn:hover { background: var(--primary-soft, var(--surface-selected)); }
+.ask { position: absolute; top: 0; right: 0; bottom: 0; width: min(380px, 100%); z-index: 20; display: flex; flex-direction: column; background: var(--surface); border-left: 1px solid var(--border); box-shadow: -18px 0 36px -28px rgb(0 0 0 / .35); animation: ask-in .16s ease-out; }
+@keyframes ask-in { from { transform: translateX(24px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .ask { animation: none; } }
+.ask-head { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--border); flex: none; }
+.ask-head strong { display: block; font-size: 14px; }
+.ask-head small { color: var(--ink-muted); font-size: 12px; }
+.ask-mark { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--ink); color: var(--surface); }
+.ask-log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.ask-msg { display: grid; gap: 8px; max-width: 100%; font-size: 13.5px; }
+.ask-msg p { margin: 0; }
+.ask-msg.me { align-self: flex-end; max-width: 85%; background: var(--surface-sunken); padding: 8px 12px; border-radius: 12px 12px 4px 12px; display: block; }
+.ask-hit { display: grid; gap: 2px; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; cursor: pointer; }
+.ask-hit:hover { background: var(--surface-selected); }
+.ask-hit small { color: var(--ink-muted); font-size: 11.5px; }
+.ask-hit mark { background: color-mix(in srgb, var(--highlight) 45%, transparent); color: inherit; border-radius: 2px; }
+.ask-composer { display: flex; align-items: flex-end; gap: 8px; margin: 0 12px; padding: 8px 8px 8px 12px; border: 1px solid var(--border-strong, var(--border)); border-radius: 14px; background: var(--surface); }
+.ask-composer textarea { flex: 1; border: 0; outline: 0; resize: none; background: transparent; color: inherit; font: inherit; font-size: 13.5px; min-height: 36px; }
+.ask-foot { color: var(--ink-faint); font-size: 11.5px; margin: 8px 16px 14px; }
+
+/* ---------- mentions ---------- */
+.mention { display: inline-flex; align-items: center; gap: 3px; padding: 0 4px; border-radius: 4px; background: var(--surface-selected); color: var(--ink); font-weight: 500; }
+.mention.me { background: color-mix(in srgb, var(--highlight) 55%, transparent); }
+.mention.desk { border: 0; font: inherit; font-weight: 600; cursor: pointer; background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); }
+.mention.desk svg.i { width: 13px; height: 13px; }
+.desk-card { display: flex; align-items: center; gap: 10px; margin-top: 6px; max-width: 420px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.desk-card:hover { background: var(--surface-selected); }
+.desk-card .lines { display: grid; min-width: 0; }
+.desk-card small { color: var(--ink-muted); font-size: 12px; }
+.mention-pop { position: fixed; z-index: 60; padding: 6px; border: 1px solid var(--border); box-shadow: 0 12px 32px -12px rgb(0 0 0 / .28); }
+.mention-pop .sr-item.active { background: var(--surface-selected); }
+.space-tile.mention-desk { color: var(--primary); }
+.ask-composer:focus-within { border-color: var(--ink-muted); }
+.ask-composer textarea:focus, .ask-composer textarea:focus-visible { outline: none; box-shadow: none; }

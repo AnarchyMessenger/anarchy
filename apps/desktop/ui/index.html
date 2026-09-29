@@ -48,6 +48,8 @@
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></symbol>
   <symbol id="i-at" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-4 7.5"/></symbol>
   <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
+  <symbol id="i-bank" viewBox="0 0 24 24"><path d="M3 10h18L12 4z"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8.5 7 10 4-1.5 7-5.5 7-10V6z"/></symbol>
   <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
@@ -239,7 +241,13 @@
       <button class="rail-btn add" id="rail-add" title="Create or join a space" aria-label="Create or join a space"><svg class="i"><use href="#i-plus"/></svg></button>
       <div class="rail-spacer"></div>
       <button class="rail-btn" id="rail-settings" title="Settings" aria-label="Settings"><svg class="i"><use href="#i-settings"/></svg></button>
-      <button class="rail-me" id="rail-me" title="Your profile" aria-label="Your profile"></button>
+      <button class="rail-me" id="rail-me" aria-label="Your profile" aria-haspopup="dialog" aria-expanded="false"></button>
+      <div class="me-pop panel" id="me-pop" role="dialog" aria-label="You" hidden>
+        <div class="me-top"><span id="me-avatar"></span><div><strong id="me-name"></strong><code class="mono" id="share-handle"></code></div></div>
+        <button class="btn-outline sm me-copy" id="share-copy" type="button"><svg class="i"><use href="#i-copy"/></svg><span>Copy handle</span></button>
+        <p class="fine" id="share-policy"></p>
+        <div class="me-links"><button class="side-item" type="button" id="me-profile">Edit profile</button><button class="side-item" type="button" id="me-privacy">Who can message me</button><button class="side-item" type="button" id="me-settings">Settings</button></div>
+      </div>
     </nav>
 
     <div class="workspace panel">
@@ -247,7 +255,7 @@
       <aside class="sidebar">
         <!-- Home: chats -->
         <div class="side" id="side-home">
-          <header class="side-head"><h2>Home</h2></header>
+          <header class="side-head"><h2>Home</h2><button class="icon-btn ask-btn" data-ask type="button" title="Ask (Ctrl J)" aria-label="Ask"><svg class="i"><use href="#i-sparkle"/></svg></button></header>
           <div class="side-list"><button class="side-item nav" id="nav-home-overview" type="button"><svg class="i"><use href="#i-home"/></svg><span class="name">Overview</span></button></div>
           <div class="side-group"><span>Chats</span><button class="icon-btn sm" id="new-dm" title="New message" aria-label="New message"><svg class="i"><use href="#i-plus"/></svg></button></div>
           <div class="side-list" id="dm-list"></div>
@@ -255,7 +263,7 @@
         </div>
         <!-- Space: channels -->
         <div class="side" id="side-space" hidden>
-          <header class="side-head"><span class="space-tile" id="space-tile"></span><h2 id="space-name"></h2><button class="icon-btn" id="space-invite" title="Invite people" aria-label="Invite people"><svg class="i"><use href="#i-users"/></svg></button></header>
+          <header class="side-head"><span class="space-tile" id="space-tile"></span><h2 id="space-name"></h2><button class="icon-btn ask-btn" data-ask type="button" title="Ask (Ctrl J)" aria-label="Ask"><svg class="i"><use href="#i-sparkle"/></svg></button><button class="icon-btn" id="space-invite" title="Invite people" aria-label="Invite people"><svg class="i"><use href="#i-users"/></svg></button></header>
           <div class="side-list"><button class="side-item nav" id="nav-overview" type="button"><svg class="i"><use href="#i-home"/></svg><span class="name">Overview</span></button><button class="side-item nav" id="nav-files" type="button"><svg class="i"><use href="#i-folder"/></svg><span class="name">Files</span></button></div>
           <div class="side-group"><span>Desks</span><button class="icon-btn sm" id="new-desk" aria-label="New desk" title="New desk"><svg class="i"><use href="#i-plus"/></svg></button></div>
           <div class="side-list" id="desk-list"></div>
@@ -300,7 +308,6 @@
               <button class="start-card" id="start-join" type="button"><svg class="i"><use href="#i-ticket"/></svg><strong>Join with a code</strong><small>Someone sent you an invite code.</small></button>
             </div>
             <div class="home-spaces" id="home-spaces-wrap" hidden><p class="block-label">Your spaces</p><div class="space-grid" id="home-spaces"></div></div>
-            <div class="share-row"><span>Your handle</span><code id="share-handle"></code><button class="btn-outline sm" id="share-copy" type="button"><svg class="i"><use href="#i-copy"/></svg>Copy</button><span class="fine" id="share-policy"></span></div>
           </div>
         </div>
 
@@ -372,7 +379,7 @@
               <div class="hero-text">
                 <p class="hero-kind" id="desk-kind">Collections</p>
                 <h1 class="hero-line" id="desk-headline"></h1>
-                <div class="row-actions"><button class="btn-ink inline" id="new-invoice" type="button"><svg class="i"><use href="#i-plus"/></svg>New invoice</button><button class="btn-outline inline pill" id="desk-people" type="button"><svg class="i"><use href="#i-users"/></svg><span id="desk-people-count">1</span></button></div>
+                <div class="row-actions"><button class="btn-ink inline" id="new-invoice" type="button"><svg class="i"><use href="#i-plus"/></svg>New invoice</button><button class="btn-outline inline pill" id="desk-paydetails" type="button" title="Payment details clients see" aria-label="Payment details"><svg class="i"><use href="#i-bank"/></svg></button><button class="btn-outline inline pill" id="desk-people" type="button"><svg class="i"><use href="#i-users"/></svg><span id="desk-people-count">1</span></button></div>
               </div>
               <div class="hero-chart">
                 <div class="chart-head"><span class="fine">Collected per month</span><span class="legend"><i class="solid"></i>Paid <i class="dash"></i>Due</span></div>
@@ -503,9 +510,16 @@
             <p class="error" id="invite-error" hidden></p>
           </div>
         </div>
+        <aside class="ask" id="ask" aria-label="Ask" hidden>
+          <header class="ask-head"><span class="ask-mark"><svg class="i"><use href="#i-sparkle"/></svg></span><div><strong>Ask</strong><small id="ask-scope"></small></div><span class="spacer"></span><button class="icon-btn" id="ask-close" type="button" title="Close (Esc)" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></header>
+          <div class="ask-log" id="ask-log" role="log" aria-live="polite"></div>
+          <form class="ask-composer" id="ask-form"><textarea id="ask-input" rows="2" placeholder="Find anything, or @ a desk…" aria-label="Ask"></textarea><button class="send round" id="ask-send" type="submit" aria-label="Ask" disabled><svg class="i"><use href="#i-send"/></svg></button></form>
+          <p class="ask-foot">No AI model is connected yet. Ask looks through what this device can decrypt, and answers desk questions from their records. Nothing is sent anywhere.</p>
+        </aside>
       </main>
     </div>
   </section>
+  <div class="mention-pop panel" id="mention-pop" role="listbox" aria-label="Mention" hidden></div>
   </div>
 </div>
 
@@ -571,15 +585,36 @@
     <h2 id="dlg-invoice-title">New invoice</h2>
     <div class="form-grid">
       <label class="field span2" for="inv-customer">Customer<input class="text-input" id="inv-customer" maxlength="80" autocomplete="off" placeholder="Acme Corp"></label>
-      <label class="field span2" for="inv-email">Billing email <span class="optional">· for reminders</span><input class="text-input" id="inv-email" type="email" autocomplete="off" placeholder="billing@acme.com"></label>
+      <label class="field span2" for="inv-email"><span>Billing email <span class="optional">· for reminders</span></span><input class="text-input" id="inv-email" type="email" autocomplete="off" placeholder="billing@acme.com"></label>
       <label class="field" for="inv-amount">Amount (€)<input class="text-input" id="inv-amount" inputmode="decimal" placeholder="1 200.00"></label>
       <label class="field" for="inv-number">Number<input class="text-input mono" id="inv-number" maxlength="24"></label>
       <label class="field" for="inv-issued">Issued<input class="text-input" id="inv-issued" type="date"></label>
       <label class="field" for="inv-terms">Terms<select class="text-input" id="inv-terms"><option value="0">Due on receipt</option><option value="15">Net 15</option><option value="30" selected>Net 30</option><option value="60">Net 60</option><option value="90">Net 90</option></select></label>
       <label class="field span2" for="inv-status">Status<select class="text-input" id="inv-status"><option value="draft">Draft</option><option value="sent" selected>Sent</option><option value="paid">Paid</option><option value="void">Void</option></select></label>
     </div>
+    <div class="paylink" id="inv-link" hidden>
+      <div class="paylink-head"><svg class="i"><use href="#i-link"/></svg><strong>Payment link</strong><span class="flag-pill warn">Client can see</span></div>
+      <p class="fine" id="inv-link-state"></p>
+      <div class="row-actions" id="inv-link-actions"></div>
+    </div>
     <p class="error" id="invoice-error" hidden></p>
     <div class="modal-actions"><button class="btn-outline" type="button" id="invoice-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="invoice-save">Save invoice</button></div>
+  </form>
+</dialog>
+
+<dialog class="modal panel" id="dlg-paydetails" aria-labelledby="dlg-paydetails-title">
+  <form id="paydetails-form" novalidate>
+    <h2 id="dlg-paydetails-title">Payment details</h2>
+    <p class="fine">Shown to clients on payment links from this desk. Links are encrypted on this computer; the key is only in the link you send.</p>
+    <div class="form-grid">
+      <label class="field span2" for="pd-from">Your business name<input class="text-input" id="pd-from" maxlength="80" autocomplete="off" placeholder="Studio Chen"></label>
+      <label class="field span2" for="pd-name">Account holder<input class="text-input" id="pd-name" maxlength="80" autocomplete="off" placeholder="Maya Chen EI"></label>
+      <label class="field" for="pd-iban">IBAN<input class="text-input mono" id="pd-iban" maxlength="42" autocomplete="off" spellcheck="false" placeholder="FR76 3000 6000 …"></label>
+      <label class="field" for="pd-bic"><span>BIC <span class="optional">· optional</span></span><input class="text-input mono" id="pd-bic" maxlength="11" autocomplete="off" spellcheck="false"></label>
+      <label class="field span2" for="pd-url"><span>Online payment page <span class="optional">· optional, e.g. a Stripe or GoCardless link</span></span><input class="text-input" id="pd-url" type="url" autocomplete="off" placeholder="https://"></label>
+    </div>
+    <p class="error" id="paydetails-error" hidden></p>
+    <div class="modal-actions"><button class="btn-outline" type="button" id="paydetails-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="paydetails-save">Save</button></div>
   </form>
 </dialog>
 

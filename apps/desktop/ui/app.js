@@ -403,6 +403,8 @@ function paintMe() {
   const name = p.display_name || "You";
   $("rail-me").replaceChildren(avatarEl(name, { color: p.color, avatar: p.avatar }));
   $("share-handle").textContent = handleOf(p) ? `@${handleOf(p)}` : "";
+  $("me-name").textContent = name;
+  $("me-avatar").replaceChildren(avatarEl(name, { color: p.color, avatar: p.avatar }));
   $("share-policy").textContent = p.dm_policy === "anyone" ? "Anyone with it can message you." : "Only people in your spaces can message you.";
   show("nav-invites", isCompanyServer() && !p.is_guest);
   const kind = USAGE_KIND[p.usage];
@@ -472,8 +474,18 @@ $("rail-home").addEventListener("click", () => go("home"));
 $("nav-overview").addEventListener("click", () => { current = null; invoke("blur"); showStart(); renderSide(); });
 $("nav-home-overview").addEventListener("click", () => { current = null; invoke("blur"); showStart(); renderSide(); });
 $("rail-settings").addEventListener("click", () => go("settings"));
-$("rail-me").addEventListener("click", () => go("settings"));
-$("share-copy").addEventListener("click", () => copy(`@${handleOf(profile)}`, $("share-copy")));
+// The person's card: name, handle to share, and a way into settings.
+function toggleMe(open) {
+  const on = open ?? $("me-pop").hidden;
+  show("me-pop", on);
+  $("rail-me").setAttribute("aria-expanded", String(on));
+}
+$("rail-me").addEventListener("click", (e) => { e.stopPropagation(); toggleMe(); });
+document.addEventListener("click", (e) => { if (!$("me-pop").hidden && !$("me-pop").contains(e.target)) toggleMe(false); });
+$("me-profile").addEventListener("click", () => { toggleMe(false); go("settings"); });
+$("me-privacy").addEventListener("click", () => { toggleMe(false); go("settings"); settingsPage("privacy"); });
+$("me-settings").addEventListener("click", () => { toggleMe(false); go("settings"); });
+$("share-copy").addEventListener("click", (e) => { e.stopPropagation(); copy(`@${handleOf(profile)}`, $("share-copy")); });
 
 // Lists
 
@@ -552,7 +564,8 @@ function renderMessages(messages, c) {
       avatarEl(m.sender, look),
       el("div", {},
         cont ? null : el("header", {}, el("strong", { text: m.sender }), el("time", { text: timeFmt.format(m.ts_ms) })),
-        el("div", { class: "body", text: m.text }))));
+        el("div", { class: "body" }, ...mentionChips(m.text)),
+        ...deskCards(m.text))));
     lastSender = m.sender; lastTs = m.ts_ms;
   }
   if (!messages.length) {
@@ -568,7 +581,12 @@ function renderMessages(messages, c) {
 const composer = $("message");
 function fitComposer() { composer.style.height = "auto"; composer.style.height = `${Math.min(composer.scrollHeight, 160)}px`; $("send").disabled = !composer.value.trim(); }
 composer.addEventListener("input", fitComposer);
-composer.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("composer").requestSubmit(); } });
+composer.addEventListener("keydown", (e) => {
+  if (mentionKey(e)) return;
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("composer").requestSubmit(); }
+});
+composer.addEventListener("input", () => mentionInput(composer));
+composer.addEventListener("blur", () => setTimeout(closeMention, 120));
 $("composer").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = composer.value.trim();
@@ -576,10 +594,242 @@ $("composer").addEventListener("submit", async (e) => {
   composer.value = ""; fitComposer();
   $("transcript").append(el("div", { class: "msg pending" }, avatarEl(profile?.display_name || "You", { color: profile?.color, avatar: profile?.avatar }), el("div", {}, el("div", { class: "body", text }))));
   $("transcript").scrollTop = $("transcript").scrollHeight;
-  try { await invoke("send_message", { channel: current, text }); }
+  try {
+    await invoke("send_message", { channel: current, text });
+    await forwardToDesks(text, channels.find((c) => c.id === current));
+  }
   catch (err) { composer.value = text; fitComposer(); $("transcript").append(el("p", { class: "error", text: `Not sent: ${err}` })); }
   openChannel(current);
 });
+
+// ---------- @mentions: people and desks ----------
+// A desk is mentioned like a person. Everyone who is on that desk sees a live
+// card with its state (worked out on their own device); anyone else sees plain
+// text, so a mention never reveals a desk to people outside it. The message is
+// also copied into the desk's activity, because the sender chose to address it.
+
+const DESK_ICON = { collections: "receipt", files: "folder" };
+function desksInScope() {
+  const here = channels.find((c) => c.id === current);
+  const space = view === "space" ? currentSpace?.id : here?.space;
+  return channels.filter((c) => c.desk && (!space || c.space === space));
+}
+function allDesks() { return channels.filter((c) => c.desk); }
+// Longest names first, so "@Front desk" wins over "@Front".
+function deskMatcher() {
+  const names = allDesks().map((d) => d.name).filter(Boolean).sort((a, b) => b.length - a.length);
+  if (!names.length) return null;
+  const esc = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(`@(${esc.join("|")})(?![\\w-])`, "gi");
+}
+function deskNamed(name) { const n = name.toLowerCase(); return allDesks().find((d) => d.name.toLowerCase() === n); }
+function mentionedDesks(text) {
+  const re = deskMatcher();
+  if (!re) return [];
+  const found = new Map();
+  for (const m of text.matchAll(re)) { const d = deskNamed(m[1]); if (d) found.set(d.id, d); }
+  return [...found.values()];
+}
+function mentionChips(text) {
+  const re = deskMatcher();
+  const out = [];
+  let last = 0;
+  const people = /(?<![\w@])@([a-z0-9_.-]{2,32})(#\d{4})?/gi;
+  const pushText = (t) => {
+    let k = 0;
+    for (const m of t.matchAll(people)) {
+      if (m.index > k) out.push(t.slice(k, m.index));
+      out.push(el("span", { class: `mention${m[1].toLowerCase() === profile?.username ? " me" : ""}`, text: m[0] }));
+      k = m.index + m[0].length;
+    }
+    if (k < t.length) out.push(t.slice(k));
+  };
+  if (re) {
+    for (const m of text.matchAll(re)) {
+      const d = deskNamed(m[1]);
+      if (!d) continue;
+      pushText(text.slice(last, m.index));
+      out.push(el("button", { class: "mention desk", type: "button", title: `Open ${d.name}`, onclick: () => goTo(d.id) }, icon(DESK_ICON[d.desk] || "sparkle"), d.name));
+      last = m.index + m[0].length;
+    }
+  }
+  pushText(text.slice(last));
+  return out;
+}
+function deskCards(text) {
+  return mentionedDesks(text).slice(0, 2).map((d) => {
+    const card = el("button", { class: "desk-card", type: "button", onclick: () => goTo(d.id) },
+      el("span", { class: "space-tile" }, icon(DESK_ICON[d.desk] || "sparkle")), el("span", { class: "lines" }, el("strong", { text: d.name }), el("small", { text: "…" })));
+    deskSummary(d).then((line) => { card.querySelector("small").textContent = line; });
+    return card;
+  });
+}
+// One line about a desk's state, from its records on this device.
+async function deskSummary(d) {
+  let items = [];
+  try { items = await invoke("desk_items", { channel: d.id }); } catch { return "Open the desk"; }
+  if (d.desk === "collections") {
+    const today = isoToday();
+    const inv = items.filter((i) => i.kind === "invoice").map((i) => ({ ...i.data, state: invoiceState(i.data, today) }));
+    const open = inv.filter((i) => i.state === "open" || i.state === "overdue");
+    const late = inv.filter((i) => i.state === "overdue");
+    if (!inv.length) return "No invoices yet";
+    return `${money(open.reduce((n, i) => n + i.amount, 0))} outstanding · ${late.length} overdue · ${inv.filter((i) => i.state === "paid").length} paid`;
+  }
+  if (d.desk === "files") {
+    const files = items.filter((i) => i.kind === "file" && !i.data.deleted);
+    return `${files.length} ${files.length === 1 ? "file" : "files"} · ${sizeFmt(files.reduce((n, f) => n + (f.data.file_key?.size || 0), 0))}`;
+  }
+  return `${items.length} records`;
+}
+async function forwardToDesks(text, from) {
+  for (const d of mentionedDesks(text)) {
+    if (d.id === from?.id) continue;
+    const where = from?.kind === "dm" ? `a conversation with ${from.name}` : `#${from?.name || "a channel"}`;
+    try { await invoke("send_message", { channel: d.id, text: `Mentioned in ${where}: \u201c${text}\u201d` }); } catch (e) { console.warn(e); }
+  }
+}
+
+// The picker that opens when you type "@".
+let mention = null; // { input, start, items, cursor }
+const membersCache = new Map();
+async function mentionPeople() {
+  const space = view === "space" ? currentSpace?.id : channels.find((c) => c.id === current)?.space;
+  if (!space) return [];
+  if (!membersCache.has(space)) membersCache.set(space, invoke("space_members", { space }).catch(() => []));
+  return (await membersCache.get(space)).filter((p) => p.handle && p.handle.split("#")[0] !== profile?.username);
+}
+async function mentionInput(input) {
+  const upto = input.value.slice(0, input.selectionStart);
+  const m = /(^|\s)@([^\s@]{0,24})$/.exec(upto);
+  if (!m) return closeMention();
+  const q = m[2].toLowerCase();
+  const desks = desksInScope().filter((d) => d.name.toLowerCase().includes(q)).map((d) => ({ kind: "desk", label: d.name, sub: `Desk · ${KIND_OF_DESK[d.desk] || d.desk}`, insert: `@${d.name}`, d }));
+  const people = (await mentionPeople()).filter((p) => `${p.name} ${p.handle}`.toLowerCase().includes(q)).slice(0, 5)
+    .map((p) => ({ kind: "person", label: p.name, sub: `@${p.handle}`, insert: `@${p.handle.split("#")[0]}`, p }));
+  const items = [...desks, ...people].slice(0, 7);
+  if (!items.length) return closeMention();
+  mention = { input, start: upto.length - m[2].length - 1, items, cursor: 0 };
+  paintMention();
+}
+function paintMention() {
+  const pop = $("mention-pop");
+  pop.replaceChildren(
+    el("div", { class: "sr-group", text: "Mention" }),
+    ...mention.items.map((it, k) => el("button", { class: `sr-item${k === mention.cursor ? " active" : ""}`, type: "button", role: "option", "aria-selected": String(k === mention.cursor), onmousedown: (e) => { e.preventDefault(); pickMention(k); } },
+      it.kind === "desk" ? el("span", { class: "space-tile mention-desk" }, icon(DESK_ICON[it.d.desk] || "sparkle")) : avatarEl(it.label, { color: it.p.color, avatar: it.p.avatar, size: "sm" }),
+      el("span", { class: "lines" }, el("span", { text: it.label }), el("small", { text: it.sub })),
+      null)));
+  const r = mention.input.getBoundingClientRect();
+  pop.style.left = `${Math.round(r.left)}px`;
+  pop.style.bottom = `${Math.round(window.innerHeight - r.top + 8)}px`;
+  pop.style.width = `${Math.min(340, Math.round(r.width))}px`;
+  show(pop, true);
+}
+function pickMention(k) {
+  const it = mention.items[k];
+  const { input, start } = mention;
+  const end = input.selectionStart;
+  input.value = `${input.value.slice(0, start)}${it.insert} ${input.value.slice(end)}`;
+  const at = start + it.insert.length + 1;
+  input.setSelectionRange(at, at);
+  closeMention();
+  input.dispatchEvent(new Event("input"));
+  input.focus();
+}
+function closeMention() { mention = null; show("mention-pop", false); }
+// Arrow keys, Enter/Tab and Escape while the picker is open. True if handled.
+function mentionKey(e) {
+  if (!mention) return false;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); mention.cursor = (mention.cursor + (e.key === "ArrowDown" ? 1 : -1) + mention.items.length) % mention.items.length; paintMention(); return true; }
+  if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); pickMention(mention.cursor); return true; }
+  if (e.key === "Escape") { e.preventDefault(); closeMention(); return true; }
+  return false;
+}
+const KIND_OF_DESK = { collections: "Collections", files: "Files" };
+
+// ---------- Ask ----------
+// The pull-out panel where the AI will live. Until a model is connected it's
+// honest about being search: it looks through what this device can decrypt and
+// answers desk questions from their records. It never sends anything anywhere.
+
+const STOP = new Set("the a an and or of to in on for with is are was were be what who when where which how much many my our your me i we you it this that there any all do does did have has from about show find tell please status check update latest new give list".split(" "));
+function openAsk(on = true) {
+  show("ask", on);
+  document.querySelector(".main")?.classList.toggle("with-ask", on);
+  if (!on) return;
+  const sp = view === "space" ? currentSpace : null;
+  $("ask-scope").textContent = sp ? `In ${sp.name}` : "Everything on this device";
+  if (!$("ask-log").children.length) {
+    const desks = desksInScope();
+    $("ask-log").replaceChildren(el("div", { class: "ask-msg bot" },
+      el("p", { text: "Ask about your messages, files and desks. Type @ to address a desk." }),
+      desks.length ? el("div", { class: "chips" }, ...desks.slice(0, 3).map((d) => el("button", { class: "chip", type: "button", text: `@${d.name}`, onclick: () => { $("ask-input").value = `@${d.name} `; $("ask-input").focus(); fitAsk(); } }))) : null));
+  }
+  $("ask-input").focus();
+}
+for (const b of document.querySelectorAll("[data-ask]")) b.addEventListener("click", () => openAsk($("ask").hidden));
+$("ask-close").addEventListener("click", () => openAsk(false));
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "j") { e.preventDefault(); openAsk($("ask").hidden); }
+  else if (e.key === "Escape" && !$("ask").hidden && !mention && document.activeElement?.closest?.("#ask")) openAsk(false);
+});
+function fitAsk() { $("ask-send").disabled = !$("ask-input").value.trim(); }
+$("ask-input").addEventListener("input", () => { fitAsk(); mentionInput($("ask-input")); });
+$("ask-input").addEventListener("blur", () => setTimeout(closeMention, 120));
+$("ask-input").addEventListener("keydown", (e) => {
+  if (mentionKey(e)) return;
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("ask-form").requestSubmit(); }
+});
+$("ask-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const q = $("ask-input").value.trim();
+  if (!q) return;
+  $("ask-input").value = ""; fitAsk();
+  const log = $("ask-log");
+  log.append(el("div", { class: "ask-msg me" }, ...mentionChips(q)));
+  const reply = el("div", { class: "ask-msg bot" }, el("p", { class: "fine", text: "Looking…" }));
+  log.append(reply); log.scrollTop = log.scrollHeight;
+  reply.replaceChildren(...(await answer(q)));
+  log.scrollTop = log.scrollHeight;
+});
+async function answer(q) {
+  const out = [];
+  const desks = mentionedDesks(q);
+  for (const d of desks) {
+    out.push(el("button", { class: "desk-card", type: "button", onclick: () => goTo(d.id) }, el("span", { class: "space-tile" }, icon(DESK_ICON[d.desk] || "sparkle")),
+      el("span", { class: "lines" }, el("strong", { text: d.name }), el("small", { text: await deskSummary(d) }))));
+  }
+  let rest = q;
+  const re = deskMatcher();
+  if (re) rest = rest.replace(re, " ");
+  const words = [...new Set(rest.toLowerCase().split(/[^\p{L}\p{N}#@.-]+/u).filter((w) => w.length > 2 && !STOP.has(w)))].slice(0, 5);
+  const scoped = view === "space" && currentSpace ? new Set(channels.filter((c) => c.space === currentSpace.id).map((c) => c.id)) : null;
+  const score = new Map();
+  for (const w of words) {
+    let hits = [];
+    try { hits = await invoke("search", { query: w }); } catch { /* keep going */ }
+    for (const h of hits) {
+      if (scoped && !scoped.has(h.channel)) continue;
+      const k = `${h.channel}:${h.what}:${h.seq}:${h.text}`;
+      const cur = score.get(k) || { h, n: 0 };
+      cur.n += 1; score.set(k, cur);
+    }
+  }
+  const ranked = [...score.values()].sort((a, b) => b.n - a.n || b.h.ts_ms - a.h.ts_ms).slice(0, 6);
+  if (ranked.length) {
+    out.push(el("p", { text: `${ranked.length === 1 ? "One thing" : `${ranked.length} things`} on this device match${ranked.length === 1 ? "es" : ""} ${words.map((w) => `\u201c${w}\u201d`).join(", ")}:` }));
+    for (const { h } of ranked) {
+      const c = channels.find((x) => x.id === h.channel);
+      out.push(el("button", { class: "ask-hit", type: "button", onclick: () => goTo(h.channel) },
+        el("small", { text: `${h.what === "record" ? h.by : `${h.by} · ${shortDate.format(h.ts_ms)}`} · ${whereOf(c)}` }), el("span", {}, ...highlight(h.text, words[0] || ""))));
+    }
+  } else if (!desks.length) {
+    out.push(el("p", { text: words.length ? `Nothing on this device matches ${words.map((w) => `\u201c${w}\u201d`).join(", ")}.` : "Ask with a few words, like \u201cAcme invoice\u201d or \u201ccontract\u201d." }));
+  }
+  if (desks.length && !ranked.length && words.length) out.push(el("p", { class: "fine", text: "Questions beyond the desk's numbers need the desk agent, which comes with the Company Brain." }));
+  return out;
+}
 
 // Home: spaces overview
 
@@ -928,9 +1178,10 @@ async function openDesk(c) {
   hideMain(); show("view-desk");
   for (const b of document.querySelectorAll(".side-item[data-id]")) b.classList.toggle("active", b.dataset.id === c.id);
   const fresh = !desk || desk.channel !== c.id;
-  if (fresh) desk = { channel: c.id, name: c.name, items: [], messages: [], tab: "all", query: "", selected: new Set() };
+  if (fresh) desk = { channel: c.id, name: c.name, space: c.space, items: [], messages: [], links: {}, linksAt: 0, tab: "all", query: "", selected: new Set() };
   const [items, messages] = await Promise.all([invoke("desk_items", { channel: c.id }), invoke("open_channel", { channel: c.id })]);
   desk.items = items; desk.messages = messages;
+  await refreshLinks();
   invoke("channel_members", { channel: c.id }).then((m) => { $("desk-people-count").textContent = String(m.length); });
   if (fresh) $("desk-search").value = "";
   $("desk-kind").textContent = c.name;
@@ -944,7 +1195,7 @@ function renderDesk() {
   const owed = outstanding.reduce((n, i) => n + i.amount, 0);
   const h = $("desk-headline");
   if (!all.length) h.replaceChildren("Nothing billed ", el("span", { class: "soft", text: "yet." }));
-  else if (!outstanding.length) h.replaceChildren("Nothing outstanding. ", el("span", { class: "soft", text: `${all.filter((i) => i.state === "paid").length} invoices paid.` }));
+  else if (!outstanding.length) h.replaceChildren("Nothing outstanding. ", el("span", { class: "soft", text: (() => { const n = all.filter((i) => i.state === "paid").length; return `${n} ${n === 1 ? "invoice" : "invoices"} paid.`; })() }));
   else h.replaceChildren(`${money(owed)} `, el("span", { class: "soft", text: "outstanding across " }), `${outstanding.length} ${outstanding.length === 1 ? "invoice" : "invoices"}.`);
   renderChart(all);
   const counts = { all: all.length, open: all.filter((i) => i.state === "open").length, overdue: all.filter((i) => i.state === "overdue").length, paid: all.filter((i) => i.state === "paid").length, draft: all.filter((i) => i.state === "draft").length };
@@ -962,12 +1213,12 @@ function renderDesk() {
     const check = el("input", { type: "checkbox", "aria-label": `Select ${i.number}`, checked: desk.selected.has(i.id), onclick: (e) => e.stopPropagation(), onchange: (e) => { e.target.checked ? desk.selected.add(i.id) : desk.selected.delete(i.id); renderBulk(); e.target.closest("tr").classList.toggle("selected", e.target.checked); } });
     return el("tr", { class: desk.selected.has(i.id) ? "selected" : "", onclick: () => openInvoice(i) },
       el("td", { class: "c-check" }, check),
-      el("td", { class: "inv", text: i.number }),
+      el("td", { class: "inv" }, i.number, linkOf(i) ? el("span", { class: "row-link", title: linkTitle(i) }, icon("link")) : null),
       el("td", {}, el("span", { class: "who" }, el("span", { class: "tile", text: initials(i.customer) }), i.customer)),
       el("td", { class: "c-issued", text: i.issued ? dateFmt.format(asDate(i.issued)) : "" }),
       el("td", { class: "due" }, i.due ? shortDate.format(asDate(i.due)) : "", dueNote),
       el("td", { class: "num", text: money(i.amount) }),
-      el("td", {}, el("span", { class: `st ${i.state}` }, icon(stIcon[i.state]), stLabel[i.state])),
+      el("td", {}, el("span", { class: `st ${i.state}` }, icon(stIcon[i.state]), stLabel[i.state]), claimOf(i) ? el("span", { class: "flag-pill warn says-paid", text: "Says paid" }) : null),
       el("td", { class: "c-terms", text: i.terms ? `Net ${i.terms}` : "On receipt" }));
   }));
   show("desk-table", rows.length > 0);
@@ -1026,6 +1277,16 @@ function renderNotes(all) {
   const soon = all.filter((i) => i.state === "open" && daysBetween(today, i.due) <= 30);
   const drafts = all.filter((i) => i.state === "draft");
   const meta = (label) => el("div", { class: "note-meta" }, el("span", { class: "orb" }), `${label} · ${timeFmt.format(Date.now())}`);
+  const claims = all.filter((i) => claimOf(i));
+  for (const i of claims.slice(0, 3)) {
+    cards.push(el("div", { class: "note-card" },
+      el("div", { class: "note-flag warn" }, el("span", { text: "Client says paid" }), el("span", { class: "amt", text: money(i.amount) })),
+      el("div", { class: "note-body" },
+        el("strong", { text: `${i.customer} says ${i.number} is paid` }),
+        el("p", { text: `They pressed "I've paid" on the payment link ${dateFmt.format(claimOf(i))}. Check your bank before marking it; the link doesn't move money.` }),
+        el("div", { class: "note-actions" }, el("button", { class: "btn-ink", type: "button", text: "Mark as paid", onclick: () => markPaid([i]) }),
+          el("button", { class: "link", type: "button", text: "Open", onclick: () => openInvoice(i) })))));
+  }
   if (overdue.length) {
     const names = overdue.slice(0, 2).map((i) => `${i.customer} (${-daysBetween(today, i.due)} ${-daysBetween(today, i.due) === 1 ? "day" : "days"})`);
     const more = overdue.length > 2 ? ` and ${overdue.length - 2} more` : "";
@@ -1049,7 +1310,7 @@ function renderNotes(all) {
       el("div", { class: "note-body" }, el("strong", { text: "Not sent yet" }), el("p", { text: "Drafts don't count as outstanding until you mark them sent." }),
         el("div", { class: "note-actions" }, el("button", { class: "btn-ink", type: "button", text: "Review", onclick: () => { desk.tab = "draft"; renderDesk(); } })))));
   }
-  if (all.length && !overdue.length && !drafts.length) {
+  if (all.length && !overdue.length && !drafts.length && !claims.length) {
     cards.push(el("div", { class: "note-card" }, el("div", { class: "note-flag good" }, el("span", { text: "All caught up" })), el("div", { class: "note-body" }, el("p", { text: "Nothing is overdue and nothing is waiting to be sent." }))));
   }
   if (!all.length) cards.push(el("p", { class: "note-text", text: "Add invoices and this column tells you what needs you: what's late, what's due, what's still a draft." }));
@@ -1091,14 +1352,19 @@ $("check-all").addEventListener("change", () => {
 $("bulk-clear").addEventListener("click", () => { desk.selected.clear(); renderDesk(); });
 $("bulk-copy").addEventListener("click", (e) => copy(toCsv(invoices().filter((i) => desk.selected.has(i.id))), e.currentTarget));
 $("bulk-paid").addEventListener("click", async () => {
-  const today = isoToday();
   const sel = invoices().filter((i) => desk.selected.has(i.id) && i.state !== "paid");
   if (!sel.length) return;
-  await putInvoices(sel.map((i) => ({ ...i, status: "paid", paid_on: today })));
-  await logActivity(sel.length === 1 ? `Marked ${sel[0].number} (${sel[0].customer}, ${money(sel[0].amount)}) as paid.` : `Marked ${sel.length} invoices as paid: ${sel.map((i) => i.number).join(", ")}.`);
   desk.selected.clear();
-  openChannel(desk.channel);
+  await markPaid(sel);
 });
+async function markPaid(list) {
+  const today = isoToday();
+  const paid = list.map((i) => ({ ...i, status: "paid", paid_on: today }));
+  await putInvoices(paid);
+  await logActivity(paid.length === 1 ? `Marked ${paid[0].number} (${paid[0].customer}, ${money(paid[0].amount)}) as paid.` : `Marked ${paid.length} invoices as paid: ${paid.map((i) => i.number).join(", ")}.`);
+  await syncLinks(paid);
+  openChannel(desk.channel);
+}
 $("bulk-remind").addEventListener("click", remindSelected);
 // Drafts one email per invoice in the person's mail app (at most five at once).
 async function remindSelected() {
@@ -1109,7 +1375,7 @@ async function remindSelected() {
   const me = profile?.display_name || "";
   for (const i of withEmail) {
     const late = -daysBetween(today, i.due);
-    const body = `Hello,\n\nA reminder that invoice ${i.number} for ${money(i.amount)} ${late > 0 ? `was due on ${dateFmt.format(asDate(i.due))} (${late} ${late === 1 ? "day" : "days"} ago)` : `is due on ${dateFmt.format(asDate(i.due))}`}. If it's already on its way, thank you and please ignore this.\n\nBest,\n${me}`;
+    const body = `Hello,\n\nA reminder that invoice ${i.number} for ${money(i.amount)} ${late > 0 ? `was due on ${dateFmt.format(asDate(i.due))} (${late} ${late === 1 ? "day" : "days"} ago)` : `is due on ${dateFmt.format(asDate(i.due))}`}. ${i.link?.url ? `\n\nDetails and how to pay: ${i.link.url}` : ""}\n\nIf it's already on its way, thank you and please ignore this.\n\nBest,\n${me}`;
     try { await invoke("compose_email", { to: i.email, subject: `Invoice ${i.number}${late > 0 ? " is overdue" : " reminder"}`, body }); }
     catch (err) { alert(String(err)); return; }
   }
@@ -1117,6 +1383,116 @@ async function remindSelected() {
   await logActivity(`Drafted ${withEmail.length === 1 ? "a reminder" : `${withEmail.length} reminders`} in my mail app: ${withEmail.map((i) => `${i.number} to ${i.customer}`).join(", ")}.`);
   openChannel(desk.channel);
 }
+
+// ---------- payment links (DESKS-PLAN "The client side") ----------
+// A page for the client, sealed on this device; the key is only in the URL we
+// keep in the invoice record (itself end-to-end encrypted in the desk).
+
+function paySettings() { return desk.items.find((i) => i.kind === "settings" && i.id === "payment")?.data || {}; }
+function businessName() { return paySettings().from || spaces.find((s) => s.id === desk.space)?.name || profile?.display_name || ""; }
+function linkOf(inv) { const l = inv.link && desk.links[inv.link.id]; return l && !l.revoked ? l : null; }
+function claimOf(inv) { const l = linkOf(inv); return inv.status !== "paid" && inv.status !== "void" && l?.claimed_paid_at_ms ? l.claimed_paid_at_ms : null; }
+function linkTitle(inv) { const l = linkOf(inv); return !l ? "" : l.views ? `Payment link opened ${l.views}×` : "Payment link not opened yet"; }
+async function refreshLinks() {
+  try { desk.links = Object.fromEntries((await invoke("pay_links", { channel: desk.channel })).map((l) => [l.id, l])); desk.linksAt = Date.now(); }
+  catch (e) { console.warn(e); }
+}
+function linkPage(inv) {
+  const p = paySettings();
+  return {
+    v: 1, from: businessName(), to: inv.customer, number: inv.number, amount: inv.amount, currency: inv.currency || "EUR",
+    issued: inv.issued, due: inv.due, status: inv.status === "paid" ? "paid" : "open", paid_on: inv.status === "paid" ? inv.paid_on : undefined,
+    pay: { name: p.name || undefined, iban: p.iban || undefined, bic: p.bic || undefined, url: p.url || undefined },
+  };
+}
+// Keeps what clients see in step with the invoice (amount, due date, paid).
+async function syncLinks(list) {
+  for (const inv of list) {
+    if (!linkOf(inv) || !inv.link.url) continue;
+    try { await invoke("update_pay_link", { channel: desk.channel, url: inv.link.url, page: linkPage(inv) }); } catch (e) { console.warn(e); }
+  }
+}
+async function createLink(inv) {
+  const p = paySettings();
+  if (!p.iban && !p.url) { openPayDetails(() => createLink(inv)); return; }
+  const day = 864e5;
+  const dueMs = inv.due ? asDate(inv.due).getTime() : Date.now();
+  const expires = Math.min(Date.now() + 179 * day, Math.max(Date.now() + 30 * day, dueMs + 90 * day));
+  try {
+    const link = await invoke("create_pay_link", { channel: desk.channel, page: linkPage(inv), expiresAtMs: expires });
+    const next = { ...inv, link: { id: link.id, url: link.url, created: isoToday() } };
+    await putInvoices([next]);
+    await logActivity(`Made a payment link for ${inv.number} (${inv.customer}).`);
+    await refreshLinks();
+    Object.assign(inv, next);
+    if (editing?.id === inv.id) editing = inv;
+    await copy(link.url);
+    paintLinkSection("Link copied. Paste it in your email or text.");
+    [desk.items, desk.messages] = await Promise.all([invoke("desk_items", { channel: desk.channel }), invoke("open_channel", { channel: desk.channel })]);
+    renderDesk();
+  } catch (err) { setError("invoice-error", String(err)); }
+}
+async function withdrawLink(inv) {
+  if (!confirm(`Withdraw the payment link for ${inv.number}? Anyone opening it will see that it has ended.`)) return;
+  try {
+    await invoke("revoke_pay_link", { channel: desk.channel, id: inv.link.id });
+    await logActivity(`Withdrew the payment link for ${inv.number}.`);
+    await refreshLinks();
+    paintLinkSection();
+    renderDesk();
+  } catch (err) { setError("invoice-error", String(err)); }
+}
+function paintLinkSection(flash) {
+  const inv = editing;
+  const usable = inv && inv.status !== "draft" && inv.status !== "void";
+  show("inv-link", !!usable);
+  if (!usable) return;
+  const l = linkOf(inv);
+  const actions = [];
+  let state;
+  if (l) {
+    const seen = l.views ? `Opened ${l.views} ${l.views === 1 ? "time" : "times"}, last ${dateTimeFmt.format(l.last_viewed_at_ms)}.` : "Not opened yet.";
+    state = l.claimed_paid_at_ms && inv.status !== "paid" ? `${seen} They say they paid on ${dateFmt.format(l.claimed_paid_at_ms)}: check your bank.` : seen;
+    actions.push(el("button", { class: "btn-ink inline", type: "button", onclick: (e) => copy(inv.link.url, e.currentTarget) }, icon("copy"), el("span", { text: "Copy link" })),
+      el("button", { class: "btn-outline", type: "button", text: "Withdraw", onclick: () => withdrawLink(inv) }));
+  } else {
+    state = inv.link ? "The last link was withdrawn or ended." : "A page your client opens without an account: amount, due date, how to pay, and an \u201cI've paid\u201d button.";
+    actions.push(el("button", { class: "btn-ink inline", type: "button", onclick: () => createLink(inv) }, icon("link"), el("span", { text: inv.link ? "Make a new link" : "Make a payment link" })));
+  }
+  $("inv-link-state").textContent = flash ? `${flash} ${state}` : state;
+  $("inv-link-actions").replaceChildren(...actions);
+}
+
+let payDetailsThen = null;
+function openPayDetails(then) {
+  payDetailsThen = then || null;
+  const p = paySettings();
+  $("pd-from").value = p.from || businessName(); $("pd-name").value = p.name || ""; $("pd-iban").value = p.iban || ""; $("pd-bic").value = p.bic || ""; $("pd-url").value = p.url || "";
+  setError("paydetails-error", "");
+  $("dlg-paydetails").showModal();
+}
+$("desk-paydetails").addEventListener("click", () => openPayDetails());
+$("paydetails-cancel").addEventListener("click", () => $("dlg-paydetails").close());
+$("paydetails-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const iban = $("pd-iban").value.replace(/\s+/g, "").toUpperCase();
+  const url = $("pd-url").value.trim();
+  if (iban && !/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(iban)) return setError("paydetails-error", "That IBAN doesn't look right.");
+  if (url && !/^https:\/\/\S+$/i.test(url)) return setError("paydetails-error", "Use a link that starts with https://");
+  if (!iban && !url) return setError("paydetails-error", "Add an IBAN or an online payment page, so clients know how to pay.");
+  const data = { from: $("pd-from").value.trim(), name: $("pd-name").value.trim(), iban: iban.replace(/(.{4})/g, "$1 ").trim(), bic: $("pd-bic").value.trim().toUpperCase(), url };
+  try {
+    await invoke("put_items", { channel: desk.channel, items: [{ id: "payment", kind: "settings", data }] });
+    await logActivity("Updated the payment details clients see.");
+    [desk.items, desk.messages] = await Promise.all([invoke("desk_items", { channel: desk.channel }), invoke("open_channel", { channel: desk.channel })]);
+    renderDesk();
+    $("dlg-paydetails").close();
+    // Open links show the new details too.
+    await syncLinks(invoices());
+    const then = payDetailsThen; payDetailsThen = null;
+    if (then) then();
+  } catch (err) { setError("paydetails-error", String(err)); }
+});
 
 // New or edited invoice.
 let editing = null;
@@ -1133,6 +1509,7 @@ function openInvoice(inv) {
   $("inv-terms").value = String(inv?.terms ?? 30);
   $("inv-status").value = inv?.status || "sent";
   $("invoice-save").textContent = inv ? "Save changes" : "Save invoice";
+  paintLinkSection();
   setError("invoice-error", "");
   $("dlg-invoice").showModal();
   $("inv-customer").focus();
@@ -1160,6 +1537,7 @@ $("invoice-form").addEventListener("submit", async (e) => {
       await putInvoices([inv]);
       const verb = !editing ? "Added" : editing.status !== status ? `Set ${status === "sent" ? "as sent" : `to ${status}`}` : "Updated";
       await logActivity(`${verb} ${inv.number}: ${customer}, ${money(amount)}.`);
+      await syncLinks([inv]);
       $("dlg-invoice").close();
       openChannel(desk.channel);
     } catch (err) { setError("invoice-error", String(err)); }
@@ -1385,6 +1763,11 @@ function startPolling() {
       if (r.new_messages || r.joined || r.removed) {
         await refreshChannels();
         if (current && (!$("view-convo").hidden || !$("view-desk").hidden)) await openChannel(current);
+      }
+      if (desk && !$("view-desk").hidden && Date.now() - desk.linksAt > 15000) {
+        const before = JSON.stringify(desk.links);
+        await refreshLinks();
+        if (JSON.stringify(desk.links) !== before) renderDesk();
       }
       // Files can change from the file manager, or from others, without a text message.
       if (drive && !$("view-drive").hidden) {

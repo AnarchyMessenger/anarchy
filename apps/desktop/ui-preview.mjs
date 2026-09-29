@@ -85,6 +85,14 @@ const mock = (startLocked) => {
   const inv = (n, customer, email, euros, issuedAgo, terms, status, paidAgo) => ({ id: `i${n}`, kind: "invoice", seq: n, updated_ms: now, data: {
     number: `INV-${n}`, customer, email, amount: Math.round(euros * 100), currency: "EUR", issued: iso(-issuedAgo), terms, due: iso(terms - issuedAgo), status,
     ...(paidAgo !== undefined ? { paid_on: iso(-paidAgo) } : {}) } });
+  const payLinks = [];
+  // A client opened a payment link three times and pressed "I've paid".
+  window.__addClaim = () => {
+    const inv = items.find((i) => i.kind === "invoice" && i.data.status === "sent");
+    inv.data = { ...inv.data, link: { id: "L0", url: "https://chat.studiochen.fr/p/L0#k3y", created: "2026-09-20" } };
+    payLinks.push({ id: "L0", expires_at_ms: now + 60 * 864e5, revoked: false, views: 3, last_viewed_at_ms: now - 3600e3, claimed_paid_at_ms: now - 1800e3 });
+    return inv.data.number;
+  };
   let items = [
     inv(1044, "Urban Threads", "ap@urbanthreads.eu", 1200, 3, 30, "sent"),
     inv(1043, "Glow Beauty Hub", "billing@glowbeauty.com", 940, 5, 30, "paid", 1),
@@ -181,6 +189,13 @@ const mock = (startLocked) => {
       return { kind: "none", data: "" };
     },
     put_items: async ({ items: put }) => { for (const r of put) { const at = items.findIndex((i) => i.id === r.id); const item = { ...r, seq: 99, updated_ms: Date.now() }; if (at >= 0) items[at] = item; else items.unshift(item); } },
+    pay_links: async () => payLinks,
+    create_pay_link: async () => { const id = `L${payLinks.length + 1}`; payLinks.push({ id, expires_at_ms: now + 90 * 864e5, revoked: false, views: 0, last_viewed_at_ms: null, claimed_paid_at_ms: null }); return { id, url: `https://chat.studiochen.fr/p/${id}#k3y` }; },
+    update_pay_link: async () => {},
+    revoke_pay_link: async ({ id }) => { payLinks.find((l) => l.id === id).revoked = true; },
+    mount_info: async () => ({ enabled: false, running: false, url: "", windows: "" }),
+    set_mount: async ({ enabled }) => ({ enabled, running: enabled, url: enabled ? "http://127.0.0.1:45901/d13ed9effb5a42b3/Anarchy/" : "", windows: "" }),
+    open_mount: async () => {},
     compose_email: async () => { window.__drafted = (window.__drafted || 0) + 1; },
     space_members: async () => ["u1", "u2", "u3", "u4"].map(peer).map((p, k) => (k === 0 ? { ...p, name: me(), handle: `${profile.username}#${String(profile.tag).padStart(4, "0")}`, color: profile.color, avatar: profile.avatar } : p)),
     search: async ({ query }) => {
@@ -328,6 +343,44 @@ await page.click("#invoice-save");
 await page.waitForTimeout(250);
 await page.click("#notes-brief");
 await shot("13e-desk-after-add");
+// A client pressed "I've paid" on a payment link.
+const claimed = await page.evaluate(() => window.__addClaim());
+await page.click('#desk-list .side-item >> text="Collections"');
+await page.waitForTimeout(250);
+await shot("13g-desk-client-says-paid");
+await page.click(`#desk-rows tr >> text="${claimed}"`);
+await visible("#inv-link");
+await shot("13h-invoice-payment-link");
+await page.click("#invoice-cancel");
+await page.click("#desk-paydetails");
+await shot("13i-payment-details");
+await page.click("#paydetails-cancel");
+await page.click('#channel-list .side-item >> text="acme-rebrand"');
+await visible("#view-convo");
+await page.fill("#message", "");
+await page.type("#message", "Is Acme late again? @Col");
+await visible("#mention-pop");
+await shot("13j-mention-picker");
+await page.press("#message", "Enter");
+await page.press("#message", "Enter");
+await page.waitForTimeout(300);
+await shot("13k-desk-mention");
+await page.click("#side-space [data-ask]");
+await page.fill("#ask-input", "acme deck");
+await page.press("#ask-input", "Enter");
+await page.waitForTimeout(300);
+await shot("13l-ask");
+await page.click("#ask-close");
+await page.click("#rail-me");
+await shot("13m-me-popover");
+await page.click("#me-settings");
+await page.click('#side-settings .side-item >> text="Files on this computer"');
+await page.click("#m-enabled");
+await page.waitForTimeout(150);
+await shot("13n-files-on-this-computer");
+await page.click('.rail-btn.space >> nth=0');
+await page.click('#desk-list .side-item >> text="Collections"');
+await visible("#view-desk");
 await page.click("#new-desk");
 await shot("13f-new-desk");
 await page.click("#desk-cancel");

@@ -99,7 +99,8 @@ the target is trades, where the front desk wins.
 
 Most desks exist to deal with people who will never install Anarchy:
 customers, suppliers, patients, tenants. Each desk has an **outside** (what
-they touch) and an **inside** (the desk the team works). Not built yet.
+they touch) and an **inside** (the desk the team works). Payment links are
+built (see "What exists now"); the rest is not yet.
 
 **Outside: web, no account, one thing at a time.**
 
@@ -173,6 +174,18 @@ and what isn't.
   *Draft reminder* opens one email per invoice in the person's own mail app,
   prefilled; Anarchy doesn't send mail for desks yet (that's the desk inbox),
   so the button says "Draft", not "Send".
+- **Payment links** (the first client-facing piece, D20): *Payment details*
+  on the desk (business name, account holder, IBAN, BIC, optional online
+  payment page), then *Make a payment link* on an invoice. The link is copied
+  and goes into reminder emails. The client's page shows the amount, due date,
+  bank details with copy buttons, and "I've paid"; that shows up on the desk as
+  a *Client says paid* card and a badge, never as paid, until someone marks it.
+  Marking it paid, or editing the invoice, updates the page under the same
+  link. *Withdraw* ends it. Links last 30 to 180 days.
+- **@-mentions** (D21): type `@` in a channel or chat to mention a desk or a
+  person; people on the desk see a live card, and the message lands in the
+  desk's activity. The sparkle in the sidebar (`Ctrl J`) opens **Ask**, which
+  for now searches what this device can decrypt and answers with desk figures.
 - **Other kinds** (front desk, help desk, dispatch, purchasing) are shown in
   "Set up a desk" as not available yet, each with what it's waiting for.
 

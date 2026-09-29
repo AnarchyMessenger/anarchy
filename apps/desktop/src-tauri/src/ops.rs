@@ -1273,3 +1273,49 @@ mod tests {
         assert!(normalize_server("not a url").is_err());
     }
 }
+
+// ---------- pay links ----------
+
+#[derive(Serialize)]
+pub struct PayLinkView {
+    id: String,
+    url: String,
+}
+
+/// Seals the page on this device and publishes it; the URL carries the key.
+pub async fn create_pay_link(
+    i: &mut Inner,
+    channel: ChannelId,
+    page: serde_json::Value,
+    expires_at_ms: u64,
+) -> Result<PayLinkView, String> {
+    let (id, url) = i
+        .client()?
+        .create_pay_link(channel, &page, expires_at_ms)
+        .await
+        .map_err(err)?;
+    Ok(PayLinkView { id, url })
+}
+
+pub async fn update_pay_link(
+    i: &mut Inner,
+    channel: ChannelId,
+    url: String,
+    page: serde_json::Value,
+) -> Result<(), String> {
+    i.client()?
+        .update_pay_link(channel, &url, &page)
+        .await
+        .map_err(err)
+}
+
+pub async fn pay_links(
+    i: &mut Inner,
+    channel: ChannelId,
+) -> Result<Vec<anarchy_proto::PayLinkStatus>, String> {
+    i.client()?.pay_links(channel).await.map_err(err)
+}
+
+pub async fn revoke_pay_link(i: &mut Inner, channel: ChannelId, id: String) -> Result<(), String> {
+    i.client()?.revoke_pay_link(channel, &id).await.map_err(err)
+}

@@ -728,6 +728,62 @@ impl Client {
         crate::files::open(&key, &chunks)
     }
 
+    // ---------- pay links ----------
+
+    /// Seals `page` (what the client sees) and publishes it. Returns the link id
+    /// and the full URL, whose `#fragment` is the only copy of the key outside
+    /// this device; keep it in the desk record so members can copy it again.
+    pub async fn create_pay_link(
+        &self,
+        channel: ChannelId,
+        page: &serde_json::Value,
+        expires_at_ms: u64,
+    ) -> Result<(String, String), Error> {
+        let (sealed, key) = crate::links::seal(page)?;
+        let created: anarchy_proto::PayLinkCreated = self
+            .post(
+                &format!("/v1/channels/{channel}/pay_links"),
+                &anarchy_proto::CreatePayLink {
+                    sealed,
+                    expires_at_ms,
+                },
+            )
+            .await?
+            .json()
+            .await?;
+        let url = format!("{}/p/{}#{key}", self.base, created.id);
+        Ok((created.id, url))
+    }
+
+    /// Replaces a link's content, keeping its address and key (taken from `url`).
+    pub async fn update_pay_link(
+        &self,
+        channel: ChannelId,
+        url: &str,
+        page: &serde_json::Value,
+    ) -> Result<(), Error> {
+        let (id, key) = crate::links::parse_url(url)?;
+        let sealed = crate::links::seal_with(page, &key)?;
+        let req = self
+            .authed(
+                self.http
+                    .put(format!("{}/v1/channels/{channel}/pay_links/{id}", self.base)),
+            )
+            .json(&anarchy_proto::UpdatePayLink { sealed });
+        check(req.send().await?).await?;
+        Ok(())
+    }
+
+    pub async fn pay_links(&self, channel: ChannelId) -> Result<Vec<anarchy_proto::PayLinkStatus>, Error> {
+        self.get(&format!("/v1/channels/{channel}/pay_links"), &[]).await
+    }
+
+    pub async fn revoke_pay_link(&self, channel: ChannelId, id: &str) -> Result<(), Error> {
+        self.post(&format!("/v1/channels/{channel}/pay_links/{id}/revoke"), &())
+            .await?;
+        Ok(())
+    }
+
     /// Creates a desk: a channel in `space` whose info names the desk kind.
     pub async fn create_desk(
         &mut self,

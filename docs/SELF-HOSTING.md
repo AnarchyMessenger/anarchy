@@ -41,9 +41,13 @@ Set `ANARCHY_OIDC_ISSUER=https://accounts.google.com`, create a "Desktop app" OA
 
 Drive chunks are stored in Postgres (`blobs` table) for now, up to 200 MB per file. They're encrypted before they reach the server. Plan database space for it, or wait for the object-storage backend if you expect large files. Deleted files keep their chunks until garbage collection is added.
 
+### Payment links
+
+Collections desks can send clients a link to a page on this server (`/p/…`) showing the invoice and how to pay. For clients to open it, the server must be reachable from the internet at the address the app signs in to, **over HTTPS**: the page decrypts in the browser with WebCrypto, which browsers only allow on HTTPS (or `localhost`). The server stores each page encrypted and never sees its key, but it serves the page's script, so whoever runs the server could change that script to read pages; that's the trade-off of any web page for people without the app.
+
 ## What the server stores
 
-Users (issuer, subject, name, email, handle, colour, avatar emoji, what they use Anarchy for, DM privacy setting), spaces and who's in them, hashed session tokens, device public keys, channel membership, **encrypted** message payloads, and **encrypted** file chunks. It never stores message plaintext or private keys. The Company Brain, if you run it, has its own database, which does hold plaintext of the channels it was added to. Run it on infrastructure you control.
+Users (issuer, subject, name, email, handle, colour, avatar emoji, what they use Anarchy for, DM privacy setting), spaces and who's in them, hashed session tokens, device public keys, channel membership, **encrypted** message payloads, **encrypted** file chunks, and **encrypted** payment-link pages with when each was opened and whether the client pressed "I've paid". It never stores message plaintext or private keys. The Company Brain, if you run it, has its own database, which does hold plaintext of the channels it was added to. Run it on infrastructure you control.
 
 ## Not safe yet (phase 0)
 
