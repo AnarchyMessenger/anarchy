@@ -102,6 +102,26 @@ async fn every_account_gets_a_handle_and_can_change_its_username() {
         })
         .await;
     assert_eq!(status(bad_colour), 400);
+
+    // A sidekick: set, refused when malformed, cleared with an empty name.
+    let sk = |name: &str, look: &str| ProfileUpdate {
+        sidekick: Some(anarchy_proto::Sidekick {
+            name: name.into(),
+            look: look.into(),
+        }),
+        ..Default::default()
+    };
+    let me = maya.update_me(&sk("Pip", "spark-summer")).await.unwrap();
+    assert_eq!(
+        me.sidekick.as_ref().map(|s| (s.name.as_str(), s.look.as_str())),
+        Some(("Pip", "spark-summer"))
+    );
+    assert_eq!(status(maya.update_me(&sk("Pip", "<svg>")).await), 400);
+    assert_eq!(
+        status(maya.update_me(&sk(&"x".repeat(25), "orb-ocean")).await),
+        400
+    );
+    assert!(maya.update_me(&sk("", "")).await.unwrap().sidekick.is_none());
 }
 
 #[tokio::test]

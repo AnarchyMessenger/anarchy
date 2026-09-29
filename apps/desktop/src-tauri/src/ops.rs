@@ -467,6 +467,7 @@ pub struct PeerView {
     avatar: Option<String>,
     is_guest: bool,
     is_agent: bool,
+    sidekick: Option<anarchy_proto::Sidekick>,
 }
 
 fn peer_view(p: &DirectoryEntry) -> PeerView {
@@ -482,6 +483,7 @@ fn peer_view(p: &DirectoryEntry) -> PeerView {
         avatar: p.avatar.clone(),
         is_guest: p.is_guest,
         is_agent: p.is_agent,
+        sidekick: p.sidekick.clone(),
     }
 }
 
@@ -762,13 +764,19 @@ pub async fn search(i: &mut Inner, query: String) -> Result<Vec<SearchHit>, Stri
             }
         }
         for item in i.client()?.desk_items(channel).map_err(err)? {
+            // Settings and forms hold keys and config, not things people look for.
+            if matches!(item.kind.as_str(), "settings" | "form") {
+                continue;
+            }
             let blob = item.data.to_string().to_lowercase();
             if blob.contains(&q) {
-                let text = ["number", "customer", "name", "folder", "title", "date"]
-                    .iter()
-                    .filter_map(|k| item.data.get(*k).and_then(|v| v.as_str()))
-                    .collect::<Vec<_>>()
-                    .join(" · ");
+                let text = [
+                    "number", "customer", "name", "contact", "what", "folder", "title", "date",
+                ]
+                .iter()
+                .filter_map(|k| item.data.get(*k).and_then(|v| v.as_str()))
+                .collect::<Vec<_>>()
+                .join(" · ");
                 hits.push(SearchHit {
                     channel,
                     what: "record",

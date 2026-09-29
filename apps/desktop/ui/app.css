@@ -1106,3 +1106,20 @@ svg.i.flip { transform: scaleX(-1); }
 .spaceset-page .spaceset { padding: 0; }
 .spaceset-page .page-title { margin: 0 0 6px; }
 .spaceset-page .page-sub { margin: 0 0 22px; }
+
+/* ---------- sidekicks (D31) ---------- */
+.sk { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%; background: radial-gradient(circle at 30% 25%, var(--fa), var(--fb) 55%, var(--fc)); box-shadow: inset 0 1px 0 rgb(255 255 255 / .45), 0 1px 2px rgb(0 0 0 / .18); }
+.sk svg { width: 62%; height: 62%; fill: rgb(26 24 20 / .82); }
+.sk.big { width: 56px; height: 56px; }
+.sk.head { width: 28px; height: 28px; }
+.sk.tool { width: 24px; height: 24px; }
+.avatar { position: relative; }
+.sk.badge { position: absolute; right: -5px; bottom: -5px; width: 52%; height: 52%; min-width: 12px; min-height: 12px; box-shadow: 0 0 0 2px var(--surface), 0 1px 2px rgb(0 0 0 / .2); }
+.id-avatar { position: relative; }
+.id-avatar .sk.badge { width: 26px; height: 26px; right: -8px; bottom: -8px; box-shadow: 0 0 0 3px rgb(255 255 255 / .85); }
+.ask-mark.has-sk { background: transparent; }
+.sk-shapes { display: flex; flex-wrap: wrap; gap: 8px; }
+.sk-shapes button { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); cursor: pointer; }
+.sk-shapes button[aria-checked="true"] { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.sk-field { display: grid; gap: 8px; }
+.note-plain { background: var(--surface-sunken); border-radius: 10px; padding: 10px 12px; margin: 4px 0 10px; }

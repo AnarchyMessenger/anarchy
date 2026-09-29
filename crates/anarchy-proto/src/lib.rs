@@ -137,6 +137,16 @@ pub struct Profile {
     pub is_anonymous: bool,
     /// False until the person has finished onboarding.
     pub onboarded: bool,
+    /// The person's sidekick: their own agent, shown as a badge on their avatar.
+    #[serde(default)]
+    pub sidekick: Option<Sidekick>,
+}
+
+/// A person's sidekick as others see it. `look` is `<shape>-<colour>`, e.g. `orb-ocean`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sidekick {
+    pub name: String,
+    pub look: String,
 }
 
 /// `PUT /v1/me`: the fields a person can change. Missing fields stay as they are.
@@ -151,6 +161,9 @@ pub struct ProfileUpdate {
     pub dm_policy: Option<DmPolicy>,
     pub dm_humans_only: Option<bool>,
     pub onboarded: Option<bool>,
+    /// A name of `""` removes the sidekick.
+    #[serde(default)]
+    pub sidekick: Option<Sidekick>,
 }
 
 /// Formats a handle the way people read it: `maya#0427`.
@@ -279,6 +292,8 @@ pub struct DirectoryEntry {
     pub avatar: Option<String>,
     #[serde(default)]
     pub is_agent: bool,
+    #[serde(default)]
+    pub sidekick: Option<Sidekick>,
 }
 
 /// `GET /v1/devices`: the caller's own devices.

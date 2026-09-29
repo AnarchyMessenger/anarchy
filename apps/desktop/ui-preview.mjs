@@ -214,7 +214,7 @@ const mock = (startLocked) => {
     update_profile: async ({ update }) => {
       await wait(120);
       if (update.username !== undefined && !/^[a-z0-9_.]{2,32}$/.test(update.username)) throw "Usernames are 2 to 32 characters: letters, digits, _ and .";
-      for (const [k, v] of Object.entries(update)) if (v !== undefined) profile[k] = k === "avatar" && v === "" ? null : v;
+      for (const [k, v] of Object.entries(update)) if (v !== undefined) profile[k] = (k === "avatar" && v === "") || (k === "sidekick" && !v.name) ? null : v;
       session.display_name = profile.display_name;
       return { ...profile };
     },
@@ -280,7 +280,7 @@ const mock = (startLocked) => {
     search: async ({ query }) => {
       const q = query.toLowerCase(); const out = [];
       for (const c of channels) for (const [k, m] of c.messages.entries()) if (m.text.toLowerCase().includes(q)) out.push({ channel: c.id, what: "message", seq: k + 1, ts_ms: m.ts, by: m.sender === "ME" ? "You" : m.sender, text: m.text });
-      for (const i of items) if (JSON.stringify(i.data).toLowerCase().includes(q)) out.push({ channel: "k1", what: "record", seq: i.seq, ts_ms: i.updated_ms, by: "invoice", text: `${i.data.number} · ${i.data.customer}` });
+      for (const i of items) if (!["settings", "form"].includes(i.kind) && JSON.stringify(i.data).toLowerCase().includes(q)) out.push({ channel: "k1", what: "record", seq: i.seq, ts_ms: i.updated_ms, by: i.kind, text: ["number", "customer", "name", "contact", "what", "folder", "title", "date"].map((k) => i.data[k]).filter((v) => typeof v === "string").join(" · ") });
       for (const i of driveItems) if (i.kind === "file" && `${i.data.name} ${i.data.folder}`.toLowerCase().includes(q)) out.push({ channel: "f1", what: "record", seq: 1, ts_ms: i.data.added, by: "file", text: `${i.data.name} · ${i.data.folder}` });
       return out.sort((a, b) => b.ts_ms - a.ts_ms).slice(0, 40);
     },
@@ -385,6 +385,12 @@ await page.click('#avatar-picker [data-avatar="🌊"]');
 await page.click('#color-picker [data-color="ocean"]');
 await shot("07-welcome-card");
 await page.click("#card-save");
+await visible("#s-sidekick");
+await page.fill("#sk-name", "Pip");
+await page.click('#sk-shapes [data-shape="spark"]');
+await page.click('#sk-colors [data-color="summer"]');
+await shot("07b-sidekick");
+await page.click("#sk-save");
 await visible("#app");
 
 // Home and DMs.

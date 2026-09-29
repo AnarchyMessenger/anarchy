@@ -208,12 +208,19 @@ type ProfileRow = (
     bool,
     String,
     bool,
+    Option<String>,
+    Option<String>,
 );
+
+fn sidekick_of(name: Option<String>, look: Option<String>) -> Option<anarchy_proto::Sidekick> {
+    name.zip(look)
+        .map(|(name, look)| anarchy_proto::Sidekick { name, look })
+}
 
 async fn load_profile(db: &sqlx::PgPool, user: Uuid) -> ApiResult<Profile> {
     let r: ProfileRow = sqlx::query_as(
         "SELECT id, display_name, username, tag, color, avatar, usage, dm_policy, dm_humans_only,
-                email, is_guest, oidc_issuer, onboarded
+                email, is_guest, oidc_issuer, onboarded, sidekick_name, sidekick_look
          FROM users WHERE id = $1",
     )
     .bind(user)
@@ -237,6 +244,7 @@ async fn load_profile(db: &sqlx::PgPool, user: Uuid) -> ApiResult<Profile> {
         is_guest: r.10,
         is_anonymous: r.11 == "anarchy:anonymous",
         onboarded: r.12,
+        sidekick: sidekick_of(r.13, r.14),
     })
 }
 
@@ -314,6 +322,34 @@ pub async fn update_me(
             .execute(&mut *tx)
             .await?;
     }
+    if let Some(sk) = &req.sidekick {
+        let name = sk.name.trim();
+        let look = sk.look.trim();
+        if name.is_empty() {
+            sqlx::query("UPDATE users SET sidekick_name = NULL, sidekick_look = NULL WHERE id = $1")
+                .bind(user.user_id)
+                .execute(&mut *tx)
+                .await?;
+        } else {
+            if name.chars().count() > 24 || name.chars().any(char::is_control) {
+                return Err(ApiError::bad_request("a sidekick's name is 1 to 24 characters"));
+            }
+            let valid_look = look.split_once('-').is_some_and(|(shape, colour)| {
+                [shape, colour]
+                    .iter()
+                    .all(|p| (2..=12).contains(&p.len()) && p.chars().all(|c| c.is_ascii_lowercase()))
+            });
+            if !valid_look {
+                return Err(ApiError::bad_request("a sidekick's look is like orb-ocean"));
+            }
+            sqlx::query("UPDATE users SET sidekick_name = $2, sidekick_look = $3 WHERE id = $1")
+                .bind(user.user_id)
+                .bind(name)
+                .bind(look)
+                .execute(&mut *tx)
+                .await?;
+        }
+    }
     if let Some(usage) = req.usage {
         sqlx::query("UPDATE users SET usage = $2 WHERE id = $1")
             .bind(user.user_id)
@@ -364,11 +400,13 @@ pub(crate) type EntryRow = (
     String,
     Option<String>,
     bool,
+    Option<String>,
+    Option<String>,
 );
 
 pub(crate) const ENTRY_COLUMNS: &str = "u.id, u.display_name, u.email, u.is_guest,
     coalesce(array_agg(d.id ORDER BY d.created_at) FILTER (WHERE d.id IS NOT NULL), '{}'),
-    u.username, u.tag, u.color, u.avatar, u.is_agent";
+    u.username, u.tag, u.color, u.avatar, u.is_agent, u.sidekick_name, u.sidekick_look";
 
 pub(crate) fn entry(r: EntryRow) -> DirectoryEntry {
     DirectoryEntry {
@@ -382,6 +420,7 @@ pub(crate) fn entry(r: EntryRow) -> DirectoryEntry {
         color: Some(r.7),
         avatar: r.8,
         is_agent: r.9,
+        sidekick: sidekick_of(r.10, r.11),
     }
 }
 

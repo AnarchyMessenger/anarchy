@@ -60,10 +60,59 @@ function colorFor(key) {
   for (const c of String(key)) h = (h * 31 + c.codePointAt(0)) >>> 0;
   return COLORS[h % COLORS.length];
 }
-function avatarEl(name, { color, avatar, size } = {}) {
+function avatarEl(name, { color, avatar, size, sidekick } = {}) {
   const a = el("span", { class: `avatar${size ? ` ${size}` : ""}${avatar ? " emoji" : ""}`, "data-color": color || colorFor(name) });
   a.textContent = avatar || initials(name);
+  // The person's sidekick rides on their picture, never replaces it.
+  if (sidekick && size !== "xs") a.append(sidekickEl(sidekick, "badge"));
   return a;
+}
+
+// ---------- sidekicks ----------
+// Each person's own agent (D30, D31). Its look is a shape on a colour; it's
+// shown as a badge on its person's avatar, and with its own face on anything
+// it writes, so nobody mistakes it for the person.
+const SK_SHAPES = {
+  orb: "M12 5a7 7 0 1 1 0 14 7 7 0 1 1 0-14zM9.6 10.2a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 1 0 0-2.6zM14.4 10.2a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 1 0 0-2.6z",
+  spark: "M12 3c.9 5.2 2.3 6.6 7.5 7.5C14.3 11.4 12.9 12.8 12 18c-.9-5.2-2.3-6.6-7.5-7.5C9.7 9.6 11.1 8.2 12 3z",
+  bolt: "M13.5 3 5 13.5h6L10 21l9-11h-6.2z",
+  leaf: "M5.5 18.5C5.5 10.5 11 5 19 5c0 8-5.5 13.5-13.5 13.5zm0 0 6.5-6.5",
+  moon: "M19 14.8A7.5 7.5 0 1 1 9.2 5a6 6 0 0 0 9.8 9.8z",
+  star: "M12 4l2.4 5 5.4.6-4 3.7 1.1 5.4L12 16l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z",
+};
+const SK_NAMES = ["Pip", "Nova", "Otto", "Juno", "Rook", "Mika", "Bix", "Lumen"];
+function parseLook(look) { const [shape, color] = String(look || "").split("-"); return { shape: SK_SHAPES[shape] ? shape : "orb", color: COLORS.includes(color) ? color : "ocean" }; }
+function sidekickEl(sk, cls = "") {
+  const { shape, color } = parseLook(sk?.look);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", SK_SHAPES[shape]); path.setAttribute("fill-rule", "evenodd");
+  svg.append(path);
+  const n = el("span", { class: `sk ${cls}`.trim(), "data-color": color, title: sk?.name ? `${sk.name}, a sidekick` : "Sidekick" });
+  n.append(svg);
+  return n;
+}
+// Name, shape and colour pickers, used in onboarding and on the profile page.
+function mountSidekickPicker(prefix, get, set) {
+  $(`${prefix}shapes`).replaceChildren(...Object.keys(SK_SHAPES).map((k) => {
+    const b = el("button", { type: "button", role: "radio", "data-shape": k, "aria-label": k, onclick: () => set({ look: `${k}-${parseLook(get().look).color}` }) });
+    b.append(sidekickEl({ look: `${k}-${parseLook(get().look).color}` }));
+    return b;
+  }));
+  $(`${prefix}colors`).replaceChildren(...COLORS.map((c) => el("button", { type: "button", role: "radio", "data-color": c, "aria-label": c, title: c[0].toUpperCase() + c.slice(1), onclick: () => set({ look: `${parseLook(get().look).shape}-${c}` }) })));
+  syncSidekickPicker(prefix, get());
+}
+function syncSidekickPicker(prefix, sk) {
+  const { shape, color } = parseLook(sk.look);
+  for (const b of $(`${prefix}shapes`).children) { b.setAttribute("aria-checked", String(b.dataset.shape === shape)); b.firstElementChild.dataset.color = color; }
+  for (const b of $(`${prefix}colors`).children) b.setAttribute("aria-checked", String(b.dataset.color === color));
+  const prev = $(`${prefix}preview`);
+  if (prev) prev.replaceChildren(sidekickEl(sk, "big"), el("span", { class: "sk-preview-name", text: sk.name || "Your sidekick" }));
+}
+function defaultSidekick(p) {
+  const colors = COLORS.filter((c) => c !== p?.color);
+  return { name: SK_NAMES[Math.floor(Math.random() * SK_NAMES.length)], look: `orb-${colors[Math.floor(Math.random() * colors.length)]}` };
 }
 function fillAvatar(node, name, color, avatar) {
   node.dataset.color = color || colorFor(name);
@@ -120,6 +169,7 @@ function paintCard(prefix, p) {
   $(`${prefix}card`).dataset.color = p.color || "ember";
   const av = $(`${prefix}card-avatar`);
   av.textContent = p.avatar || initials(name);
+  if (p.sidekick) av.append(sidekickEl(p.sidekick, "badge"));
   $(`${prefix}card-name`).textContent = name;
   $(`${prefix}card-handle`).replaceChildren(`@${p.username || "you"}`, el("span", { text: `#${String(p.tag || 0).padStart(4, "0")}` }));
   $(`${prefix}card-kind`).textContent = p.is_anonymous ? "ANONYMOUS" : p.is_guest ? "GUEST" : (p.usage ? p.usage.toUpperCase() : "MEMBER");
@@ -354,7 +404,7 @@ async function afterSignIn() {
   status = await invoke("status");
   profile = status.profile;
   if (profile?.onboarded) return showApp();
-  draft = { usage: profile?.usage || null, display_name: profile?.display_name || "", username: profile?.username || "", tag: profile?.tag || 0, color: profile?.color || "ember", avatar: profile?.avatar || "" };
+  draft = { usage: profile?.usage || null, display_name: profile?.display_name || "", username: profile?.username || "", tag: profile?.tag || 0, color: profile?.color || "ember", avatar: profile?.avatar, sidekick: profile?.sidekick || "" };
   paintArt({ ...profile, ...draft });
   try { spaces = await invoke("spaces"); } catch { spaces = []; }
   // Company servers already know what it's for; guests don't pick.
@@ -439,13 +489,40 @@ $("s-card").addEventListener("submit", async (e) => {
     try {
       profile = await invoke("update_profile", { update: {
         display_name: draft.display_name.trim(), username: draft.username.trim(), color: draft.color,
-        avatar: draft.avatar || "", usage: draft.usage || undefined, onboarded: true,
+        avatar: draft.avatar || "", usage: draft.usage || undefined,
       } });
       await setAppearance({ frame: draft.color });
-      status = await invoke("status");
-      showApp();
+      toSidekickStep();
     } catch (err) { setError("card-error", String(err)); }
   });
+});
+
+function toSidekickStep() {
+  draft.sidekick = profile?.sidekick || draft.sidekick || defaultSidekick(draft);
+  $("sk-name").value = draft.sidekick.name;
+  const set = (c) => { Object.assign(draft.sidekick, c); syncSidekickPicker("sk-", draft.sidekick); paintArt({ ...profile, ...draft }); };
+  mountSidekickPicker("sk-", () => draft.sidekick, set);
+  paintArt({ ...profile, ...draft });
+  setError("sk-error", "");
+  authStep("s-sidekick");
+}
+$("sk-name").addEventListener("input", () => { draft.sidekick.name = $("sk-name").value; syncSidekickPicker("sk-", draft.sidekick); paintArt({ ...profile, ...draft }); });
+async function finishOnboarding(sidekick) {
+  profile = await invoke("update_profile", { update: { onboarded: true, ...(sidekick ? { sidekick } : {}) } });
+  status = await invoke("status");
+  showApp();
+}
+$("s-sidekick").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("sk-name").value.trim();
+  if (!name) return setError("sk-error", "Give it a name, or skip for now.");
+  await busy($("sk-save"), "Saving…", async () => {
+    try { await finishOnboarding({ name, look: draft.sidekick.look }); } catch (err) { setError("sk-error", String(err)); }
+  });
+});
+$("sk-skip").addEventListener("click", async () => {
+  draft.sidekick = null; paintArt({ ...profile, ...draft, sidekick: null });
+  try { await finishOnboarding(null); } catch (err) { setError("sk-error", String(err)); }
 });
 
 // ---------- app ----------
@@ -474,10 +551,11 @@ async function showApp() {
 function paintMe() {
   const p = profile || { display_name: status.session?.display_name || "You" };
   const name = p.display_name || "You";
-  $("rail-me").replaceChildren(avatarEl(name, { color: p.color, avatar: p.avatar }));
+  paintAskHead();
+  $("rail-me").replaceChildren(avatarEl(name, { color: p.color, avatar: p.avatar, sidekick: p.sidekick }));
   $("share-handle").textContent = handleOf(p) ? `@${handleOf(p)}` : "";
   $("me-name").textContent = name;
-  $("me-avatar").replaceChildren(avatarEl(name, { color: p.color, avatar: p.avatar }));
+  $("me-avatar").replaceChildren(avatarEl(name, { color: p.color, avatar: p.avatar, sidekick: p.sidekick }));
   $("share-policy").textContent = p.dm_policy === "anyone" ? "Anyone with it can message you." : "Only people in your spaces can message you.";
   const kind = USAGE_KIND[p.usage];
   $("start-create-sub").textContent = kind === "freelance" ? "A place for clients and projects." : kind === "personal" ? "For friends and family." : kind === "community" ? "For a group, club or server." : "Channels and people, for one purpose.";
@@ -564,7 +642,7 @@ function renderSide() {
   $("dm-list").replaceChildren(...dms.map((c) => {
     const unread = c.unread && c.id !== current;
     return el("button", { class: `side-item dm-item${c.id === current ? " active" : ""}${unread ? " unread" : ""}`, "data-id": c.id, onclick: () => openChannel(c.id).then(() => composer.focus()) },
-      avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar }),
+      avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick }),
       el("span", { class: "lines" }, el("strong", { text: c.name }), el("small", { text: c.last_text || (c.peer?.handle ? `@${c.peer.handle}` : "") })),
       unread ? el("span", { class: "unread-dot", "aria-label": "unread" }) : null);
   }));
@@ -642,7 +720,7 @@ function renderMessages(messages, c) {
     }
     if (day !== lastDay) { rows.push(el("div", { class: "day", text: day })); lastDay = day; lastSender = ""; }
     const cont = m.sender === lastSender && m.ts_ms - lastTs < 5 * 60 * 1000 && !threads.has(lastSeqOf(rows));
-    const look = m.mine ? { color: profile?.color, avatar: profile?.avatar } : c.kind === "dm" ? { color: c.peer?.color, avatar: c.peer?.avatar } : {};
+    const look = m.mine ? { color: profile?.color, avatar: profile?.avatar, sidekick: profile?.sidekick } : c.kind === "dm" ? { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick } : {};
     const row = el("div", { class: `msg${cont ? " cont" : ""}`, "data-seq": String(m.seq) },
       avatarEl(m.sender, look),
       el("div", {},
@@ -656,7 +734,7 @@ function renderMessages(messages, c) {
   }
   if (!messages.length) {
     rows.push(c.kind === "dm"
-      ? el("div", { class: "transcript-empty" }, avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar }), el("strong", { text: c.name }),
+      ? el("div", { class: "transcript-empty" }, avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick }), el("strong", { text: c.name }),
           el("span", { class: "mono", text: c.peer?.handle ? `@${c.peer.handle}` : "" }), el("p", { text: "This conversation is end-to-end encrypted. Only the two of you can read it." }))
       : el("div", { class: "transcript-empty" }, el("strong", { text: `Welcome to #${c.name}` }), el("p", { text: "No messages since you joined. Earlier ones stay readable only to the people who were here." })));
   }
@@ -675,7 +753,7 @@ function threadSummary(c, root, replies) {
   const last = replies[replies.length - 1];
   const unseen = replies.filter((r) => !r.mine && r.seq > (threadSeen[`${c.id}:${root}`] || 0)).length;
   return el("button", { class: `thread-sum${unseen ? " new" : ""}`, type: "button", onclick: () => openThread(c.id, root) },
-    el("span", { class: "who" }, ...who.map((r) => avatarEl(r.sender, r.mine ? { color: profile?.color, avatar: profile?.avatar, size: "sm" } : { size: "sm" }))),
+    el("span", { class: "who" }, ...who.map((r) => avatarEl(r.sender, r.mine ? { color: profile?.color, avatar: profile?.avatar, sidekick: profile?.sidekick, size: "sm" } : { size: "sm" }))),
     el("strong", { text: `${replies.length} ${replies.length === 1 ? "reply" : "replies"}` }),
     el("small", { text: unseen ? `${unseen} new` : `Last ${sinceFmt(last.ts_ms)}` }));
 }
@@ -716,7 +794,7 @@ function renderThread() {
   const replies = convo.messages.filter((m) => m.thread === thread.root);
   $("thread-where").textContent = c.kind === "dm" ? `With ${c.name}` : `#${c.name}`;
   const line = (m, big) => el("div", { class: `thread-msg${big ? " root" : ""}` },
-    avatarEl(m.sender, m.mine ? { color: profile?.color, avatar: profile?.avatar, size: big ? undefined : "sm" } : c.kind === "dm" && !m.mine ? { color: c.peer?.color, avatar: c.peer?.avatar, size: big ? undefined : "sm" } : { size: big ? undefined : "sm" }),
+    avatarEl(m.sender, m.mine ? { color: profile?.color, avatar: profile?.avatar, sidekick: profile?.sidekick, size: big ? undefined : "sm" } : c.kind === "dm" && !m.mine ? { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick, size: big ? undefined : "sm" } : { size: big ? undefined : "sm" }),
     el("div", {}, el("header", {}, el("strong", { text: m.sender }), el("time", { text: `${shortDate.format(m.ts_ms)} ${timeFmt.format(m.ts_ms)}` })), el("div", { class: "body" }, ...mentionChips(m.text)), ...deskCards(m.text)));
   $("thread-log").replaceChildren(
     root ? line(root, true) : el("p", { class: "fine thread-orphan", text: "This thread starts with a message from before you joined. You can read the replies sent since." }),
@@ -835,7 +913,7 @@ function renderTabs() {
       const unseen = replies.filter((r) => !r.mine && r.seq > (threadSeen[key] || 0)).length;
       if (unseen && key !== active) status = el("span", { class: "tab-badge", text: String(unseen) });
     } else if (c.kind === "dm") {
-      lead = avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, size: "xs" });
+      lead = avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick, size: "xs" });
       name = c.name;
     } else if (c.desk) {
       lead = el("span", { class: "tab-icon is-desk" }, icon(DESK_ICON[c.desk] || "receipt"));
@@ -1015,7 +1093,7 @@ async function renderPeopleDrawer() {
     $("people-title").textContent = "People you talk to";
     const dms = channels.filter((c) => c.kind === "dm");
     list.replaceChildren(...(dms.length ? dms.map((c) => el("button", { class: "person-row", type: "button", onclick: () => { closeDrawers(); openChannel(c.id); } },
-      avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar }), el("span", { class: "lines" }, el("strong", { text: c.name }), el("small", { text: c.peer?.handle ? `@${c.peer.handle}` : "" })))) : [el("p", { class: "fine", text: "Nobody yet. Message someone by their handle." })]));
+      avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick }), el("span", { class: "lines" }, el("strong", { text: c.name }), el("small", { text: c.peer?.handle ? `@${c.peer.handle}` : "" })))) : [el("p", { class: "fine", text: "Nobody yet. Message someone by their handle." })]));
     return;
   }
   const sp = currentSpace;
@@ -1027,7 +1105,7 @@ async function renderPeopleDrawer() {
   const mine = handleOf(profile);
   list.replaceChildren(...members.map((m) => {
     const me = m.handle && m.handle === mine;
-    return el("div", { class: "person-row" }, avatarEl(m.name, { color: m.color, avatar: m.avatar }),
+    return el("div", { class: "person-row" }, avatarEl(m.name, { color: m.color, avatar: m.avatar, sidekick: m.sidekick }),
       el("span", { class: "lines" }, el("strong", {}, m.name, me ? el("span", { class: "fine", text: " · you" }) : null, m.is_agent ? el("span", { class: "flag-pill warn", text: "AI" }) : null), el("small", { text: m.handle ? `@${m.handle}` : m.is_guest ? "Guest" : "" })),
       !me && m.handle ? el("button", { class: "btn-outline sm", type: "button", text: "Message", onclick: async (e) => { closeDrawers(); await startDm(m.handle, "people-dm-error", e.currentTarget); } }) : null);
   }));
@@ -1053,7 +1131,7 @@ $("composer").addEventListener("submit", async (e) => {
   const text = composer.value.trim();
   if (!text || !current) return;
   composer.value = ""; fitComposer();
-  $("transcript").append(el("div", { class: "msg pending" }, avatarEl(profile?.display_name || "You", { color: profile?.color, avatar: profile?.avatar }), el("div", {}, el("div", { class: "body", text }))));
+  $("transcript").append(el("div", { class: "msg pending" }, avatarEl(profile?.display_name || "You", { color: profile?.color, avatar: profile?.avatar, sidekick: profile?.sidekick }), el("div", {}, el("div", { class: "body", text }))));
   $("transcript").scrollTop = $("transcript").scrollHeight;
   try {
     await invoke("send_message", { channel: current, text });
@@ -1235,6 +1313,14 @@ const KIND_OF_DESK = { collections: "Collections", files: "Files", tasks: "Tasks
 // answers desk questions from their records. It never sends anything anywhere.
 
 const STOP = new Set("the a an and or of to in on for with is are was were be what who when where which how much many my our your me i we you it this that there any all do does did have has from about show find tell please status check update latest new give list".split(" "));
+function paintAskHead() {
+  const sk = profile?.sidekick;
+  $("ask-mark").replaceChildren(sk ? sidekickEl(sk, "head") : icon("sparkle"));
+  $("ask-mark").classList.toggle("has-sk", !!sk);
+  $("ask-name").textContent = sk ? sk.name : "Assistant";
+  $("tool-ask").replaceChildren(sk ? sidekickEl(sk, "tool") : icon("sparkle"));
+  $("tool-ask").title = sk ? `${sk.name}, your sidekick (Ctrl J)` : "Ask (Ctrl J)";
+}
 function openAsk(on = true) {
   if (on && thread) closeThread();
   if (on) { drawer = null; paintDrawers(); }
@@ -1243,6 +1329,7 @@ function openAsk(on = true) {
   syncDock();
   document.querySelector(".main")?.classList.toggle("with-ask", on);
   if (!on) return;
+  paintAskHead();
   const sp = view === "space" ? currentSpace : null;
   $("ask-scope").textContent = sp ? `In ${sp.name}` : "Your day, on this device";
   if (!$("ask-log").children.length) {
@@ -2059,7 +2146,7 @@ async function renderHomeToday() {
     : [el("button", { class: "today-row empty", type: "button", onclick: () => openAgenda(), text: "Nothing on today. Plan something" })]));
   const chats = channels.filter((c) => c.kind === "dm").sort((a, b) => (b.last_ts || 0) - (a.last_ts || 0)).slice(0, 3);
   $("today-chats").replaceChildren(...(chats.length ? chats.map((c) => el("button", { class: "today-row", type: "button", onclick: () => openChannel(c.id).then(() => composer.focus()) },
-    avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, size: "sm" }), el("strong", { text: c.name }), el("small", { text: c.unread ? "New" : c.last_ts ? sinceFmt(c.last_ts) : "" })))
+    avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick, size: "sm" }), el("strong", { text: c.name }), el("small", { text: c.unread ? "New" : c.last_ts ? sinceFmt(c.last_ts) : "" })))
     : [el("button", { class: "today-row empty", type: "button", onclick: () => $("new-dm").click(), text: "No chats yet. Message someone" })]));
   $("today-notes").replaceChildren(...(recent.length ? recent.map((p) => el("button", { class: "today-row", type: "button", onclick: () => openNotes(p.id) },
     el("span", { class: "note-emoji", text: p.icon || "📝" }), el("strong", { text: p.title || "Untitled" }), el("small", { text: sinceFmt(p.updated || 0) })))
@@ -2299,7 +2386,7 @@ async function renderSpaceOverview() {
   try {
     const members = await invoke("space_members", { space: sp.id });
     if (currentSpace !== sp) return;
-    $("ov-people").replaceChildren(...members.map((m) => el("div", { class: "ov-person" }, avatarEl(m.name, { color: m.color, avatar: m.avatar, size: "sm" }),
+    $("ov-people").replaceChildren(...members.map((m) => el("div", { class: "ov-person" }, avatarEl(m.name, { color: m.color, avatar: m.avatar, sidekick: m.sidekick, size: "sm" }),
       el("span", { class: "lines" }, el("span", { text: m.name }), el("small", { text: m.handle ? `@${m.handle}` : "" })))),
       el("button", { class: "link", type: "button", text: "Invite people", onclick: openInvite }));
   } catch { $("ov-people").replaceChildren(el("p", { class: "fine", text: "Couldn't load people." })); }
@@ -2375,7 +2462,7 @@ async function runSearch() {
   }
   if (msgs.length) {
     rows.push(el("div", { class: "sr-group", text: "Messages" }));
-    for (const h of msgs) rows.push(item(h.by === "You" ? avatarEl(profile?.display_name || "You", { color: profile?.color, avatar: profile?.avatar, size: "sm" }) : avatarEl(h.by, { size: "sm" }), [el("small", { text: `${h.by} · ${shortDate.format(h.ts_ms)}` }), el("span", {}, ...highlight(h.text, q))], whereOf(channels.find((c) => c.id === h.channel)), () => goTo(h.channel)));
+    for (const h of msgs) rows.push(item(h.by === "You" ? avatarEl(profile?.display_name || "You", { color: profile?.color, avatar: profile?.avatar, sidekick: profile?.sidekick, size: "sm" }) : avatarEl(h.by, { size: "sm" }), [el("small", { text: `${h.by} · ${shortDate.format(h.ts_ms)}` }), el("span", {}, ...highlight(h.text, q))], whereOf(channels.find((c) => c.id === h.channel)), () => goTo(h.channel)));
   }
   if (!rows.length) rows.push(el("p", { class: "sr-empty", text: `Nothing matches "${q}". Search covers what this device can decrypt; the server can't search it for you.` }));
   box.replaceChildren(...rows);
@@ -2565,7 +2652,7 @@ function renderNotes(all) {
   if (!all.length) cards.push(el("p", { class: "note-text", text: "Add invoices and this column tells you what needs you: what's late, what's due, what's still a draft." }));
   cards.push(el("p", { class: "fine", text: "These notes are worked out on this device from the desk's records. The desk agent comes with the Company Brain." }));
   // The desk's conversation and its log of who did what.
-  const acts = desk.messages.slice(-30).map((m) => el("div", { class: "act" }, avatarEl(m.sender, m.mine ? { color: profile?.color, avatar: profile?.avatar, size: "sm" } : { size: "sm" }),
+  const acts = desk.messages.slice(-30).map((m) => el("div", { class: "act" }, avatarEl(m.sender, m.mine ? { color: profile?.color, avatar: profile?.avatar, sidekick: profile?.sidekick, size: "sm" } : { size: "sm" }),
     el("div", {}, el("strong", { text: m.sender }), el("time", { text: timeFmt.format(m.ts_ms) }), el("p", { text: m.text }))));
   if (acts.length) cards.push(el("div", { class: "activity" }, el("p", { class: "block-label", text: "Activity" }), ...acts));
   $("notes-feed").replaceChildren(...cards);
@@ -3670,21 +3757,28 @@ function loadProfile() {
   $("p-name").value = edit.display_name; $("p-user").value = edit.username;
   $("p-tag").textContent = `#${String(edit.tag).padStart(4, "0")}`;
   mountPickers($("p-avatar"), $("p-color"), () => edit, (c) => { Object.assign(edit, c); paintProfile(); });
+  edit.sidekick = profile.sidekick ? { ...profile.sidekick } : null;
+  $("ps-name").value = edit.sidekick?.name || "";
+  const skDraft = () => edit.sidekick || (edit.sidekick = defaultSidekick(edit));
+  mountSidekickPicker("ps-", skDraft, (c) => { Object.assign(skDraft(), c); if (!$("ps-name").value) $("ps-name").value = skDraft().name; paintProfile(); });
   paintProfile();
   show("p-saved", false); setError("p-error", "");
 }
 function paintProfile() {
   edit.display_name = $("p-name").value; edit.username = $("p-user").value.toLowerCase();
   syncPickers($("p-avatar"), $("p-color"), edit);
-  paintCard("p-", edit);
+  if (edit.sidekick) { edit.sidekick.name = $("ps-name").value; syncSidekickPicker("ps-", edit.sidekick); }
+  paintCard("p-", { ...edit, sidekick: edit.sidekick?.name?.trim() ? edit.sidekick : null });
 }
 $("p-name").addEventListener("input", paintProfile);
 $("p-user").addEventListener("input", paintProfile);
+$("ps-name").addEventListener("input", () => { if (!edit.sidekick && $("ps-name").value) edit.sidekick = { ...defaultSidekick(edit), name: $("ps-name").value }; paintProfile(); });
 $("profile-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   setError("p-error", "");
   try {
-    profile = await invoke("update_profile", { update: { display_name: edit.display_name.trim(), username: edit.username.trim(), color: edit.color, avatar: edit.avatar || "" } });
+    profile = await invoke("update_profile", { update: { display_name: edit.display_name.trim(), username: edit.username.trim(), color: edit.color, avatar: edit.avatar || "",
+      sidekick: edit.sidekick?.name?.trim() ? { name: edit.sidekick.name.trim(), look: edit.sidekick.look } : profile.sidekick ? { name: "", look: "" } : undefined } });
     loadProfile(); paintMe(); show("p-saved");
   } catch (err) { setError("p-error", String(err)); }
 });
