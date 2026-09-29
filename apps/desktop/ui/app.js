@@ -516,7 +516,7 @@ function belongsHere(c) {
   return view === "home" ? c.kind === "dm" : view === "space" && c.kind === "channel" && c.space === currentSpace?.id;
 }
 function hideMain() {
-  for (const v of ["view-start", "view-convo", "view-space-empty", "view-desk", "view-drive", "view-settings", "view-agenda", "view-notes", "view-board"]) show(v, false);
+  for (const v of ["view-start", "view-convo", "view-space-empty", "view-desk", "view-drive", "view-settings", "view-agenda", "view-notes", "view-board", "view-spaceset"]) show(v, false);
   show("view-desks", false);
 }
 function showStart() {
@@ -876,6 +876,7 @@ function sectionNow() {
   const cur = channels.find((c) => c.id === current);
   if (!cur && chatsHint && (view === "home" || view === "space")) return "chats";
   if (!$("view-desks").hidden) return "desks";
+  if (!$("view-spaceset").hidden) return "spaceset";
   if (!$("view-agenda").hidden) return "agenda";
   if (!$("view-notes").hidden) return note?.file ? "files" : notesState.shared ? "desks" : "notes";
   if (!cur) return "overview";
@@ -897,9 +898,13 @@ function renderFolders() {
       : [{ key: "overview", label: "Overview", icon: "home" }, { key: "chats", label: "Channels", icon: "chat", dot: unread }, { key: "files", label: "Files", icon: "folder" }, { key: "desks", label: "Desks", icon: "receipt", n: [...deskNeeds.entries()].filter(([id]) => channels.find((c) => c.id === id)?.space === currentSpace?.id).reduce((a, [, n]) => a + n, 0) }];
     folders = folders.map((f) => ({ ...f, active: f.key === now, go: () => openSection(f.key) }));
   }
-  $("folder-tabs").replaceChildren(...folders.map((f) => el("button", { class: `folder${f.active ? " active" : ""}`, type: "button", role: "tab", "aria-selected": String(!!f.active), onclick: f.go },
-    f.icon ? icon(f.icon) : null, el("span", { text: f.label }),
-    f.n ? el("span", { class: "tab-badge warn", text: String(f.n) }) : f.dot ? el("span", { class: "unread-dot", "aria-label": "unread" }) : null)));
+  const item = (f) => el("button", { class: `section${f.active ? " active" : ""}`, type: "button", role: "tab", "aria-selected": String(!!f.active), title: f.label, onclick: f.go },
+    f.icon ? el("span", { class: "section-icon" }, icon(f.icon), f.n ? el("span", { class: "tab-badge warn", text: String(f.n) }) : f.dot ? el("span", { class: "unread-dot", "aria-label": "unread" }) : null) : null,
+    el("span", { class: "section-label", text: f.label }));
+  $("folder-tabs").replaceChildren(...folders.map(item));
+  // A space's own settings sit at the foot of its sections.
+  $("section-foot").replaceChildren(...(view === "space" && currentSpace ? [item({ key: "spaceset", label: "Settings", icon: "settings", active: sectionNow() === "spaceset", go: openSpaceSettings })] : []));
+  $("sections").classList.toggle("pages", view === "settings");
   paintSide();
   show("tab-list", view !== "settings");
   show("tools", view !== "settings");
@@ -949,7 +954,7 @@ $("desks-new").addEventListener("click", () => openNewDesk());
 // ---------- drawers: chats and people pop over from the left ----------
 
 let drawer = null; // "chats" | "people" | "notifs" | "spaceset" | null
-const RIGHT_PANELS = ["people", "notifs", "spaceset"];
+const RIGHT_PANELS = ["people", "notifs"];
 let pinned = readStore("anarchy.chatsPinned", true);
 function toggleDrawer(name, force) {
   const open = force ?? drawer !== name;
@@ -960,7 +965,6 @@ function toggleDrawer(name, force) {
   paintDrawers();
   if (open && name === "people") renderPeopleDrawer();
   if (open && name === "notifs") renderNotifs();
-  if (open && name === "spaceset") renderSpaceSettings();
 }
 function closeDrawers() { drawer = null; paintDrawers(); }
 function paintDrawers() {
@@ -969,7 +973,6 @@ function paintDrawers() {
   const chatsOn = chatSection && (pinned || drawer === "chats");
   show("drawer-chats", chatsOn);
   for (const n of RIGHT_PANELS) { show(`drawer-${n}`, drawer === n); $(`tool-${n}`).setAttribute("aria-expanded", String(drawer === n)); }
-  show("tool-spaceset", view === "space" && !!currentSpace);
   syncDock();
   $("workspace").classList.toggle("chats-pinned", pinned);
   $("drawer-chats").classList.toggle("pinned", pinned);
@@ -996,7 +999,6 @@ $("tool-chats").addEventListener("click", () => {
 });
 $("tool-people").addEventListener("click", () => toggleDrawer("people"));
 $("tool-notifs").addEventListener("click", () => toggleDrawer("notifs"));
-$("tool-spaceset").addEventListener("click", () => toggleDrawer("spaceset"));
 for (const b of document.querySelectorAll(".drawer-pin")) b.addEventListener("click", () => { pinned = !pinned; writeStore("anarchy.chatsPinned", pinned); if (!pinned) drawer = null; paintDrawers(); });
 // Picking something in a pop-over closes it; clicking the canvas does too.
 $("drawer-chats").addEventListener("click", (e) => { if (!pinned && e.target.closest(".side-item")) setTimeout(closeDrawers, 0); });
@@ -3574,10 +3576,18 @@ const INTEGRATIONS = [
   { name: "Stripe", color: "#635bff", mark: "S", text: "Card payments on pay links, marked paid automatically. Needs the space's own Stripe account." },
   { name: "Mail", color: "#c2410c", mark: "@", text: "Send desk reminders from your own address (IMAP/SMTP, then Gmail and Microsoft)." },
 ];
+function openSpaceSettings() {
+  if (thread) closeThread();
+  current = null; invoke("blur");
+  closeDrawers();
+  hideMain(); show("view-spaceset");
+  renderSpaceSettings(); renderFolders(); renderTabs();
+}
 async function renderSpaceSettings() {
   const sp = currentSpace;
   if (!sp) return;
   const owner = sp.role === "owner";
+  $("ss-title").textContent = `${sp.name} settings`;
   $("ss-name").value = sp.name;
   $("ss-name").disabled = !owner; $("ss-save").hidden = !owner;
   show("ss-saved", false); setError("ss-error", "");
@@ -3608,7 +3618,6 @@ $("ss-leave").addEventListener("click", async () => {
   try {
     await invoke("leave_space", { space: sp.id });
     spaces = await invoke("spaces");
-    closeDrawers();
     renderRail(); go("home"); refreshChannels();
   } catch (err) { setError("ss-error", String(err)); }
 });

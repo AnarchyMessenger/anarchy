@@ -1076,3 +1076,33 @@ svg.i.flip { transform: scaleX(-1); }
 .navseg.desk-views .n { font-size: 11px; font-weight: 700; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; display: inline-grid; place-items: center; background: var(--public, #b7791f); color: #fff; }
 .sub-head .search.pill { width: 200px; }
 #fm-add { justify-self: start; width: auto; }
+
+/* ---------- sections on the left, the working set on top (D30) ---------- */
+.workspace { grid-template-columns: auto minmax(0, 1fr) 48px; grid-template-areas: "sections folders tools" "sections main tools"; }
+.workspace.no-tools { grid-template-columns: auto minmax(0, 1fr) 0; }
+.workspace > .sections { grid-area: sections; }
+.sections { display: flex; flex-direction: column; align-items: stretch; width: 68px; padding: 8px 6px; gap: 4px; background: color-mix(in srgb, var(--ink) 7%, var(--surface-sunken)); border-right: 1px solid var(--border); border-radius: var(--radius-lg) 0 0 var(--radius-lg); overflow-y: auto; }
+.sections .spacer { flex: 1; }
+.section-list { display: grid; gap: 2px; }
+.section { display: grid; justify-items: center; gap: 3px; padding: 7px 2px 6px; border: 0; border-radius: 10px; background: transparent; color: var(--ink-muted); font: inherit; font-size: 10.5px; font-weight: 560; letter-spacing: .01em; cursor: pointer; }
+.section:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink); }
+.section-icon { position: relative; display: grid; place-items: center; width: 34px; height: 28px; border-radius: 8px; }
+.section-icon svg.i { width: 17px; height: 17px; }
+.section.active { color: var(--ink); }
+.section.active .section-icon { background: var(--surface); box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgb(26 24 20 / .08); }
+.section-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.section-icon .tab-badge { position: absolute; top: -4px; right: -6px; min-width: 16px; height: 16px; font-size: 10px; padding: 0 4px; }
+.section-icon .unread-dot { position: absolute; top: 2px; right: 3px; margin: 0; }
+/* Settings: the pages are words, so the strip gets wider. */
+.sections.pages { width: 200px; padding: 12px 8px; }
+.sections.pages .section { justify-items: start; padding: 8px 10px; font-size: 13px; font-weight: 540; }
+.sections.pages .section.active { background: var(--surface); box-shadow: 0 0 0 1px var(--border); }
+/* The top row is only the working set now. */
+.folders { border-radius: 0; align-items: center; gap: 8px; }
+.workspace.no-tools > .folders { border-radius: 0 var(--radius-lg) 0 0; }
+.folders .tab-list { flex: 1; height: 30px; }
+.spaceset-page { overflow-y: auto; padding: 28px 32px; }
+.spaceset-page > * { max-width: 560px; }
+.spaceset-page .spaceset { padding: 0; }
+.spaceset-page .page-title { margin: 0 0 6px; }
+.spaceset-page .page-sub { margin: 0 0 22px; }

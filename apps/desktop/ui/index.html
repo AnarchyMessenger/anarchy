@@ -283,13 +283,16 @@
         <button class="tool-btn" id="tool-people" type="button" title="People" aria-label="People" aria-expanded="false"><svg class="i"><use href="#i-users"/></svg></button>
         <button class="tool-btn ask-btn" id="tool-ask" data-ask type="button" title="Ask (Ctrl J)" aria-label="Ask" aria-expanded="false"><svg class="i"><use href="#i-sparkle"/></svg></button>
         <button class="tool-btn" id="tool-notifs" type="button" title="Notifications" aria-label="Notifications" aria-expanded="false"><svg class="i"><use href="#i-bell"/></svg><span class="tool-dot" id="notif-dot" hidden></span></button>
-        <span class="spacer"></span>
-        <button class="tool-btn" id="tool-spaceset" type="button" title="Space settings" aria-label="Space settings" aria-expanded="false" hidden><svg class="i"><use href="#i-settings"/></svg></button>
       </nav>
-      <!-- Folders: the space's sections, then what's open right now (the working set). -->
+      <!-- Sections of the space (or Home, or settings pages), on the left. -->
+      <nav class="sections" id="sections" aria-label="Sections">
+        <div class="section-list" id="folder-tabs" role="tablist" aria-orientation="vertical"></div>
+        <span class="spacer"></span>
+        <div class="section-list" id="section-foot"></div>
+      </nav>
+      <!-- The working set: what's open right now, as tabs. -->
       <div class="folders" id="tabs">
         <button class="icon-btn side-toggle" id="tool-chats" type="button" title="Show the sidebar (Ctrl \)" aria-label="Sidebar" aria-expanded="false"><svg class="i"><use href="#i-sidebar"/></svg><span class="tool-dot" id="tool-chats-dot" hidden></span></button>
-        <div class="folder-tabs" id="folder-tabs" role="tablist" aria-label="Sections"></div>
         <div class="tab-list" id="tab-list" role="tablist" aria-label="Open"></div>
       </div>
       <!-- Main -->
@@ -319,22 +322,7 @@
           <div class="notif-list" id="notif-list"></div>
           <p class="fine notif-foot">Reminders are worked out on this device from your agenda, tasks and invoices. Turn desktop alerts on or off in Settings, Notifications.</p>
         </aside>
-        <aside class="drawer rpanel" id="drawer-spaceset" aria-label="Space settings" hidden>
-          <header class="side-head"><h2>Space settings</h2></header>
-          <div class="spaceset" id="spaceset">
-            <form class="stack" id="spaceset-form" novalidate>
-              <label class="field" for="ss-name">Name<input class="text-input" id="ss-name" maxlength="64"></label>
-              <div class="row-actions"><button class="btn-ink inline sm" type="submit" id="ss-save">Rename</button><span class="saved" id="ss-saved" hidden>Saved</span></div>
-              <p class="error" id="ss-error" hidden></p>
-            </form>
-            <dl class="facts-list compact"><div><dt>Kind</dt><dd id="ss-kind"></dd></div><div><dt>You are</dt><dd id="ss-role"></dd></div><div><dt>Members</dt><dd id="ss-members"></dd></div></dl>
-            <p class="block-label">Integrations</p>
-            <div class="integ-list" id="integ-list"></div>
-            <p class="block-label">Leave</p>
-            <button class="btn-outline danger sm" id="ss-leave" type="button">Leave this space</button>
-            <p class="fine">The space, its people and its directory disappear from your account. Channels and desks you're already in keep your devices until a member removes you: leaving an encrypted channel yourself isn't built yet.</p>
-          </div>
-        </aside>
+
         <aside class="drawer rpanel" id="drawer-people" aria-label="People" hidden>
           <header class="side-head"><h2 id="people-title">People</h2><span class="spacer"></span><button class="btn-outline sm" id="space-invite" type="button"><svg class="i"><use href="#i-plus"/></svg><span>Invite</span></button></header>
           <div class="people-list" id="drawer-people-list"></div>
@@ -547,6 +535,24 @@
               <div class="desk-empty" id="time-empty" hidden><svg class="i"><use href="#i-clock2"/></svg><strong>No time tracked yet</strong><p class="fine">Start the timer or add hours by hand. Unbilled hours turn into a draft invoice in one step.</p></div>
             </div>
           </section>
+        </div>
+
+<div class="view spaceset-page" id="view-spaceset" hidden>
+          <h1 class="page-title" id="ss-title">Space settings</h1>
+            <p class="page-sub">Name, members and what this space could connect to.</p>
+          <div class="spaceset" id="spaceset">
+            <form class="stack" id="spaceset-form" novalidate>
+              <label class="field" for="ss-name">Name<input class="text-input" id="ss-name" maxlength="64"></label>
+              <div class="row-actions"><button class="btn-ink inline sm" type="submit" id="ss-save">Rename</button><span class="saved" id="ss-saved" hidden>Saved</span></div>
+              <p class="error" id="ss-error" hidden></p>
+            </form>
+            <dl class="facts-list compact"><div><dt>Kind</dt><dd id="ss-kind"></dd></div><div><dt>You are</dt><dd id="ss-role"></dd></div><div><dt>Members</dt><dd id="ss-members"></dd></div></dl>
+            <p class="block-label">Integrations</p>
+            <div class="integ-list" id="integ-list"></div>
+            <p class="block-label">Leave</p>
+            <button class="btn-outline danger sm" id="ss-leave" type="button">Leave this space</button>
+            <p class="fine">The space, its people and its directory disappear from your account. Channels and desks you're already in keep your devices until a member removes you: leaving an encrypted channel yourself isn't built yet.</p>
+          </div>
         </div>
 
         <!-- Settings pages -->

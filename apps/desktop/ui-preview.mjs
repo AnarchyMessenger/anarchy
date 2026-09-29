@@ -321,19 +321,19 @@ const visible = (sel) => page.waitForSelector(`${sel}:not([hidden])`, { timeout:
 async function pick(list, name) {
   // The list lives in the Chats / Channels section only.
   if (await page.isHidden("#drawer-chats")) {
-    if (await page.isHidden("#tool-chats")) await page.click('.folder >> text=/^(Channels|Chats)/');
+    if (await page.isHidden("#tool-chats")) await page.click('.section >> text=/^(Channels|Chats)$/');
     if (await page.isHidden("#drawer-chats")) await page.click("#tool-chats");
   }
   await page.click(`${list} .side-item >> text="${name}"`);
 }
 async function openCollections() {
-  await page.click('.folder >> text=/^Desks/');
+  await page.click('.section >> text=/^Desks$/');
   await page.waitForTimeout(150);
-  if (await page.isHidden("#view-desks") && await page.isHidden("#view-desk")) { await page.click('.folder >> text=/^Desks/'); await page.waitForTimeout(150); }
+  if (await page.isHidden("#view-desks") && await page.isHidden("#view-desk")) { await page.click('.section >> text=/^Desks$/'); await page.waitForTimeout(150); }
   if (!(await page.isHidden("#view-desks"))) await page.click('#desks-grid .ov-desk >> text="Collections"');
   await page.waitForSelector("#view-desk:not([hidden])", { timeout: 5000 });
 }
-const folder = (label) => page.click(`.folder >> text="${label}"`);
+const folder = (label) => page.click(`.section >> text="${label}"`);
 
 // Sign-up and onboarding.
 await visible("#s-account");
@@ -662,10 +662,9 @@ await page.click("#tool-notifs");
 await visible("#drawer-notifs");
 await page.waitForTimeout(200);
 await shot("13x-notifications");
-await page.click("#tool-spaceset");
-await visible("#drawer-spaceset");
+await page.click('#section-foot .section');
+await visible("#view-spaceset");
 await shot("13y-space-settings");
-await page.click("#tool-spaceset");
 await folder("Overview");
 await page.click("#rail-me");
 await shot("13m-me-popover");
