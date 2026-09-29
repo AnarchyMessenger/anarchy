@@ -52,6 +52,14 @@ Sign up with Google, email or anonymously, then say what it's for, lock the devi
 |---|---|
 | ![People](docs/screens/people.png) | ![Desks](docs/screens/desks.png) |
 
+| Agenda (yours only) | Notes, block editor |
+|---|---|
+| ![Agenda](docs/screens/agenda.png) | ![Notes](docs/screens/notes.png) |
+
+| A drive file in the editor | Today's brief, docked |
+|---|---|
+| ![Drive file in the editor](docs/screens/drive-edit.png) | ![Assistant](docs/screens/ask.png) |
+
 | A space's channel | Privacy |
 |---|---|
 | ![Channel in a space](docs/screens/space-channel.png) | ![Privacy settings](docs/screens/privacy.png) |
@@ -79,6 +87,10 @@ The client's payment page (above, and after "Mark as paid" below) is the real se
 A thread in the real app: the reply went through the channel's MLS group like any message, and the thread joined the tabs because Maya replied in it.
 
 ![Real app, thread](docs/screens/real-app-thread.png)
+
+A page written in the real app, in a personal channel on a real server that holds none of its text:
+
+![Real app, notes](docs/screens/real-app-notes.png)
 
 And search in the real app (`Ctrl K`), over what this device decrypted:
 

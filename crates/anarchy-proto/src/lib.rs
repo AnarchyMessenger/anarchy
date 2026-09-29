@@ -226,6 +226,8 @@ pub struct DmStarted {
 pub enum ChannelKind {
     Channel,
     Dm,
+    /// One person's own records, synced between their devices.
+    Personal,
 }
 
 /// `GET /v1/channels`: routing facts about the caller's channels. Names and
@@ -328,6 +330,10 @@ pub struct CreateChannel {
     /// The space it belongs to. On a company server, `None` means the default space.
     #[serde(default)]
     pub space: Option<SpaceId>,
+    /// A personal channel: only the creator's own devices, in no space
+    /// (their agenda, their notes).
+    #[serde(default)]
+    pub personal: bool,
 }
 
 /// `GET /v1/channels/{channel}/members`

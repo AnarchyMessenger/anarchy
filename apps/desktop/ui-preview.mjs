@@ -69,6 +69,28 @@ const mock = (startLocked) => {
     ] },
   ];
   channels.push({ id: "f1", kind: "channel", space: "sp1", desk: "files", name: "Files", topic: "", trust: "company", unread: false, messages: [] });
+  channels.push({ id: "pa", kind: "personal", space: null, desk: "agenda", name: "Agenda", topic: "", trust: "sealed", unread: false, messages: [] });
+  channels.push({ id: "pn", kind: "personal", space: null, desk: "notes", name: "Notes", topic: "", trust: "sealed", unread: false, messages: [] });
+  const dayIso = (k) => { const d = new Date(now + k * 864e5); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const ev = (id, k, title, start, end, color, where = "") => ({ id, kind: "event", data: { title, date: dayIso(k), start, end, all_day: !start, color, where }, seq: 1, updated_ms: now });
+  const agendaItems = [
+    ev("e1", 0, "Acme deck review", "10:00", "11:00", "ember", "Google Meet"), ev("e2", 0, "Coffee with Amélie", "15:30", "16:00", "plum", "Café Lomi"),
+    ev("e3", 1, "Invoice run", "09:00", "09:30", "ink"), ev("e4", 2, "Design sync", "14:00", "15:00", "ocean"), ev("e5", 3, "Climbing", "18:30", "20:30", "spring"),
+    ev("e6", -2, "Dentist", "08:30", "09:00", "ink"), ev("e7", 6, "Ava's birthday", "", "", "plum"), ev("e8", 9, "Quarterly review", "11:30", "12:30", "ember"), ev("e9", -6, "Portfolio shoot", "13:00", "17:00", "ocean"),
+  ];
+  const page = (id, title, icon, blocks, ago) => ({ id, kind: "page", data: { title, icon, blocks, updated: now - ago * 60_000 }, seq: 1, updated_ms: now });
+  const noteItems = [
+    page("n1", "Acme rebrand, direction 2", "🎯", [
+      { id: "a", type: "p", text: "Warmer, less corporate. Keep the serif for headlines only." },
+      { id: "b", type: "h2", text: "Decisions" },
+      { id: "c", type: "bullet", text: "Serif headlines, sans body" }, { id: "d", type: "bullet", text: "Ember as the accent, used sparingly" },
+      { id: "e", type: "h2", text: "To do" },
+      { id: "f", type: "todo", text: "Export both weights to the drive", checked: true }, { id: "g", type: "todo", text: "Mock the deck cover", checked: false }, { id: "h", type: "todo", text: "Send the invoice after sign-off", checked: false },
+      { id: "i", type: "quote", text: "The logo should feel like a signature, not a stamp." },
+    ], 40),
+    page("n2", "Pricing ideas for 2027", "💡", [{ id: "a", type: "p", text: "Day rate vs. project pricing." }], 60 * 26),
+    page("n3", "Reading list", "📚", [{ id: "a", type: "bullet", text: "Shape Up" }], 60 * 24 * 5),
+  ];
   const fk = (size) => ({ key: "k", nonce: "n", sha256: "s", size });
   const file = (id, name, folder, size, mime, by, daysAgo) => ({ id, kind: "file", seq: 1, updated_ms: now, data: { name, folder, mime, by, added: now - daysAgo * 864e5, file_key: fk(size), chunks: [] } });
   let driveItems = [
@@ -180,7 +202,9 @@ const mock = (startLocked) => {
     send_message: async ({ channel, text, thread }) => { await wait(120); channels.find((x) => x.id === channel).messages.push({ sender: "ME", ts: Date.now(), text, thread: thread ?? null }); },
     create_channel: async ({ space, name, topic, trust }) => { const id = `c${channels.length + 1}`; channels.push({ id, kind: "channel", space, name: name.trim().toLowerCase().replace(/\s+/g, "-"), topic, trust, unread: false, messages: [] }); return id; },
     create_desk: async ({ space, name }) => { const id = `k${channels.length + 1}`; channels.push({ id, kind: "channel", space, desk: "collections", name, trust: "company", unread: false, messages: [] }); return id; },
-    desk_items: async ({ channel }) => (channel === "k1" ? items : channel === "f1" ? driveItems : []),
+    desk_items: async ({ channel }) => (channel === "k1" ? items : channel === "f1" ? driveItems : channel === "pa" ? agendaItems : channel === "pn" ? noteItems : []),
+    ensure_personal: async ({ kind }) => (kind === "agenda" ? "pa" : "pn"),
+    save_text_file: async () => { await wait(80); },
     ensure_drive: async () => "f1",
     pick_and_upload: async ({ folder }) => { driveItems.push(file(`x${driveItems.length + 10}`, "Q4 plan.pdf", folder, 540_000, "application/pdf", me(), 0)); return ["Q4 plan.pdf"]; },
     upload_dropped: async () => [],
@@ -194,7 +218,7 @@ const mock = (startLocked) => {
       }
       return { kind: "none", data: "" };
     },
-    put_items: async ({ items: put }) => { for (const r of put) { const at = items.findIndex((i) => i.id === r.id); const item = { ...r, seq: 99, updated_ms: Date.now() }; if (at >= 0) items[at] = item; else items.unshift(item); } },
+    put_items: async ({ channel, items: put }) => { const list = channel === "pa" ? agendaItems : channel === "pn" ? noteItems : items; for (const r of put) { const at = list.findIndex((i) => i.id === r.id); const item = { ...r, seq: 99, updated_ms: Date.now() }; if (at >= 0) list[at] = item; else list.unshift(item); } },
     pay_links: async () => payLinks,
     create_pay_link: async () => { const id = `L${payLinks.length + 1}`; payLinks.push({ id, expires_at_ms: now + 90 * 864e5, revoked: false, views: 0, last_viewed_at_ms: null, claimed_paid_at_ms: null }); return { id, url: `https://chat.studiochen.fr/p/${id}#k3y` }; },
     update_pay_link: async () => {},
@@ -305,16 +329,54 @@ await visible("#app");
 
 // Home and DMs.
 await visible("#view-start");
+await page.waitForTimeout(250);
 await shot("08-home");
+await folder("Agenda");
+await visible("#view-agenda");
+await page.waitForTimeout(200);
+await shot("08b-agenda-month");
+await page.click('.agenda-mode button[data-mode="week"]');
+await shot("08c-agenda-week");
+await page.click('.agenda-mode button[data-mode="month"]');
+await page.click("#event-new");
+await page.fill("#ev-title", "Call with Northwind");
+await shot("08d-new-event");
+await page.click("#event-cancel");
+await folder("Notes");
+await visible("#view-notes");
+await page.waitForTimeout(200);
+await shot("08e-notes-page");
+await page.click("#note-new");
+await page.keyboard.type("Trip to Lisbon");
+await page.keyboard.press("Enter");
+await page.keyboard.type("/");
+await visible("#slash-pop");
+await shot("08f-notes-slash");
+await page.keyboard.press("ArrowDown");
+await page.keyboard.press("Enter");
+await page.keyboard.type("Before we go");
+await page.keyboard.press("Enter");
+await page.keyboard.type("[] ");
+await page.keyboard.type("Book the flat");
+await page.keyboard.press("Enter");
+await page.keyboard.type("Pack the camera");
+await page.waitForTimeout(900);
+await shot("08g-notes-typed");
+await page.click("#tool-ask");
+await page.click("#ask-brief");
+await page.waitForTimeout(300);
+await shot("08h-todays-brief-docked");
+await page.click("#ask-close");
+await folder("Overview");
 await page.fill("#start-dm", "tomas#1881");
 await page.press("#start-dm", "Enter");
 await visible("#view-convo");
 await shot("09-dm");
-await page.click("#side-home .drawer-pin");
+await page.click("#tool-chats");
 await page.click("#tool-chats");
 await page.waitForTimeout(200);
 await shot("09b-sidebar-popover");
-await page.click("#side-home .drawer-pin");
+await page.click("#drawer-chats .drawer-pin");
 await page.click('.dm-item >> text="Léa Martin"');
 await shot("10-dm-empty");
 await page.click("#tool-people");
@@ -346,6 +408,13 @@ await page.click('#drive-rows tr >> text="Clients"');
 await page.click('#drive-rows tr >> text="Acme"');
 await shot("12d-drive-folder");
 await page.click('#drive-crumbs button >> text="Files"');
+await page.click('#drive-rows tr >> text="Kickoff notes.md"');
+await visible("#preview-edit");
+await page.click("#preview-edit");
+await visible("#view-notes");
+await page.waitForTimeout(200);
+await shot("12g-drive-file-in-editor");
+await folder("Files");
 await page.click('#drive-rows tr >> text="moodboard-direction-2.png"');
 await visible("#preview-body img");
 await shot("12e-drive-preview");
@@ -412,11 +481,11 @@ await page.press("#thread-input", "Enter");
 await page.waitForTimeout(300);
 await shot("13o-thread");
 await page.click("#thread-close");
-await page.click("#side-space .drawer-pin");
+await page.click("#tool-chats");
 await page.waitForTimeout(150);
 await shot("13p-sidebar-collapsed");
 await page.click("#tool-chats");
-await page.click("#side-space .drawer-pin");
+await page.click("#drawer-chats .drawer-pin");
 await page.click("#tool-people");
 await page.waitForTimeout(300);
 await shot("13q-people-space");

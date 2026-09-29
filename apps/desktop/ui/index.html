@@ -55,6 +55,8 @@
   <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 4h6l-1 6 3 3v1H7v-1l3-3z"/><path d="M12 14v6"/></symbol>
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/></symbol>
   <symbol id="i-apps" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="5" cy="5" r="1.9"/><circle cx="12" cy="5" r="1.9"/><circle cx="19" cy="5" r="1.9"/><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/><circle cx="5" cy="19" r="1.9"/><circle cx="12" cy="19" r="1.9"/><circle cx="19" cy="19" r="1.9"/></g></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-note" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8.5 7 10 4-1.5 7-5.5 7-10V6z"/></symbol>
   <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
@@ -224,7 +226,7 @@
             <input class="text-input" id="card-name" maxlength="64" autocomplete="name"></label>
           <label class="field" for="card-user">Username
             <span class="handle-input"><span class="at">@</span><input class="text-input mono" id="card-user" maxlength="32" autocomplete="username" spellcheck="false"><span class="tagnum mono" id="card-tag">#0000</span></span></label>
-          <p class="fine">The number keeps two people called <span class="mono">maya</span> apart. It stays when you rename, if it's free.</p>
+          <p class="fine">The number keeps two people called <span class="mono" id="card-hint-name">maya</span> apart. It stays when you rename, if it's free.</p>
           <div class="field"><span>Picture</span><div class="avatar-picker" id="avatar-picker" role="radiogroup" aria-label="Picture"></div></div>
           <div class="field"><span>Colour</span><div class="color-picker" id="color-picker" role="radiogroup" aria-label="Colour"></div></div>
           <button class="btn-ink" id="card-save" type="submit">Looks good</button>
@@ -286,18 +288,31 @@
       <!-- Main -->
       <main class="main" id="main">
         <!-- Chats and channels: pops over from the left, or stays when pinned -->
-        <aside class="sidebar drawer" id="drawer-chats" aria-label="Chats and channels" hidden>
-          <!-- Home: chats -->
+        <aside class="sidebar drawer" id="drawer-chats" aria-label="Sidebar" hidden>
+          <!-- Only in pop-over mode: dock it again -->
+          <div class="drawer-top"><span class="fine">Sidebar</span><button class="icon-btn drawer-pin" type="button" title="Keep the sidebar open" aria-label="Keep the sidebar open" aria-pressed="false"><svg class="i"><use href="#i-pin"/></svg></button></div>
+          <!-- Home, Chats: your conversations -->
           <div class="side" id="side-home">
-            <header class="side-head"><h2>Home</h2><button class="icon-btn drawer-pin" type="button" title="Collapse the sidebar" aria-label="Collapse the sidebar" aria-pressed="true"><svg class="i"><use href="#i-sidebar"/></svg></button></header>
-            <div class="side-group"><span>Chats</span><button class="icon-btn sm" id="new-dm" title="New message" aria-label="New message"><svg class="i"><use href="#i-plus"/></svg></button></div>
+            <div class="side-list"><button class="side-item nav" id="new-dm" type="button"><svg class="i"><use href="#i-plus"/></svg><span class="name">New message</span></button></div>
             <div class="side-list" id="dm-list"></div>
             <p class="side-empty" id="no-dms">No conversations yet.</p>
           </div>
-          <!-- Space: channels -->
+          <!-- Home, Notes: your pages -->
+          <div class="side" id="side-notes" hidden>
+            <div class="side-list"><button class="side-item nav" id="note-new" type="button"><svg class="i"><use href="#i-plus"/></svg><span class="name">New page</span></button></div>
+            <label class="search pill side-search"><svg class="i"><use href="#i-search"/></svg><input id="note-search" placeholder="Find a page" aria-label="Find a page"></label>
+            <div class="side-list" id="note-list"></div>
+            <p class="side-empty" id="no-notes">No pages yet.</p>
+          </div>
+          <!-- Home, Agenda: what's coming -->
+          <div class="side" id="side-agenda" hidden>
+            <div class="side-list"><button class="side-item nav" id="event-new-side" type="button"><svg class="i"><use href="#i-plus"/></svg><span class="name">New event</span></button></div>
+            <div class="side-group"><span>Next two weeks</span></div>
+            <div class="side-list" id="agenda-next"></div>
+            <p class="side-empty" id="no-agenda">Nothing planned.</p>
+          </div>
+          <!-- Space: its desks and channels (Overview and Files are folders above) -->
           <div class="side" id="side-space" hidden>
-            <header class="side-head"><span class="space-tile" id="space-tile"></span><h2 id="space-name"></h2><button class="icon-btn drawer-pin" type="button" title="Collapse the sidebar" aria-label="Collapse the sidebar" aria-pressed="true"><svg class="i"><use href="#i-sidebar"/></svg></button></header>
-            <div class="side-list"><button class="side-item nav" id="nav-files" type="button"><svg class="i"><use href="#i-folder"/></svg><span class="name">Files</span></button></div>
             <div class="side-group"><span>Desks</span><button class="icon-btn sm" id="new-desk" aria-label="New desk" title="New desk"><svg class="i"><use href="#i-plus"/></svg></button></div>
             <div class="side-list" id="desk-list"></div>
             <button class="side-empty link-row" id="no-desks" type="button">Set up a desk for invoices, requests or jobs</button>
@@ -328,6 +343,10 @@
               </form>
               <button class="start-card" id="start-create" type="button"><svg class="i"><use href="#i-plus"/></svg><strong>Create a space</strong><small id="start-create-sub">Channels, people and later desks, for one purpose.</small></button>
               <button class="start-card" id="start-join" type="button"><svg class="i"><use href="#i-ticket"/></svg><strong>Join with a code</strong><small>Someone sent you an invite code.</small></button>
+            </div>
+            <div class="home-today" id="home-today">
+              <section class="today-card"><p class="block-label"><svg class="i"><use href="#i-calendar"/></svg>Today</p><div id="today-events"></div></section>
+              <section class="today-card"><p class="block-label"><svg class="i"><use href="#i-note"/></svg>Recent pages</p><div id="today-notes"></div></section>
             </div>
             <div class="home-spaces" id="home-spaces-wrap" hidden><p class="block-label">Your spaces</p><div class="space-grid" id="home-spaces"></div></div>
           </div>
@@ -370,6 +389,32 @@
         </div>
 
         <!-- Drive -->
+        <!-- Agenda: your own calendar, encrypted, on your devices -->
+        <div class="view agenda" id="view-agenda" hidden>
+          <div class="agenda-head">
+            <div><p class="hero-kind" id="agenda-kind">Agenda</p><h1 class="agenda-title" id="agenda-title"></h1></div>
+            <span class="spacer"></span>
+            <div class="seg pill" role="group" aria-label="Move"><button type="button" id="agenda-prev" aria-label="Previous"><svg class="i"><use href="#i-arrow-left"/></svg></button><button type="button" id="agenda-today">Today</button><button type="button" id="agenda-next-btn" aria-label="Next"><svg class="i flip"><use href="#i-arrow-left"/></svg></button></div>
+            <div class="seg pill agenda-mode" role="tablist" aria-label="View"><button type="button" role="tab" data-mode="week">Week</button><button type="button" role="tab" data-mode="month">Month</button></div>
+            <button class="btn-ink inline" id="event-new" type="button"><svg class="i"><use href="#i-plus"/></svg><span>Add event</span></button>
+          </div>
+          <div class="cal-grid" id="cal-grid"></div>
+        </div>
+
+        <!-- Notes: pages with blocks, like a notebook; also edits text files from the drive -->
+        <div class="view notes" id="view-notes" hidden>
+          <div class="note-bar"><nav class="crumbs" id="note-crumbs" aria-label="Where"></nav><span class="spacer"></span><span class="fine" id="note-saved"></span><button class="icon-btn" id="note-delete" type="button" title="Delete page" aria-label="Delete page"><svg class="i"><use href="#i-trash"/></svg></button></div>
+          <div class="note-scroll">
+            <article class="note-page" id="note-page">
+              <button class="note-icon" id="note-icon" type="button" title="Change icon" aria-label="Change icon"></button>
+              <h1 class="note-title" id="note-title" contenteditable="plaintext-only" spellcheck="true" data-placeholder="Untitled"></h1>
+              <div class="note-blocks" id="note-blocks"></div>
+              <p class="note-hint fine">Type <kbd>/</kbd> for headings, lists, to-dos, quotes and code. <kbd>#</kbd>, <kbd>-</kbd>, <kbd>[]</kbd> and <kbd>&gt;</kbd> work too.</p>
+            </article>
+          </div>
+          <div class="slash-pop panel" id="slash-pop" role="listbox" aria-label="Turn into" hidden></div>
+        </div>
+
         <div class="view overview" id="view-desks" hidden>
           <div class="ov-inner">
             <div class="ov-hero"><div><p class="hero-kind" id="desks-kind">Desks</p><h1 class="hero-line" id="desks-headline"></h1></div><div class="row-actions"><button class="btn-ink inline" id="desks-new" type="button"><svg class="i"><use href="#i-plus"/></svg><span>Set up a desk</span></button></div></div>
@@ -546,9 +591,10 @@
           <p class="ask-foot" id="thread-foot">Replies are encrypted like the rest of the conversation, for the same people.</p>
         </aside>
         <aside class="ask" id="ask" aria-label="Ask" hidden>
-          <header class="ask-head"><span class="ask-mark"><svg class="i"><use href="#i-sparkle"/></svg></span><div><strong>Ask</strong><small id="ask-scope"></small></div><span class="spacer"></span><button class="icon-btn" id="ask-close" type="button" title="Close (Esc)" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></header>
+          <header class="ask-head"><span class="ask-mark"><svg class="i"><use href="#i-sparkle"/></svg></span><div><strong>Assistant</strong><small id="ask-scope"></small></div><span class="spacer"></span><button class="icon-btn" id="ask-new" type="button" title="New conversation" aria-label="New conversation"><svg class="i"><use href="#i-plus"/></svg></button><button class="icon-btn" id="ask-close" type="button" title="Close (Esc)" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></header>
           <div class="ask-log" id="ask-log" role="log" aria-live="polite"></div>
-          <form class="ask-composer" id="ask-form"><textarea id="ask-input" rows="2" placeholder="Find anything, or @ a desk…" aria-label="Ask"></textarea><button class="send round" id="ask-send" type="submit" aria-label="Ask" disabled><svg class="i"><use href="#i-send"/></svg></button></form>
+          <div class="chips ask-chips"><button class="chip" type="button" id="ask-brief"><svg class="i"><use href="#i-sparkle"/></svg>Today's brief</button></div>
+          <form class="ask-composer" id="ask-form"><textarea id="ask-input" rows="2" placeholder="Ask about your day, or @ a desk…" aria-label="Ask"></textarea><button class="send round" id="ask-send" type="submit" aria-label="Ask" disabled><svg class="i"><use href="#i-send"/></svg></button></form>
           <p class="ask-foot">No AI model is connected yet. Ask looks through what this device can decrypt, and answers desk questions from their records. Nothing is sent anywhere.</p>
         </aside>
       </main>
@@ -653,6 +699,25 @@
   </form>
 </dialog>
 
+<dialog class="modal panel" id="dlg-event" aria-labelledby="dlg-event-title">
+  <form id="event-form" novalidate>
+    <h2 id="dlg-event-title">New event</h2>
+    <div class="form-grid">
+      <label class="field span2" for="ev-title">Title<input class="text-input" id="ev-title" maxlength="120" autocomplete="off" placeholder="Coffee with Amélie"></label>
+      <label class="field" for="ev-date">Date<input class="text-input" id="ev-date" type="date"></label>
+      <label class="field" for="ev-allday"><span>All day</span><span class="inline-check"><input type="checkbox" id="ev-allday"> No time</span></label>
+      <label class="field" for="ev-start">Starts<input class="text-input" id="ev-start" type="time" value="09:00"></label>
+      <label class="field" for="ev-end">Ends<input class="text-input" id="ev-end" type="time" value="10:00"></label>
+      <label class="field span2" for="ev-where"><span>Where <span class="optional">· optional</span></span><input class="text-input" id="ev-where" maxlength="160" autocomplete="off" placeholder="Café Lomi, or a link"></label>
+      <div class="field span2"><span>Colour</span><div class="ev-colors" id="ev-colors" role="radiogroup" aria-label="Colour"></div></div>
+      <label class="field span2" for="ev-notes"><span>Notes <span class="optional">· optional</span></span><textarea class="text-input" id="ev-notes" rows="3"></textarea></label>
+    </div>
+    <p class="fine">Only your devices can read your agenda.</p>
+    <p class="error" id="event-error" hidden></p>
+    <div class="modal-actions"><button class="btn-outline danger" type="button" id="event-delete" hidden>Delete</button><span class="spacer"></span><button class="btn-outline" type="button" id="event-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="event-save">Save</button></div>
+  </form>
+</dialog>
+
 <dialog class="modal panel" id="dlg-folder" aria-labelledby="dlg-folder-title">
   <form id="folder-form" novalidate>
     <h2 id="dlg-folder-title">New folder</h2>
@@ -665,7 +730,7 @@
 <dialog class="modal panel wide" id="dlg-preview" aria-labelledby="dlg-preview-title">
   <div class="preview-head"><h2 id="dlg-preview-title"></h2><span class="fine" id="preview-meta"></span></div>
   <div class="preview-body" id="preview-body"></div>
-  <div class="modal-actions"><button class="btn-outline" type="button" id="preview-close">Close</button><button class="btn-ink inline" type="button" id="preview-download"><svg class="i"><use href="#i-download"/></svg>Download</button></div>
+  <div class="modal-actions"><button class="btn-outline" type="button" id="preview-close">Close</button><button class="btn-outline" type="button" id="preview-edit" hidden><svg class="i"><use href="#i-pen"/></svg><span>Edit</span></button><button class="btn-ink inline" type="button" id="preview-download"><svg class="i"><use href="#i-download"/></svg>Download</button></div>
 </dialog>
 
 <dialog class="modal panel" id="dlg-dm" aria-labelledby="dlg-dm-title">

@@ -75,6 +75,8 @@ op!(start_dm(handle: String) -> ChannelId);
 op!(search(query: String) -> Vec<ops::SearchHit>);
 op!(space_members(space: SpaceId) -> Vec<ops::PeerView>);
 op!(ensure_drive(space: SpaceId) -> ChannelId);
+op!(ensure_personal(kind: String) -> ChannelId);
+op!(save_text_file(channel: ChannelId, id: String, text: String) -> ());
 op!(preview_file(channel: ChannelId, id: String) -> ops::Preview);
 op!(create_desk(space: Option<SpaceId>, name: String, kind: String) -> ChannelId);
 op!(desk_items(channel: ChannelId) -> Vec<anarchy_core::DeskItem>);
@@ -397,6 +399,8 @@ fn main() {
             search,
             space_members,
             ensure_drive,
+            ensure_personal,
+            save_text_file,
             preview_file,
             pick_and_upload,
             upload_dropped,

@@ -539,23 +539,38 @@ async fn create_channel(
     dev: AuthDevice,
     Json(req): Json<CreateChannel>,
 ) -> ApiResult<StatusCode> {
-    let space = req
-        .space
-        .or(s.default_space)
-        .ok_or_else(|| ApiError::bad_request("say which space the channel is in"))?;
-    accounts::require_space_member(&s.db, space, dev.user_id).await?;
     let mut tx = s.db.begin().await?;
-    let created = sqlx::query(
-        "INSERT INTO channels (id, org_id, created_by_device, space_id) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (id) DO NOTHING",
-    )
-    .bind(req.channel)
-    .bind(dev.org_id)
-    .bind(dev.device_id)
-    .bind(space)
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let created = if req.personal {
+        // Only this person's devices can ever be added (see `append`).
+        sqlx::query(
+            "INSERT INTO channels (id, org_id, created_by_device, kind, dm_a) VALUES ($1, $2, $3, 'personal', $4)
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(req.channel)
+        .bind(dev.org_id)
+        .bind(dev.device_id)
+        .bind(dev.user_id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected()
+    } else {
+        let space = req
+            .space
+            .or(s.default_space)
+            .ok_or_else(|| ApiError::bad_request("say which space the channel is in"))?;
+        accounts::require_space_member(&s.db, space, dev.user_id).await?;
+        sqlx::query(
+            "INSERT INTO channels (id, org_id, created_by_device, space_id) VALUES ($1, $2, $3, $4)
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(req.channel)
+        .bind(dev.org_id)
+        .bind(dev.device_id)
+        .bind(space)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected()
+    };
     if created == 0 {
         return Err(ApiError::conflict("channel already exists"));
     }

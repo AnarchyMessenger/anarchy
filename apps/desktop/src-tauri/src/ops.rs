@@ -550,10 +550,10 @@ pub async fn list_channels(i: &mut Inner) -> Result<Vec<ChannelView>, String> {
         let peer = meta.and_then(|m| m.peer.as_ref()).map(peer_view);
         out.push(ChannelView {
             id,
-            kind: if meta.is_some_and(|m| m.kind == ChannelKind::Dm) {
-                "dm"
-            } else {
-                "channel"
+            kind: match meta.map(|m| &m.kind) {
+                Some(ChannelKind::Dm) => "dm",
+                Some(ChannelKind::Personal) => "personal",
+                _ => "channel",
             },
             space: meta.and_then(|m| m.space),
             desk: client.desk_kind(id).map_err(err)?,
@@ -746,7 +746,7 @@ pub async fn search(i: &mut Inner, query: String) -> Result<Vec<SearchHit>, Stri
         for item in i.client()?.desk_items(channel).map_err(err)? {
             let blob = item.data.to_string().to_lowercase();
             if blob.contains(&q) {
-                let text = ["number", "customer", "name", "folder"]
+                let text = ["number", "customer", "name", "folder", "title", "date"]
                     .iter()
                     .filter_map(|k| item.data.get(*k).and_then(|v| v.as_str()))
                     .collect::<Vec<_>>()
@@ -801,6 +801,46 @@ pub async fn desk_items(i: &mut Inner, channel: ChannelId) -> Result<Vec<DeskIte
 }
 
 // ---------- drive ----------
+
+/// This person's own desk of `kind` (`agenda`, `notes`), made the first time.
+/// Only their devices are in it: nobody else, the server included, can read it.
+pub async fn ensure_personal(i: &mut Inner, kind: String) -> Result<ChannelId, String> {
+    if !matches!(kind.as_str(), "agenda" | "notes") {
+        return Err("Unknown personal desk".into());
+    }
+    let _ = refresh_metas(i).await;
+    let local = i.client()?.device().channels();
+    for id in local {
+        let personal = i.metas.get(&id).is_some_and(|m| m.kind == ChannelKind::Personal);
+        if personal && i.client()?.desk_kind(id).map_err(err)?.as_deref() == Some(kind.as_str()) {
+            return Ok(id);
+        }
+    }
+    let name = if kind == "agenda" { "Agenda" } else { "Notes" };
+    let id = i.client()?.create_personal_desk(name, &kind).await.map_err(err)?;
+    i.metas.clear();
+    Ok(id)
+}
+
+/// Replaces a text file in the drive with an edited version (same record, new chunks).
+pub async fn save_text_file(
+    i: &mut Inner,
+    channel: ChannelId,
+    id: String,
+    text: String,
+) -> Result<(), String> {
+    let item = i
+        .client()?
+        .desk_items(channel)
+        .map_err(err)?
+        .into_iter()
+        .find(|x| x.id == id && x.kind == "file")
+        .ok_or("That file isn't here any more")?;
+    let name = item.data["name"].as_str().unwrap_or("note.md").to_owned();
+    let folder = item.data["folder"].as_str().unwrap_or("/").to_owned();
+    store_file(i, channel, text.as_bytes(), &name, &folder, Some(id)).await?;
+    Ok(())
+}
 
 /// The space's drive: a desk of kind `files`, made the first time it's opened.
 pub async fn ensure_drive(i: &mut Inner, space: SpaceId) -> Result<ChannelId, String> {

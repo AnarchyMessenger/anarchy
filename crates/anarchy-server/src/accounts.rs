@@ -526,7 +526,11 @@ pub async fn my_channels(State(s): State<AppState>, dev: AuthDevice) -> ApiResul
         };
         out.push(ChannelMeta {
             id,
-            kind: if dm { ChannelKind::Dm } else { ChannelKind::Channel },
+            kind: match kind.as_str() {
+                "dm" => ChannelKind::Dm,
+                "personal" => ChannelKind::Personal,
+                _ => ChannelKind::Channel,
+            },
             space,
             peer,
         });

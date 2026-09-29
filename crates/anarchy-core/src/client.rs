@@ -388,9 +388,39 @@ impl Client {
 
     pub async fn create_channel_in(&mut self, space: Option<SpaceId>) -> Result<ChannelId, Error> {
         let channel = Uuid::new_v4();
-        self.post("/v1/channels", &CreateChannel { channel, space })
-            .await?;
+        self.post(
+            "/v1/channels",
+            &CreateChannel {
+                channel,
+                space,
+                personal: false,
+            },
+        )
+        .await?;
         self.device.create_channel(channel)?;
+        Ok(channel)
+    }
+
+    /// A desk only this person's devices share: their agenda, their notes.
+    pub async fn create_personal_desk(&mut self, name: &str, kind: &str) -> Result<ChannelId, Error> {
+        let channel = Uuid::new_v4();
+        self.post(
+            "/v1/channels",
+            &CreateChannel {
+                channel,
+                space: None,
+                personal: true,
+            },
+        )
+        .await?;
+        self.device.create_channel(channel)?;
+        let info = Content::ChannelInfo {
+            name: name.to_owned(),
+            topic: String::new(),
+            trust: Trust::Sealed,
+            desk: Some(kind.to_owned()),
+        };
+        self.send_content(channel, &info).await?;
         Ok(channel)
     }
 

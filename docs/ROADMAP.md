@@ -86,6 +86,8 @@ Pulled forward from phase 4:
 - Company MCP server: `search`, `get_thread`, `get_file`, `propose_action`; OAuth 2.1 clients, scopes, audit.
 - [x] Where agents will live, pulled forward: the Ask panel (search plus desk figures until a model is connected) and @-mentioning desks in channels and chats (D21).
 - [x] First client-facing surface: payment links for Collections, sealed with the key in the URL fragment (D20).
+- [x] Personal agenda and Notion-style notes in personal channels; drive text files open in the same editor (D25).
+- [ ] Mail: IMAP/SMTP with app passwords first, then Gmail and Microsoft OAuth; triage view with drafted replies.
 - [x] Threads (replies to a message, shown beside the conversation) and tabs for the working set with a collapsible sidebar (D22).
 - In-app agents (scribe: summaries, catch-up, meeting notes via call transcription).
 - AgentApproval flow, and model policy (local vs external, per channel class).

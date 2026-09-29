@@ -425,6 +425,7 @@ function toCardStep() {
 function refreshCard() {
   draft.display_name = $("card-name").value;
   draft.username = $("card-user").value.toLowerCase();
+  $("card-hint-name").textContent = draft.username || "you";
   syncPickers($("avatar-picker"), $("color-picker"), draft);
   paintArt({ ...profile, ...draft });
   $("frame").dataset.frame = draft.color; // the window follows the card
@@ -492,8 +493,6 @@ function renderRail() {
 
 function go(which) {
   view = which;
-  show("side-home", which === "home");
-  show("side-space", which === "space");
   closeDrawers();
   renderRail();
   if (which === "settings") {
@@ -515,12 +514,13 @@ function belongsHere(c) {
   return view === "home" ? c.kind === "dm" : view === "space" && c.kind === "channel" && c.space === currentSpace?.id;
 }
 function hideMain() {
-  for (const v of ["view-start", "view-convo", "view-space-empty", "view-desk", "view-drive", "view-settings"]) show(v, false);
+  for (const v of ["view-start", "view-convo", "view-space-empty", "view-desk", "view-drive", "view-settings", "view-agenda", "view-notes"]) show(v, false);
   show("view-desks", false);
 }
 function showStart() {
   hideMain();
   show("view-start", view === "home");
+  if (view === "home") renderHomeToday();
   show("view-space-empty", view === "space");
   markNav();
   if (view === "space") renderSpaceOverview();
@@ -529,9 +529,6 @@ function showStart() {
 function markNav() { renderFolders(); }
 function openSpace(s) {
   currentSpace = s;
-  $("space-name").textContent = s.name;
-  $("space-tile").dataset.color = colorFor(s.id);
-  $("space-tile").textContent = initials(s.name);
   current = null;
   go("space");
 }
@@ -592,9 +589,12 @@ async function openChannel(id) {
   if (!c) return;
   if (thread && thread.channel !== id) closeThread();
   current = id;
-  addTab({ channel: id });
+  // Agenda and Notes are folders already; they don't need a tab too.
+  if (c.kind !== "personal") addTab({ channel: id });
   markNav();
   if (c.desk === "files") return openDrive(c);
+  if (c.desk === "agenda") return openAgenda();
+  if (c.desk === "notes") return openNotes();
   if (c.desk) return openDesk(c);
   hideMain(); show("view-convo");
   const dm = c.kind === "dm";
@@ -696,6 +696,7 @@ function openThread(channelId, root) {
   thread = { channel: channelId, root };
   show("thread", true);
   document.querySelector(".main")?.classList.add("with-panel");
+  syncDock();
   renderThread();
   renderTabs();
   $("thread-input").focus();
@@ -704,6 +705,7 @@ function closeThread() {
   thread = null;
   show("thread", false);
   document.querySelector(".main")?.classList.remove("with-panel");
+  syncDock();
   renderTabs();
 }
 function renderThread() {
@@ -812,7 +814,7 @@ async function refreshDeskNeeds() {
   }
 }
 function renderTabs() {
-  const live = tabs.filter((t) => channels.some((c) => c.id === t.channel));
+  const live = tabs.filter((t) => channels.some((c) => c.id === t.channel && c.kind !== "personal"));
   if (live.length !== tabs.length && channels.length) { tabs = live; writeStore("anarchy.tabs", tabs); }
   const active = activeTabKey();
   $("tab-list").replaceChildren(...live.map((t) => {
@@ -865,6 +867,8 @@ const SETTINGS_PAGES = [["profile", "Profile"], ["privacy", "Privacy"], ["accoun
 function sectionNow() {
   const cur = channels.find((c) => c.id === current);
   if (!$("view-desks").hidden) return "desks";
+  if (!$("view-agenda").hidden) return "agenda";
+  if (!$("view-notes").hidden) return note?.file ? "files" : "notes";
   if (!cur) return "overview";
   if (cur.desk === "files") return "files";
   if (cur.desk) return "desks";
@@ -879,14 +883,14 @@ function renderFolders() {
     const now = sectionNow();
     const unread = channels.some((c) => c.unread && c.id !== current && belongsHere(c));
     folders = view === "home"
-      ? [{ key: "overview", label: "Overview", icon: "home" }, { key: "chats", label: "Chats", icon: "chat", dot: unread }]
+      ? [{ key: "overview", label: "Overview", icon: "home" }, { key: "chats", label: "Chats", icon: "chat", dot: unread }, { key: "agenda", label: "Agenda", icon: "calendar" }, { key: "notes", label: "Notes", icon: "note" }]
       : [{ key: "overview", label: "Overview", icon: "home" }, { key: "chats", label: "Channels", icon: "chat", dot: unread }, { key: "files", label: "Files", icon: "folder" }, { key: "desks", label: "Desks", icon: "receipt", n: [...deskNeeds.entries()].filter(([id]) => channels.find((c) => c.id === id)?.space === currentSpace?.id).reduce((a, [, n]) => a + n, 0) }];
     folders = folders.map((f) => ({ ...f, active: f.key === now, go: () => openSection(f.key) }));
   }
   $("folder-tabs").replaceChildren(...folders.map((f) => el("button", { class: `folder${f.active ? " active" : ""}`, type: "button", role: "tab", "aria-selected": String(!!f.active), onclick: f.go },
     f.icon ? icon(f.icon) : null, el("span", { text: f.label }),
     f.n ? el("span", { class: "tab-badge warn", text: String(f.n) }) : f.dot ? el("span", { class: "unread-dot", "aria-label": "unread" }) : null)));
-  $("nav-files").classList.toggle("active", view === "space" && channels.find((c) => c.id === current)?.desk === "files");
+  paintSide();
   show("tab-list", view !== "settings");
   show("tools", view !== "settings");
   $("workspace").classList.toggle("no-tools", view === "settings");
@@ -899,6 +903,8 @@ async function openSection(key) {
   if (thread) closeThread();
   const here = (c) => (view === "home" ? c.kind === "dm" : c.space === currentSpace?.id);
   if (key === "overview") { current = null; invoke("blur"); showStart(); renderSide(); return; }
+  if (key === "agenda") return openAgenda();
+  if (key === "notes") return openNotes();
   if (key === "files") return openDriveOf(currentSpace);
   if (key === "desks") {
     const already = sectionNow() === "desks";
@@ -945,6 +951,7 @@ function paintDrawers() {
   const chatsOn = pinned || drawer === "chats";
   show("drawer-chats", chatsOn);
   show("drawer-people", drawer === "people");
+  syncDock();
   $("workspace").classList.toggle("chats-pinned", pinned);
   $("drawer-chats").classList.toggle("pinned", pinned);
   $("tool-chats").setAttribute("aria-expanded", String(chatsOn));
@@ -959,16 +966,20 @@ function paintDrawers() {
     b.setAttribute("aria-label", b.title);
     b.firstElementChild.firstElementChild.setAttribute("href", pinned ? "#i-sidebar" : "#i-pin");
   }
-  $("tool-chats").hidden = pinned;
-  $("tool-chats").title = "Show the sidebar (Ctrl \\)";
+  $("tool-chats").setAttribute("aria-pressed", String(pinned));
+  $("tool-chats").title = pinned ? "Hide the sidebar (Ctrl \\)" : "Show the sidebar (Ctrl \\)";
 }
-$("tool-chats").addEventListener("click", () => toggleDrawer("chats"));
-$("nav-files").addEventListener("click", () => openDriveOf(currentSpace));
+// Docked: hide it. Hidden: pop it over (pin it from there to dock it again).
+$("tool-chats").addEventListener("click", () => {
+  if (pinned) { pinned = false; writeStore("anarchy.chatsPinned", false); closeDrawers(); }
+  else toggleDrawer("chats");
+});
 $("tool-people").addEventListener("click", () => toggleDrawer("people"));
 for (const b of document.querySelectorAll(".drawer-pin")) b.addEventListener("click", () => { pinned = !pinned; writeStore("anarchy.chatsPinned", pinned); if (!pinned) drawer = null; paintDrawers(); });
 // Picking something in a pop-over closes it; clicking the canvas does too.
 $("drawer-chats").addEventListener("click", (e) => { if (!pinned && e.target.closest(".side-item")) setTimeout(closeDrawers, 0); });
-$("main").addEventListener("mousedown", (e) => { if (drawer && !e.target.closest(".drawer")) closeDrawers(); });
+$("main").addEventListener("mousedown", (e) => { if (drawer === "chats" && !e.target.closest(".drawer")) closeDrawers(); });
+window.addEventListener("resize", () => syncDock());
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && drawer && !document.querySelector("dialog[open]")) closeDrawers(); });
 paintDrawers();
 
@@ -1034,7 +1045,7 @@ $("composer").addEventListener("submit", async (e) => {
 // text, so a mention never reveals a desk to people outside it. The message is
 // also copied into the desk's activity, because the sender chose to address it.
 
-const DESK_ICON = { collections: "receipt", files: "folder" };
+const DESK_ICON = { collections: "receipt", files: "folder", agenda: "calendar", notes: "note" };
 function desksInScope() {
   const here = channels.find((c) => c.id === current);
   const space = view === "space" ? currentSpace?.id : here?.space;
@@ -1185,10 +1196,11 @@ function openAsk(on = true) {
   if (on) { drawer = null; paintDrawers(); }
   show("ask", on);
   $("tool-ask").setAttribute("aria-expanded", String(on));
+  syncDock();
   document.querySelector(".main")?.classList.toggle("with-ask", on);
   if (!on) return;
   const sp = view === "space" ? currentSpace : null;
-  $("ask-scope").textContent = sp ? `In ${sp.name}` : "Everything on this device";
+  $("ask-scope").textContent = sp ? `In ${sp.name}` : "Your day, on this device";
   if (!$("ask-log").children.length) {
     const desks = desksInScope();
     $("ask-log").replaceChildren(el("div", { class: "ask-msg bot" },
@@ -1199,6 +1211,30 @@ function openAsk(on = true) {
 }
 for (const b of document.querySelectorAll("[data-ask]")) b.addEventListener("click", () => openAsk($("ask").hidden));
 $("ask-close").addEventListener("click", () => openAsk(false));
+$("ask-new").addEventListener("click", () => { $("ask-log").replaceChildren(); openAsk(true); });
+// Today's brief: worked out on this device from the agenda, conversations and desks.
+$("ask-brief").addEventListener("click", async () => {
+  const log = $("ask-log");
+  log.append(el("div", { class: "ask-msg me", text: "Today's brief" }));
+  const out = [];
+  try { agenda.channel = await personalDesk("agenda"); agenda.items = await invoke("desk_items", { channel: agenda.channel }); } catch { /* offline */ }
+  const today = isoToday();
+  const evs = events().filter((e) => e.date === today).sort((a, b) => (a.start || "").localeCompare(b.start || ""));
+  out.push(el("p", { class: "brief-h", text: evs.length ? `${evs.length} ${evs.length === 1 ? "thing" : "things"} on today` : "Nothing on your agenda today" }));
+  for (const e of evs) out.push(el("button", { class: "ask-hit", type: "button", onclick: () => openAgenda().then(() => openEvent(e)) }, el("small", { text: e.all_day ? "All day" : `${e.start}${e.end ? `–${e.end}` : ""}${e.where ? ` · ${e.where}` : ""}` }), el("span", { text: e.title })));
+  const unread = channels.filter((c) => c.unread && (c.kind === "dm" || c.kind === "channel") && !c.desk);
+  if (unread.length) {
+    out.push(el("p", { class: "brief-h", text: `${unread.length} ${unread.length === 1 ? "conversation has" : "conversations have"} new messages` }));
+    for (const c of unread.slice(0, 4)) out.push(el("button", { class: "ask-hit", type: "button", onclick: () => goTo(c.id) }, el("small", { text: whereOf(c) }), el("span", { text: c.last_text || c.name })));
+  }
+  for (const d of channels.filter((c) => c.desk === "collections")) {
+    const line = await deskSummary(d);
+    out.push(el("button", { class: "desk-card", type: "button", onclick: () => goTo(d.id) }, el("span", { class: "space-tile" }, icon("receipt")), el("span", { class: "lines" }, el("strong", { text: d.name }), el("small", { text: line }))));
+  }
+  out.push(el("p", { class: "fine", text: "Worked out on this device. Nothing was sent anywhere." }));
+  log.append(el("div", { class: "ask-msg bot" }, ...out));
+  log.scrollTop = log.scrollHeight;
+});
 document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "j") { e.preventDefault(); openAsk($("ask").hidden); }
   else if (e.key === "Escape" && !$("ask").hidden && !mention && document.activeElement?.closest?.("#ask")) openAsk(false);
@@ -1258,6 +1294,467 @@ async function answer(q) {
   }
   if (desks.length && !ranked.length && words.length) out.push(el("p", { class: "fine", text: "Questions beyond the desk's numbers need the desk agent, which comes with the Company Brain." }));
   return out;
+}
+
+// ---------- right-hand panels dock beside the page ----------
+// People, Ask and threads sit next to the content and push it over, like a
+// second column; on narrow windows they cover it instead.
+function syncDock() {
+  const open = !$("ask").hidden || !$("drawer-people").hidden || !$("thread").hidden;
+  $("main").classList.toggle("dock-right", open && window.innerWidth >= 1100);
+  // The composer's height depends on its width.
+  requestAnimationFrame(fitComposer);
+}
+
+// Which list the sidebar shows: the space's desks and channels, or on Home the
+// list for the section you're in (conversations, pages, what's coming).
+function paintSide() {
+  const sec = view === "home" ? sectionNow() : null;
+  show("side-space", view === "space");
+  show("side-home", view === "home" && sec !== "notes" && sec !== "agenda");
+  show("side-notes", view === "home" && sec === "notes");
+  show("side-agenda", view === "home" && sec === "agenda");
+}
+
+// ---------- personal desks: agenda and notes ----------
+// Each lives in a personal channel: only this person's devices are in it, so
+// nobody else, the server included, can read it (ChannelKind::Personal).
+
+const personal = { agenda: null, notes: null }; // channel ids
+async function personalDesk(kind) {
+  if (!personal[kind]) personal[kind] = await invoke("ensure_personal", { kind });
+  return personal[kind];
+}
+const pad2 = (n) => String(n).padStart(2, "0");
+const isoOf = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const monthLong = new Intl.DateTimeFormat(undefined, { month: "long" });
+const weekdayFmt = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+function weekNumber(d) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - day);
+  return Math.ceil(((t - new Date(Date.UTC(t.getUTCFullYear(), 0, 1))) / 864e5 + 1) / 7);
+}
+const mondayOf = (d) => { const x = new Date(d); x.setHours(12, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+
+// ---- agenda ----
+const EV_COLORS = ["ink", "ember", "ocean", "spring", "plum"];
+let agenda = { channel: null, items: [], dues: [], mode: readStore("anarchy.agendaMode", "month"), cursor: new Date() };
+function events() { return agenda.items.filter((i) => i.kind === "event" && !i.data.deleted).map((i) => ({ id: i.id, ...i.data })); }
+function dayEvents(iso) {
+  const own = events().filter((e) => e.date === iso).sort((a, b) => (a.all_day ? -1 : 0) - (b.all_day ? -1 : 0) || (a.start || "").localeCompare(b.start || ""));
+  return [...own, ...agenda.dues.filter((d) => d.date === iso)];
+}
+async function loadAgenda() {
+  agenda.channel = await personalDesk("agenda");
+  agenda.items = await invoke("desk_items", { channel: agenda.channel });
+  // Invoices that fall due, from every Collections desk this device can read.
+  const dues = [];
+  for (const d of channels.filter((c) => c.desk === "collections")) {
+    const items = await invoke("desk_items", { channel: d.id }).catch(() => []);
+    for (const i of items) {
+      if (i.kind !== "invoice" || !i.data.due || i.data.status === "paid" || i.data.status === "void" || i.data.status === "draft") continue;
+      dues.push({ due: true, date: i.data.due, title: `${i.data.number} due · ${i.data.customer}`, channel: d.id, amount: i.data.amount });
+    }
+  }
+  agenda.dues = dues;
+}
+async function openAgenda() {
+  if (thread) closeThread();
+  current = personal.agenda; invoke("blur");
+  hideMain(); show("view-agenda");
+  try { await loadAgenda(); } catch (err) { $("cal-grid").replaceChildren(el("p", { class: "error", text: String(err) })); return; }
+  current = agenda.channel;
+  renderAgenda(); renderAgendaSide(); renderFolders(); renderTabs();
+}
+function chip(e) {
+  const time = e.due ? "due" : e.all_day ? "" : e.start || "";
+  return el("button", { class: `ev ${e.due ? "due" : `c-${e.color || "ink"}`}`, type: "button", title: e.where ? `${e.title} · ${e.where}` : e.title,
+    onclick: (x) => { x.stopPropagation(); if (e.due) goTo(e.channel); else openEvent(e); } },
+    el("span", { class: "ev-title", text: e.title }), time ? el("span", { class: "ev-time", text: time }) : null);
+}
+function renderAgenda() {
+  const c = agenda.cursor;
+  const today = isoToday();
+  $("agenda-title").replaceChildren(`${monthLong.format(c)} `, el("span", { class: "soft", text: String(c.getFullYear()) }));
+  // The week shown: this week if it's in view, else the first week of the month.
+  const now = new Date();
+  const ref = agenda.mode === "week" ? mondayOf(c) : (now.getMonth() === c.getMonth() && now.getFullYear() === c.getFullYear() ? now : new Date(c.getFullYear(), c.getMonth(), 1, 12));
+  $("agenda-kind").textContent = `Agenda · Week ${weekNumber(ref)}`;
+  for (const b of document.querySelectorAll(".agenda-mode button")) b.setAttribute("aria-selected", String(b.dataset.mode === agenda.mode));
+  const heads = [...Array(7)].map((_, k) => { const d = mondayOf(new Date()); d.setDate(d.getDate() + k); return el("div", { class: "cal-dow", text: weekdayFmt.format(d) }); });
+  const grid = $("cal-grid");
+  grid.className = `cal-grid ${agenda.mode}`;
+  if (agenda.mode === "month") {
+    const first = new Date(c.getFullYear(), c.getMonth(), 1, 12);
+    const start = mondayOf(first);
+    const cells = [];
+    for (let k = 0; k < 42; k++) {
+      const d = new Date(start); d.setDate(start.getDate() + k);
+      if (k === 35 && d.getMonth() !== c.getMonth()) break;
+      const iso = isoOf(d);
+      const evs = dayEvents(iso);
+      cells.push(el("div", { class: `cal-cell${d.getMonth() !== c.getMonth() ? " out" : ""}${iso === today ? " today" : ""}`, onclick: () => openEvent(null, iso) },
+        el("span", { class: "cal-day", text: String(d.getDate()) }),
+        ...evs.slice(0, 3).map(chip),
+        evs.length > 3 ? el("button", { class: "cal-more", type: "button", text: `${evs.length - 3} more`, onclick: (x) => { x.stopPropagation(); agenda.mode = "week"; agenda.cursor = d; renderAgenda(); } }) : null));
+    }
+    grid.replaceChildren(...heads, ...cells);
+  } else {
+    const start = mondayOf(c);
+    const cols = [...Array(7)].map((_, k) => {
+      const d = new Date(start); d.setDate(start.getDate() + k);
+      const iso = isoOf(d);
+      const evs = dayEvents(iso);
+      return el("div", { class: `cal-col${iso === today ? " today" : ""}`, onclick: () => openEvent(null, iso) },
+        el("div", { class: "cal-col-head" }, el("span", { text: weekdayFmt.format(d) }), el("strong", { text: String(d.getDate()) })),
+        ...(evs.length ? evs.map((e) => { const b = chip(e); b.classList.add("big"); if (!e.due && !e.all_day && e.end) b.append(el("span", { class: "ev-range", text: `${e.start}–${e.end}` })); if (e.where) b.append(el("span", { class: "ev-where", text: e.where })); return b; }) : [el("p", { class: "fine cal-free", text: "Free" })]));
+    });
+    grid.replaceChildren(...cols);
+  }
+}
+function renderAgendaSide() {
+  const today = isoToday();
+  const horizon = addDays(today, 14);
+  const next = [...events(), ...agenda.dues].filter((e) => e.date >= today && e.date <= horizon).sort((a, b) => a.date.localeCompare(b.date) || (a.start || "").localeCompare(b.start || ""));
+  $("agenda-next").replaceChildren(...next.slice(0, 20).map((e) => el("button", { class: "side-item agenda-item", type: "button", onclick: () => (e.due ? goTo(e.channel) : openEvent(e)) },
+    el("span", { class: `ev-dot ${e.due ? "due" : `c-${e.color || "ink"}`}` }),
+    el("span", { class: "lines" }, el("span", { class: "name", text: e.title }), el("small", { text: `${e.date === today ? "Today" : shortDate.format(asDate(e.date))}${e.due ? "" : e.all_day ? "" : ` · ${e.start}`}` })))));
+  show("no-agenda", next.length === 0);
+}
+$("agenda-prev").addEventListener("click", () => { const c = agenda.cursor; agenda.cursor = agenda.mode === "month" ? new Date(c.getFullYear(), c.getMonth() - 1, 1, 12) : new Date(c.getTime() - 7 * 864e5); renderAgenda(); });
+$("agenda-next-btn").addEventListener("click", () => { const c = agenda.cursor; agenda.cursor = agenda.mode === "month" ? new Date(c.getFullYear(), c.getMonth() + 1, 1, 12) : new Date(c.getTime() + 7 * 864e5); renderAgenda(); });
+$("agenda-today").addEventListener("click", () => { agenda.cursor = new Date(); renderAgenda(); });
+for (const b of document.querySelectorAll(".agenda-mode button")) b.addEventListener("click", () => { agenda.mode = b.dataset.mode; writeStore("anarchy.agendaMode", agenda.mode); renderAgenda(); });
+
+let editingEvent = null;
+let evColor = "ink";
+function paintEvColors() {
+  $("ev-colors").replaceChildren(...EV_COLORS.map((c) => el("button", { class: `ev-swatch c-${c}`, type: "button", role: "radio", "aria-checked": String(c === evColor), "aria-label": c, onclick: () => { evColor = c; paintEvColors(); } })));
+}
+function openEvent(e, iso) {
+  editingEvent = e || null;
+  evColor = e?.color || "ink";
+  $("dlg-event-title").textContent = e ? "Event" : "New event";
+  $("ev-title").value = e?.title || "";
+  $("ev-date").value = e?.date || iso || isoToday();
+  $("ev-allday").checked = !!e?.all_day;
+  $("ev-start").value = e?.start || "09:00"; $("ev-end").value = e?.end || "10:00";
+  $("ev-where").value = e?.where || ""; $("ev-notes").value = e?.notes || "";
+  for (const id of ["ev-start", "ev-end"]) $(id).disabled = $("ev-allday").checked;
+  show("event-delete", !!e);
+  setError("event-error", "");
+  paintEvColors();
+  $("dlg-event").showModal();
+  $("ev-title").focus();
+}
+$("ev-allday").addEventListener("change", () => { for (const id of ["ev-start", "ev-end"]) $(id).disabled = $("ev-allday").checked; });
+$("event-new").addEventListener("click", () => openEvent(null, isoOf(agenda.cursor)));
+$("event-new-side").addEventListener("click", () => openEvent(null));
+$("event-cancel").addEventListener("click", () => $("dlg-event").close());
+async function putEvent(id, data) {
+  const channel = await personalDesk("agenda");
+  await invoke("put_items", { channel, items: [{ id, kind: "event", data }] });
+  agenda.items = await invoke("desk_items", { channel });
+  renderAgenda(); renderAgendaSide();
+}
+$("event-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const title = $("ev-title").value.trim();
+  if (!title) return setError("event-error", "Give it a title.");
+  const allDay = $("ev-allday").checked;
+  if (!allDay && $("ev-end").value && $("ev-end").value < $("ev-start").value) return setError("event-error", "It ends before it starts.");
+  const data = { title, date: $("ev-date").value || isoToday(), all_day: allDay, start: allDay ? "" : $("ev-start").value, end: allDay ? "" : $("ev-end").value, where: $("ev-where").value.trim(), notes: $("ev-notes").value.trim(), color: evColor };
+  try { await putEvent(editingEvent?.id || crypto.randomUUID(), data); $("dlg-event").close(); } catch (err) { setError("event-error", String(err)); }
+});
+$("event-delete").addEventListener("click", async () => {
+  if (!editingEvent) return;
+  const { id, ...data } = editingEvent;
+  try { await putEvent(id, { ...data, deleted: true }); $("dlg-event").close(); } catch (err) { setError("event-error", String(err)); }
+});
+
+// ---- notes: pages made of blocks ----
+// A page is one record: a title, an icon and a list of blocks (paragraph,
+// headings, bullets, to-dos, quote, code, divider). Latest save wins, so two
+// devices editing the same page at once keep the last one; CRDT merging later.
+// The same editor opens text files from a drive, saving them back as Markdown.
+
+const BLOCKS = [["p", "Text", "Just writing"], ["h1", "Heading 1", "Big section title"], ["h2", "Heading 2", "Medium title"], ["h3", "Heading 3", "Small title"], ["bullet", "Bulleted list", "A simple list"], ["todo", "To-do", "Track tasks"], ["quote", "Quote", "Set text apart"], ["code", "Code", "Monospace, as typed"], ["divider", "Divider", "A line between sections"]];
+const PAGE_ICONS = ["📝", "💡", "📌", "📅", "✅", "📚", "🧾", "🌱", "🎯", "🗂️"];
+let notesState = { channel: null, items: [], query: "" };
+let note = null; // { id, title, icon, blocks, file?: { channel, id, name, folder } }
+let noteTimer = null;
+const newBlock = (type = "p", text = "") => ({ id: crypto.randomUUID().slice(0, 8), type, text, checked: false });
+function pages() {
+  const q = notesState.query.toLowerCase();
+  return notesState.items.filter((i) => i.kind === "page" && !i.data.deleted)
+    .map((i) => ({ id: i.id, ...i.data }))
+    .filter((p) => !q || `${p.title} ${(p.blocks || []).map((b) => b.text).join(" ")}`.toLowerCase().includes(q))
+    .sort((a, b) => (b.updated || 0) - (a.updated || 0));
+}
+async function openNotes(pageId) {
+  if (thread) closeThread();
+  hideMain(); show("view-notes");
+  notesState.channel = await personalDesk("notes").catch((err) => { alert(String(err)); return null; });
+  if (!notesState.channel) return;
+  current = notesState.channel; invoke("blur");
+  notesState.items = await invoke("desk_items", { channel: notesState.channel });
+  const list = pages();
+  const pick = list.find((p) => p.id === (pageId || note?.id)) || list[0];
+  if (pick) loadPage(pick); else { note = null; renderNote(); }
+  renderNoteList(); renderFolders(); renderTabs();
+}
+function loadPage(p) {
+  note = { id: p.id, title: p.title || "", icon: p.icon || "📝", blocks: (p.blocks && p.blocks.length ? p.blocks : [newBlock()]).map((b) => ({ ...newBlock(), ...b })) };
+  renderNote();
+}
+function renderNoteList() {
+  const list = pages();
+  $("note-list").replaceChildren(...list.map((p) => el("button", { class: `side-item note-item${note && !note.file && note.id === p.id ? " active" : ""}`, type: "button", onclick: () => { flushNote(); loadPage(p); renderNoteList(); } },
+    el("span", { class: "note-emoji", text: p.icon || "📝" }), el("span", { class: "lines" }, el("span", { class: "name", text: p.title || "Untitled" }), el("small", { text: p.updated ? sinceFmt(p.updated) : "" })))));
+  show("no-notes", list.length === 0);
+}
+$("note-search").addEventListener("input", () => { notesState.query = $("note-search").value; renderNoteList(); });
+$("note-new").addEventListener("click", async () => {
+  flushNote();
+  note = { id: crypto.randomUUID(), title: "", icon: PAGE_ICONS[Math.floor(Math.random() * PAGE_ICONS.length)], blocks: [newBlock()] };
+  if ($("view-notes").hidden) await openNotes();
+  renderNote(); saveNoteSoon(0);
+  $("note-title").focus();
+});
+function renderNote() {
+  show("note-page", !!note);
+  if (!note) {
+    $("note-crumbs").replaceChildren(el("span", { text: "Notes" }));
+    $("note-blocks").replaceChildren();
+    return;
+  }
+  $("note-crumbs").replaceChildren(...(note.file
+    ? [el("button", { class: "link", type: "button", text: "Files", onclick: () => { flushNote(); goTo(note.file.channel); } }), el("span", { text: " / " }), el("span", { text: `${note.file.folder === "/" ? "" : `${note.file.folder.slice(1)} / `}${note.file.name}` })]
+    : [el("span", { text: "Notes" }), el("span", { text: " / " }), el("span", { text: note.title || "Untitled" })]));
+  $("note-icon").textContent = note.file ? "📄" : note.icon;
+  $("note-icon").disabled = !!note.file;
+  $("note-title").textContent = note.file ? note.file.name : note.title;
+  $("note-title").contentEditable = note.file ? "false" : "plaintext-only";
+  show("note-delete", !note.file);
+  $("note-blocks").replaceChildren(...note.blocks.map(blockEl));
+  $("note-saved").textContent = "";
+}
+function blockEl(b) {
+  if (b.type === "divider") {
+    return el("div", { class: "blk divider", "data-id": b.id, tabindex: "0", onkeydown: (e) => { if (e.key === "Backspace" || e.key === "Delete") { e.preventDefault(); removeBlock(b.id, -1); } else if (e.key === "Enter") { e.preventDefault(); insertAfter(b.id, newBlock()); } } }, el("hr"));
+  }
+  const txt = el("div", { class: "txt", contenteditable: "plaintext-only", spellcheck: b.type === "code" ? "false" : "true", "data-placeholder": b.type === "p" ? "Type / for blocks" : BLOCKS.find((x) => x[0] === b.type)?.[1] || "" });
+  txt.textContent = b.text;
+  txt.addEventListener("input", () => onBlockInput(b, txt));
+  txt.addEventListener("keydown", (e) => onBlockKey(e, b, txt));
+  const lead = b.type === "todo" ? el("input", { type: "checkbox", checked: b.checked, "aria-label": "Done", onchange: (e) => { b.checked = e.target.checked; wrap.classList.toggle("done", b.checked); saveNoteSoon(); } })
+    : b.type === "bullet" ? el("span", { class: "bul", "aria-hidden": "true", text: "•" }) : null;
+  const wrap = el("div", { class: `blk ${b.type}${b.checked ? " done" : ""}`, "data-id": b.id }, lead, txt);
+  return wrap;
+}
+function caretOf(node) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !node.contains(sel.anchorNode)) return node.textContent.length;
+  const r = sel.getRangeAt(0).cloneRange();
+  r.selectNodeContents(node); r.setEnd(sel.anchorNode, sel.anchorOffset);
+  return r.toString().length;
+}
+function placeCaret(node, at) {
+  node.focus();
+  const sel = window.getSelection();
+  const r = document.createRange();
+  const t = node.firstChild;
+  if (!t) { r.setStart(node, 0); } else { r.setStart(t, Math.min(at, t.textContent.length)); }
+  r.collapse(true); sel.removeAllRanges(); sel.addRange(r);
+}
+function txtOf(id) { return $("note-blocks").querySelector(`.blk[data-id="${id}"] .txt, .blk[data-id="${id}"].divider`); }
+const SHORTCUTS = [[/^#\s$/, "h1"], [/^##\s$/, "h2"], [/^###\s$/, "h3"], [/^[-*]\s$/, "bullet"], [/^\[\s?\]\s$/, "todo"], [/^>\s$/, "quote"], [/^```$/, "code"], [/^---$/, "divider"]];
+function onBlockInput(b, txt) {
+  b.text = txt.textContent;
+  if (b.type === "p") {
+    for (const [re, type] of SHORTCUTS) if (re.test(b.text)) { turnInto(b, type, ""); return; }
+  }
+  if (b.text === "/") openSlash(b, txt); else if (!b.text.startsWith("/")) closeSlash(); else filterSlash(b.text.slice(1));
+  saveNoteSoon();
+}
+function turnInto(b, type, text = b.text) {
+  b.type = type; b.text = text;
+  if (type === "divider") { const next = newBlock(); insertAfter(b.id, next, false); }
+  rerenderKeepFocus(type === "divider" ? note.blocks[note.blocks.indexOf(b) + 1].id : b.id, 0);
+  saveNoteSoon();
+}
+function rerenderKeepFocus(id, at) {
+  $("note-blocks").replaceChildren(...note.blocks.map(blockEl));
+  const t = txtOf(id);
+  if (t) (t.classList.contains("divider") ? t.focus() : placeCaret(t, at ?? t.textContent.length));
+}
+function insertAfter(id, blk, focus = true) {
+  const i = note.blocks.findIndex((x) => x.id === id);
+  note.blocks.splice(i + 1, 0, blk);
+  if (focus) rerenderKeepFocus(blk.id, 0);
+  saveNoteSoon();
+}
+function removeBlock(id, dir) {
+  const i = note.blocks.findIndex((x) => x.id === id);
+  if (note.blocks.length === 1) { note.blocks[0] = newBlock(); rerenderKeepFocus(note.blocks[0].id, 0); return; }
+  note.blocks.splice(i, 1);
+  const to = note.blocks[Math.max(0, dir < 0 ? i - 1 : i)];
+  rerenderKeepFocus(to.id);
+  saveNoteSoon();
+}
+function onBlockKey(e, b, txt) {
+  if (slash && handleSlashKey(e, b, txt)) return;
+  const at = caretOf(txt);
+  const i = note.blocks.indexOf(b);
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing && b.type !== "code") {
+    e.preventDefault();
+    // An empty list item or to-do ends the list.
+    if (!b.text && ["bullet", "todo", "quote", "h1", "h2", "h3"].includes(b.type)) { turnInto(b, "p"); return; }
+    const after = b.text.slice(at);
+    b.text = b.text.slice(0, at);
+    const next = newBlock(["bullet", "todo"].includes(b.type) ? b.type : "p", after);
+    note.blocks.splice(i + 1, 0, next);
+    rerenderKeepFocus(next.id, 0); saveNoteSoon();
+  } else if (e.key === "Enter" && e.shiftKey && b.type === "code") {
+    e.preventDefault(); insertAfter(b.id, newBlock());
+  } else if (e.key === "Backspace" && at === 0 && !window.getSelection().toString()) {
+    if (b.type !== "p") { e.preventDefault(); turnInto(b, "p"); return; }
+    if (i > 0) {
+      e.preventDefault();
+      const prev = note.blocks[i - 1];
+      if (prev.type === "divider") { note.blocks.splice(i - 1, 1); rerenderKeepFocus(b.id, 0); saveNoteSoon(); return; }
+      const join = prev.text.length;
+      prev.text += b.text; note.blocks.splice(i, 1);
+      rerenderKeepFocus(prev.id, join); saveNoteSoon();
+    }
+  } else if (e.key === "ArrowUp" && at === 0 && i > 0) {
+    e.preventDefault(); const t = txtOf(note.blocks[i - 1].id); if (t) (t.classList.contains("divider") ? t.focus() : placeCaret(t, t.textContent.length));
+  } else if (e.key === "ArrowDown" && at === txt.textContent.length && i < note.blocks.length - 1) {
+    e.preventDefault(); const t = txtOf(note.blocks[i + 1].id); if (t) (t.classList.contains("divider") ? t.focus() : placeCaret(t, 0));
+  }
+}
+// The "/" menu turns the current block into another kind.
+let slash = null; // { block, cursor, items }
+function openSlash(b, txt) {
+  slash = { block: b, cursor: 0, items: BLOCKS };
+  paintSlash(txt);
+}
+function filterSlash(q) {
+  if (!slash) return;
+  slash.items = BLOCKS.filter(([, label]) => label.toLowerCase().includes(q.toLowerCase()));
+  slash.cursor = 0;
+  if (!slash.items.length) return closeSlash();
+  paintSlash(txtOf(slash.block.id));
+}
+function paintSlash(txt) {
+  const pop = $("slash-pop");
+  pop.replaceChildren(el("div", { class: "sr-group", text: "Turn into" }), ...slash.items.map(([type, label, sub], k) => el("button", { class: `sr-item${k === slash.cursor ? " active" : ""}`, type: "button", onmousedown: (e) => { e.preventDefault(); pickSlash(k); } },
+    el("span", { class: "space-tile slash-glyph", text: { p: "¶", h1: "H1", h2: "H2", h3: "H3", bullet: "•", todo: "☐", quote: "❝", code: "</>", divider: "—" }[type] }), el("span", { class: "lines" }, el("span", { text: label }), el("small", { text: sub })))));
+  const r = txt.getBoundingClientRect(), host = $("view-notes").getBoundingClientRect();
+  pop.style.left = `${Math.round(r.left - host.left)}px`;
+  pop.style.top = `${Math.round(r.bottom - host.top + 6)}px`;
+  show(pop, true);
+}
+function closeSlash() { slash = null; show("slash-pop", false); }
+function pickSlash(k) { const [type] = slash.items[k]; const b = slash.block; closeSlash(); turnInto(b, type, ""); }
+function handleSlashKey(e, b, txt) {
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); slash.cursor = (slash.cursor + (e.key === "ArrowDown" ? 1 : -1) + slash.items.length) % slash.items.length; paintSlash(txt); return true; }
+  if (e.key === "Enter") { e.preventDefault(); pickSlash(slash.cursor); return true; }
+  if (e.key === "Escape") { e.preventDefault(); closeSlash(); return true; }
+  return false;
+}
+$("note-title").addEventListener("input", () => {
+  if (!note || note.file) return;
+  note.title = $("note-title").textContent.trim();
+  const last = $("note-crumbs").lastElementChild;
+  if (last) last.textContent = note.title || "Untitled";
+  saveNoteSoon();
+});
+$("note-title").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); const t = txtOf(note.blocks[0].id); if (t) placeCaret(t, 0); } });
+$("note-icon").addEventListener("click", () => { if (!note || note.file) return; note.icon = PAGE_ICONS[(PAGE_ICONS.indexOf(note.icon) + 1) % PAGE_ICONS.length]; $("note-icon").textContent = note.icon; saveNoteSoon(); });
+$("note-delete").addEventListener("click", async () => {
+  if (!note || note.file || !confirm(`Delete "${note.title || "Untitled"}"? It's removed from all your devices.`)) return;
+  const { id, file, ...data } = note; void file;
+  clearTimeout(noteTimer);
+  await invoke("put_items", { channel: notesState.channel, items: [{ id, kind: "page", data: { ...data, deleted: true, updated: Date.now() } }] });
+  note = null;
+  await openNotes();
+});
+function saveNoteSoon(ms = 700) {
+  if (!note) return;
+  $("note-saved").textContent = "Editing…";
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(saveNote, ms);
+}
+function flushNote() { if (noteTimer) { clearTimeout(noteTimer); noteTimer = null; saveNote(); } }
+async function saveNote() {
+  noteTimer = null;
+  if (!note) return;
+  const n = note;
+  try {
+    if (n.file) {
+      await invoke("save_text_file", { channel: n.file.channel, id: n.file.id, text: toMarkdown(n.blocks) });
+    } else {
+      const data = { title: n.title, icon: n.icon, blocks: n.blocks.map(({ id, type, text, checked }) => ({ id, type, text, checked })), updated: Date.now() };
+      await invoke("put_items", { channel: notesState.channel, items: [{ id: n.id, kind: "page", data }] });
+      const at = notesState.items.findIndex((i) => i.id === n.id);
+      const rec = { id: n.id, kind: "page", data, seq: 0, updated_ms: data.updated };
+      if (at >= 0) notesState.items[at] = rec; else notesState.items.push(rec);
+      renderNoteList();
+    }
+    if (note === n) $("note-saved").textContent = n.file ? "Saved to the drive, encrypted" : "Saved · only your devices can read it";
+  } catch (err) { $("note-saved").textContent = `Not saved: ${err}`; }
+}
+function toMarkdown(blocks) {
+  return blocks.map((b) => ({ p: b.text, h1: `# ${b.text}`, h2: `## ${b.text}`, h3: `### ${b.text}`, bullet: `- ${b.text}`, todo: `- [${b.checked ? "x" : " "}] ${b.text}`, quote: `> ${b.text}`, code: `\`\`\`\n${b.text}\n\`\`\``, divider: "---" }[b.type] ?? b.text)).join("\n\n") + "\n";
+}
+function fromMarkdown(md) {
+  const out = [];
+  const lines = md.replace(/\r\n/g, "\n").split("\n");
+  for (let k = 0; k < lines.length; k++) {
+    const l = lines[k];
+    if (l.startsWith("```")) { const body = []; k++; while (k < lines.length && !lines[k].startsWith("```")) body.push(lines[k++]); out.push(newBlock("code", body.join("\n"))); continue; }
+    if (!l.trim()) continue;
+    let m;
+    if ((m = /^(#{1,3})\s+(.*)$/.exec(l))) out.push(newBlock(`h${m[1].length}`, m[2]));
+    else if ((m = /^[-*]\s+\[([ xX])\]\s*(.*)$/.exec(l))) { const b = newBlock("todo", m[2]); b.checked = m[1] !== " "; out.push(b); }
+    else if ((m = /^[-*]\s+(.*)$/.exec(l))) out.push(newBlock("bullet", m[1]));
+    else if ((m = /^>\s?(.*)$/.exec(l))) out.push(newBlock("quote", m[1]));
+    else if (/^(---|\*\*\*)\s*$/.test(l)) out.push(newBlock("divider"));
+    else out.push(newBlock("p", l));
+  }
+  return out.length ? out : [newBlock()];
+}
+// Opens a text or Markdown file from a drive in the editor.
+async function editDriveFile(f) {
+  let text = "";
+  try { const pv = await invoke("preview_file", { channel: drive.channel, id: f.id }); text = pv.kind === "text" ? pv.data : ""; } catch (err) { alert(String(err)); return; }
+  flushNote();
+  note = { id: f.id, title: f.data.name, icon: "📄", blocks: fromMarkdown(text), file: { channel: drive.channel, id: f.id, name: f.data.name, folder: f.data.folder || "/" } };
+  hideMain(); show("view-notes");
+  renderNote(); renderFolders();
+}
+
+// Home: what's on today, next to your spaces.
+async function renderHomeToday() {
+  const box = $("home-today");
+  if (!box) return;
+  let evs = [], recent = [];
+  try {
+    agenda.channel = await personalDesk("agenda");
+    agenda.items = await invoke("desk_items", { channel: agenda.channel });
+    evs = dayEvents(isoToday()).filter((e) => !e.due);
+    notesState.channel = await personalDesk("notes");
+    notesState.items = await invoke("desk_items", { channel: notesState.channel });
+    recent = pages().slice(0, 3);
+  } catch { /* offline: leave it empty */ }
+  $("today-events").replaceChildren(...(evs.length ? evs.map((e) => el("button", { class: "today-row", type: "button", onclick: () => { openAgenda().then(() => openEvent(e)); } },
+    el("span", { class: `ev-dot c-${e.color || "ink"}` }), el("strong", { text: e.title }), el("small", { text: e.all_day ? "All day" : `${e.start}${e.end ? `–${e.end}` : ""}` })))
+    : [el("button", { class: "today-row empty", type: "button", onclick: () => openAgenda(), text: "Nothing on today. Plan something" })]));
+  $("today-notes").replaceChildren(...(recent.length ? recent.map((p) => el("button", { class: "today-row", type: "button", onclick: () => openNotes(p.id) },
+    el("span", { class: "note-emoji", text: p.icon || "📝" }), el("strong", { text: p.title || "Untitled" }), el("small", { text: sinceFmt(p.updated || 0) })))
+    : [el("button", { class: "today-row empty", type: "button", onclick: () => $("note-new").click(), text: "No pages yet. Start one" })]));
 }
 
 // Home: spaces overview
@@ -1412,6 +1909,7 @@ async function previewFile(f) {
   $("dlg-preview-title").textContent = f.data.name;
   $("preview-meta").textContent = `${sizeFmt(f.data.file_key?.size || 0)} · ${f.data.by || ""}${f.data.added ? ` · ${dateFmt.format(f.data.added)}` : ""}`;
   $("preview-body").replaceChildren(el("p", { text: "Decrypting…" }));
+  show("preview-edit", /\.(md|markdown|txt)$/i.test(f.data.name));
   $("dlg-preview").showModal();
   try {
     const p = await invoke("preview_file", { channel: drive.channel, id: f.id });
@@ -1421,6 +1919,7 @@ async function previewFile(f) {
 }
 $("preview-close").addEventListener("click", () => $("dlg-preview").close());
 $("preview-download").addEventListener("click", () => previewing && downloadFile(previewing));
+$("preview-edit").addEventListener("click", () => { if (!previewing) return; const f = previewing; $("dlg-preview").close(); editDriveFile(f); });
 $("drive-folder").addEventListener("click", () => { $("folder-name").value = ""; setError("folder-error", ""); $("dlg-folder").showModal(); $("folder-name").focus(); });
 $("folder-cancel").addEventListener("click", () => $("dlg-folder").close());
 $("folder-form").addEventListener("submit", async (e) => {
