@@ -270,8 +270,18 @@ const shot = async (name) => { await page.waitForTimeout(160); await page.screen
 const visible = (sel) => page.waitForSelector(`${sel}:not([hidden])`, { timeout: 5000 });
 // The chats list pops over from the left; open it, pick, and it closes.
 async function pick(list, name) {
-  if (await page.isHidden("#drawer-chats")) await page.click("#tool-chats");
+  // The list lives in the Chats / Channels section only.
+  if (await page.isHidden("#drawer-chats")) {
+    if (await page.isHidden("#tool-chats")) await page.click('.folder >> text=/^(Channels|Chats)/');
+    if (await page.isHidden("#drawer-chats")) await page.click("#tool-chats");
+  }
   await page.click(`${list} .side-item >> text="${name}"`);
+}
+async function openCollections() {
+  await page.click('.folder >> text=/^Desks/');
+  await page.waitForTimeout(150);
+  if (!(await page.isHidden("#view-desks"))) await page.click('#desks-grid .ov-desk >> text="Collections"');
+  await page.waitForSelector("#view-desk:not([hidden])", { timeout: 5000 });
 }
 const folder = (label) => page.click(`.folder >> text="${label}"`);
 
@@ -428,7 +438,7 @@ await page.fill("#message", "Deck cover looks great, shipping it to Acme today."
 await page.press("#message", "Enter");
 await page.waitForTimeout(300);
 await shot("13-channel");
-await pick("#desk-list", "Collections");
+await openCollections();
 await visible("#view-desk");
 await page.waitForTimeout(250);
 await shot("13b-desk");
@@ -448,7 +458,7 @@ await page.click("#notes-brief");
 await shot("13e-desk-after-add");
 // A client pressed "I've paid" on a payment link.
 const claimed = await page.evaluate(() => window.__addClaim());
-await pick("#desk-list", "Collections");
+await openCollections();
 await page.waitForTimeout(250);
 await shot("13g-desk-client-says-paid");
 await page.click(`#desk-rows tr >> text="${claimed}"`);
@@ -480,6 +490,27 @@ await page.fill("#thread-input", "Perfect, locking it.");
 await page.press("#thread-input", "Enter");
 await page.waitForTimeout(300);
 await shot("13o-thread");
+// Threads under stress: other panels take over, the tab reopens it from elsewhere.
+await page.click("#tool-people");
+await page.waitForTimeout(150);
+if (!(await page.isHidden("#thread"))) throw new Error("People should close the thread");
+await page.click("#tool-people");
+await page.click(".thread-sum");
+await page.click("#tool-ask");
+if (!(await page.isHidden("#thread"))) throw new Error("Ask should close the thread");
+await page.click("#ask-close");
+await pick("#channel-list", "invoices");
+await page.click(".tab >> text=/^Going with the second/");
+await visible("#thread");
+await page.waitForTimeout(200);
+const where = await page.textContent("#convo-name");
+if (!where.includes("acme-rebrand")) throw new Error(`thread tab opened ${where}`);
+await page.fill("#thread-input", "Second reply from the tab.");
+await page.press("#thread-input", "Enter");
+await page.waitForTimeout(300);
+const n = await page.textContent(".thread-count");
+if (!n.startsWith("5")) throw new Error(`thread count ${n}`);
+await shot("13o2-thread-from-tab");
 await page.click("#thread-close");
 await page.click("#tool-chats");
 await page.waitForTimeout(150);
@@ -505,7 +536,7 @@ await page.click("#m-enabled");
 await page.waitForTimeout(150);
 await shot("13n-files-on-this-computer");
 await page.click('.rail-btn.space >> nth=0');
-await pick("#desk-list", "Collections");
+await openCollections();
 await visible("#view-desk");
 await folder("Desks");
 await visible("#view-desks");
@@ -538,7 +569,7 @@ await folder("Appearance");
 await page.click('#settings-appearance [data-display="dark"]');
 await shot("19-appearance-dark");
 await page.click("#rail-home");
-await page.click('.dm-item >> text="Tomás Ruiz"');
+await pick("#dm-list", "Tomás Ruiz");
 await shot("20-dm-dark");
 await page.click("#rail-settings");
 await folder("Appearance");

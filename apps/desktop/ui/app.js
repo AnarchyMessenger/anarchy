@@ -493,6 +493,7 @@ function renderRail() {
 
 function go(which) {
   view = which;
+  chatsHint = false;
   closeDrawers();
   renderRail();
   if (which === "settings") {
@@ -569,9 +570,6 @@ function renderSide() {
   show("no-dms", dms.length === 0);
   if (view === "space" && currentSpace) {
     const desks = channels.filter((c) => c.kind === "channel" && c.space === currentSpace.id && c.desk && c.desk !== "files");
-    $("desk-list").replaceChildren(...desks.map((c) => el("button", { class: `side-item${c.id === current ? " active" : ""}`, "data-id": c.id, onclick: () => openChannel(c.id) },
-      el("span", { class: "kind-icon" }, icon("receipt")), el("span", { class: "name", text: c.name }))));
-    show("no-desks", desks.length === 0);
     const list = channels.filter((c) => c.kind === "channel" && c.space === currentSpace.id && !c.desk);
     $("channel-list").replaceChildren(...list.map((c) => {
       const unread = c.unread && c.id !== current;
@@ -727,7 +725,11 @@ function renderThread() {
   $("thread-input").placeholder = root && !root.mine ? `Reply to ${root.sender}…` : "Reply in thread…";
 }
 $("thread-close").addEventListener("click", closeThread);
-$("thread-tab").addEventListener("click", () => { if (thread) { addTab({ channel: thread.channel, thread: thread.root }); renderTabs(); } });
+function threadLabel() {
+  const root = convo?.messages.find((m) => m.seq === thread?.root && m.thread == null);
+  return root ? root.text.slice(0, 32) : null;
+}
+$("thread-tab").addEventListener("click", () => { if (thread) { addTab({ channel: thread.channel, thread: thread.root, label: threadLabel() }); renderTabs(); } });
 $("thread-input").addEventListener("input", () => { $("thread-send").disabled = !$("thread-input").value.trim(); mentionInput($("thread-input")); });
 $("thread-input").addEventListener("blur", () => setTimeout(closeMention, 120));
 $("thread-input").addEventListener("keydown", (e) => {
@@ -745,7 +747,7 @@ $("thread-form").addEventListener("submit", async (e) => {
     await invoke("send_message", { channel, text, thread: root });
     await forwardToDesks(text, channels.find((c) => c.id === channel));
     // Taking part in a thread puts it in the working set.
-    addTab({ channel, thread: root });
+    addTab({ channel, thread: root, label: threadLabel() });
   } catch (err) { $("thread-input").value = text; alert(`Not sent: ${err}`); }
   await openChannel(channel);
 });
@@ -764,9 +766,9 @@ const tabKey = (t) => (t.thread != null ? `${t.channel}:${t.thread}` : t.channel
 function addTab(t) {
   const key = tabKey(t);
   const at = tabs.find((x) => tabKey(x) === key);
-  if (at) at.used = Date.now();
+  if (at) { at.used = Date.now(); if (t.label) at.label = t.label; }
   else {
-    tabs.push({ channel: t.channel, thread: t.thread ?? null, used: Date.now() });
+    tabs.push({ channel: t.channel, thread: t.thread ?? null, label: t.label || null, used: Date.now() });
     while (tabs.length > MAX_TABS) {
       const active = activeTabKey();
       const victim = tabs.filter((x) => tabKey(x) !== active).sort((a, b) => a.used - b.used)[0];
@@ -824,7 +826,7 @@ function renderTabs() {
     if (t.thread != null) {
       lead = el("span", { class: "tab-icon" }, icon("thread"));
       const root = convo?.channel.id === c.id ? convo.messages.find((m) => m.seq === t.thread && m.thread == null) : null;
-      name = root ? root.text.slice(0, 28) : `Thread in ${c.kind === "dm" ? c.name : `#${c.name}`}`;
+      name = root ? root.text.slice(0, 32) : t.label || `Thread in ${c.kind === "dm" ? c.name : `#${c.name}`}`;
       const replies = convo?.channel.id === c.id ? convo.messages.filter((m) => m.thread === t.thread) : [];
       const unseen = replies.filter((r) => !r.mine && r.seq > (threadSeen[key] || 0)).length;
       if (unseen && key !== active) status = el("span", { class: "tab-badge", text: String(unseen) });
@@ -864,8 +866,11 @@ document.addEventListener("keydown", (e) => {
 
 let settingsAt = "profile";
 const SETTINGS_PAGES = [["profile", "Profile"], ["privacy", "Privacy"], ["account", "Account & device"], ["appearance", "Appearance"], ["notifications", "Notifications"], ["files", "Files on this computer"], ["devices", "Devices"], ["invites", "Guest invites"]];
+// Set when you pick Chats with no conversation open, so the list still shows.
+let chatsHint = false;
 function sectionNow() {
   const cur = channels.find((c) => c.id === current);
+  if (!cur && chatsHint && (view === "home" || view === "space")) return "chats";
   if (!$("view-desks").hidden) return "desks";
   if (!$("view-agenda").hidden) return "agenda";
   if (!$("view-notes").hidden) return note?.file ? "files" : "notes";
@@ -901,6 +906,7 @@ function lastOpen(pred) {
 }
 async function openSection(key) {
   if (thread) closeThread();
+  chatsHint = false;
   const here = (c) => (view === "home" ? c.kind === "dm" : c.space === currentSpace?.id);
   if (key === "overview") { current = null; invoke("blur"); showStart(); renderSide(); return; }
   if (key === "agenda") return openAgenda();
@@ -914,7 +920,8 @@ async function openSection(key) {
   }
   // Chats / Channels: pick up where you left off, else the first one, else the list.
   const last = lastOpen((c) => here(c) && !c.desk) || channels.find((c) => here(c) && !c.desk && (view === "home" ? true : c.kind === "channel"));
-  if (last) { await openChannel(last.id); composer.focus(); } else toggleDrawer("chats", true);
+  if (last) { await openChannel(last.id); composer.focus(); }
+  else { current = null; showStart(); chatsHint = true; renderFolders(); toggleDrawer("chats", true); }
 }
 async function showDesks() {
   const sp = currentSpace;
@@ -948,7 +955,9 @@ function toggleDrawer(name, force) {
 }
 function closeDrawers() { drawer = null; paintDrawers(); }
 function paintDrawers() {
-  const chatsOn = pinned || drawer === "chats";
+  // The sidebar belongs to conversations only: Chats on Home, Channels in a space.
+  const chatSection = view !== "settings" && sectionNow() === "chats";
+  const chatsOn = chatSection && (pinned || drawer === "chats");
   show("drawer-chats", chatsOn);
   show("drawer-people", drawer === "people");
   syncDock();
@@ -956,8 +965,9 @@ function paintDrawers() {
   $("drawer-chats").classList.toggle("pinned", pinned);
   $("tool-chats").setAttribute("aria-expanded", String(chatsOn));
   if (chatsOn) show("tool-chats-dot", false);
-  show("drawer-chats", chatsOn && view !== "settings");
-  $("workspace").classList.toggle("chats-pinned", pinned && view !== "settings");
+  show("drawer-chats", chatsOn);
+  show("tool-chats", chatSection);
+  $("workspace").classList.toggle("chats-pinned", chatsOn && pinned);
   $("tool-people").setAttribute("aria-expanded", String(drawer === "people"));
   // Docked: the button collapses it. Popped over: the same button docks it.
   for (const b of document.querySelectorAll(".drawer-pin")) {
@@ -1141,13 +1151,23 @@ async function mentionInput(input) {
   const m = /(^|\s)@([^\s@]{0,24})$/.exec(upto);
   if (!m) return closeMention();
   const q = m[2].toLowerCase();
+  const start = upto.length - m[2].length - 1;
   const desks = desksInScope().filter((d) => d.name.toLowerCase().includes(q)).map((d) => ({ kind: "desk", label: d.name, sub: `Desk · ${KIND_OF_DESK[d.desk] || d.desk}`, insert: `@${d.name}`, d }));
-  const people = (await mentionPeople()).filter((p) => `${p.name} ${p.handle}`.toLowerCase().includes(q)).slice(0, 5)
-    .map((p) => ({ kind: "person", label: p.name, sub: `@${p.handle}`, insert: `@${p.handle.split("#")[0]}`, p }));
-  const items = [...desks, ...people].slice(0, 7);
-  if (!items.length) return closeMention();
-  mention = { input, start: upto.length - m[2].length - 1, items, cursor: 0 };
-  paintMention();
+  // Desks are known on this device: show them now; people follow once loaded.
+  const show = (people) => {
+    const items = [...desks, ...people].slice(0, 7);
+    if (!items.length) return closeMention();
+    const keep = mention && mention.input === input && mention.start === start ? mention.cursor : 0;
+    mention = { input, start, items, cursor: Math.min(keep, items.length - 1) };
+    paintMention();
+  };
+  if (desks.length) show([]);
+  const all = await mentionPeople();
+  // Still typing the same mention?
+  const now = input.value.slice(0, input.selectionStart);
+  if (!now.endsWith(`@${m[2]}`)) return;
+  show(all.filter((p) => `${p.name} ${p.handle}`.toLowerCase().includes(q)).slice(0, 5)
+    .map((p) => ({ kind: "person", label: p.name, sub: `@${p.handle}`, insert: `@${p.handle.split("#")[0]}`, p })));
 }
 function paintMention() {
   const pop = $("mention-pop");
@@ -1309,11 +1329,10 @@ function syncDock() {
 // Which list the sidebar shows: the space's desks and channels, or on Home the
 // list for the section you're in (conversations, pages, what's coming).
 function paintSide() {
-  const sec = view === "home" ? sectionNow() : null;
+  paintDrawers();
   show("side-space", view === "space");
-  show("side-home", view === "home" && sec !== "notes" && sec !== "agenda");
-  show("side-notes", view === "home" && sec === "notes");
-  show("side-agenda", view === "home" && sec === "agenda");
+  show("side-home", view === "home");
+
 }
 
 // ---------- personal desks: agenda and notes ----------
@@ -1413,15 +1432,7 @@ function renderAgenda() {
     grid.replaceChildren(...cols);
   }
 }
-function renderAgendaSide() {
-  const today = isoToday();
-  const horizon = addDays(today, 14);
-  const next = [...events(), ...agenda.dues].filter((e) => e.date >= today && e.date <= horizon).sort((a, b) => a.date.localeCompare(b.date) || (a.start || "").localeCompare(b.start || ""));
-  $("agenda-next").replaceChildren(...next.slice(0, 20).map((e) => el("button", { class: "side-item agenda-item", type: "button", onclick: () => (e.due ? goTo(e.channel) : openEvent(e)) },
-    el("span", { class: `ev-dot ${e.due ? "due" : `c-${e.color || "ink"}`}` }),
-    el("span", { class: "lines" }, el("span", { class: "name", text: e.title }), el("small", { text: `${e.date === today ? "Today" : shortDate.format(asDate(e.date))}${e.due ? "" : e.all_day ? "" : ` · ${e.start}`}` })))));
-  show("no-agenda", next.length === 0);
-}
+function renderAgendaSide() { /* the calendar shows it; no sidebar outside chats */ }
 $("agenda-prev").addEventListener("click", () => { const c = agenda.cursor; agenda.cursor = agenda.mode === "month" ? new Date(c.getFullYear(), c.getMonth() - 1, 1, 12) : new Date(c.getTime() - 7 * 864e5); renderAgenda(); });
 $("agenda-next-btn").addEventListener("click", () => { const c = agenda.cursor; agenda.cursor = agenda.mode === "month" ? new Date(c.getFullYear(), c.getMonth() + 1, 1, 12) : new Date(c.getTime() + 7 * 864e5); renderAgenda(); });
 $("agenda-today").addEventListener("click", () => { agenda.cursor = new Date(); renderAgenda(); });
@@ -1450,7 +1461,6 @@ function openEvent(e, iso) {
 }
 $("ev-allday").addEventListener("change", () => { for (const id of ["ev-start", "ev-end"]) $(id).disabled = $("ev-allday").checked; });
 $("event-new").addEventListener("click", () => openEvent(null, isoOf(agenda.cursor)));
-$("event-new-side").addEventListener("click", () => openEvent(null));
 $("event-cancel").addEventListener("click", () => $("dlg-event").close());
 async function putEvent(id, data) {
   const channel = await personalDesk("agenda");
@@ -2498,8 +2508,7 @@ $("desk-people").addEventListener("click", () => openPeople(true));
 
 // New desk.
 function openNewDesk() { $("desk-new-name").value = "Collections"; setError("desk-error", ""); $("dlg-desk").showModal(); $("desk-new-name").select(); }
-$("new-desk").addEventListener("click", openNewDesk);
-$("no-desks").addEventListener("click", openNewDesk);
+
 $("space-empty-desk").addEventListener("click", openNewDesk);
 $("desk-cancel").addEventListener("click", () => $("dlg-desk").close());
 $("desk-form").addEventListener("submit", async (e) => {

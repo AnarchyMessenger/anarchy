@@ -297,25 +297,8 @@
             <div class="side-list" id="dm-list"></div>
             <p class="side-empty" id="no-dms">No conversations yet.</p>
           </div>
-          <!-- Home, Notes: your pages -->
-          <div class="side" id="side-notes" hidden>
-            <div class="side-list"><button class="side-item nav" id="note-new" type="button"><svg class="i"><use href="#i-plus"/></svg><span class="name">New page</span></button></div>
-            <label class="search pill side-search"><svg class="i"><use href="#i-search"/></svg><input id="note-search" placeholder="Find a page" aria-label="Find a page"></label>
-            <div class="side-list" id="note-list"></div>
-            <p class="side-empty" id="no-notes">No pages yet.</p>
-          </div>
-          <!-- Home, Agenda: what's coming -->
-          <div class="side" id="side-agenda" hidden>
-            <div class="side-list"><button class="side-item nav" id="event-new-side" type="button"><svg class="i"><use href="#i-plus"/></svg><span class="name">New event</span></button></div>
-            <div class="side-group"><span>Next two weeks</span></div>
-            <div class="side-list" id="agenda-next"></div>
-            <p class="side-empty" id="no-agenda">Nothing planned.</p>
-          </div>
-          <!-- Space: its desks and channels (Overview and Files are folders above) -->
+          <!-- Space: its channels (desks, files and the overview are folders above) -->
           <div class="side" id="side-space" hidden>
-            <div class="side-group"><span>Desks</span><button class="icon-btn sm" id="new-desk" aria-label="New desk" title="New desk"><svg class="i"><use href="#i-plus"/></svg></button></div>
-            <div class="side-list" id="desk-list"></div>
-            <button class="side-empty link-row" id="no-desks" type="button">Set up a desk for invoices, requests or jobs</button>
             <div class="side-group"><span>Channels</span><button class="icon-btn sm" id="new-channel" aria-label="New channel" title="New channel"><svg class="i"><use href="#i-plus"/></svg></button></div>
             <div class="side-list" id="channel-list"></div>
             <p class="side-empty" id="no-channels">No channels yet.</p>
@@ -394,8 +377,8 @@
           <div class="agenda-head">
             <div><p class="hero-kind" id="agenda-kind">Agenda</p><h1 class="agenda-title" id="agenda-title"></h1></div>
             <span class="spacer"></span>
-            <div class="seg pill" role="group" aria-label="Move"><button type="button" id="agenda-prev" aria-label="Previous"><svg class="i"><use href="#i-arrow-left"/></svg></button><button type="button" id="agenda-today">Today</button><button type="button" id="agenda-next-btn" aria-label="Next"><svg class="i flip"><use href="#i-arrow-left"/></svg></button></div>
-            <div class="seg pill agenda-mode" role="tablist" aria-label="View"><button type="button" role="tab" data-mode="week">Week</button><button type="button" role="tab" data-mode="month">Month</button></div>
+            <div class="navseg" role="group" aria-label="Move"><button type="button" id="agenda-prev" aria-label="Previous"><svg class="i"><use href="#i-arrow-left"/></svg></button><button type="button" id="agenda-today">Today</button><button type="button" id="agenda-next-btn" aria-label="Next"><svg class="i flip"><use href="#i-arrow-left"/></svg></button></div>
+            <div class="navseg agenda-mode" role="tablist" aria-label="View"><button type="button" role="tab" data-mode="week">Week</button><button type="button" role="tab" data-mode="month">Month</button></div>
             <button class="btn-ink inline" id="event-new" type="button"><svg class="i"><use href="#i-plus"/></svg><span>Add event</span></button>
           </div>
           <div class="cal-grid" id="cal-grid"></div>
@@ -403,6 +386,13 @@
 
         <!-- Notes: pages with blocks, like a notebook; also edits text files from the drive -->
         <div class="view notes" id="view-notes" hidden>
+          <aside class="note-pages" aria-label="Pages">
+            <button class="side-item nav" id="note-new" type="button"><svg class="i"><use href="#i-plus"/></svg><span class="name">New page</span></button>
+            <label class="search pill side-search"><svg class="i"><use href="#i-search"/></svg><input id="note-search" placeholder="Find a page" aria-label="Find a page"></label>
+            <div class="side-list" id="note-list"></div>
+            <p class="side-empty" id="no-notes">No pages yet.</p>
+          </aside>
+          <section class="note-main">
           <div class="note-bar"><nav class="crumbs" id="note-crumbs" aria-label="Where"></nav><span class="spacer"></span><span class="fine" id="note-saved"></span><button class="icon-btn" id="note-delete" type="button" title="Delete page" aria-label="Delete page"><svg class="i"><use href="#i-trash"/></svg></button></div>
           <div class="note-scroll">
             <article class="note-page" id="note-page">
@@ -412,6 +402,7 @@
               <p class="note-hint fine">Type <kbd>/</kbd> for headings, lists, to-dos, quotes and code. <kbd>#</kbd>, <kbd>-</kbd>, <kbd>[]</kbd> and <kbd>&gt;</kbd> work too.</p>
             </article>
           </div>
+          </section>
           <div class="slash-pop panel" id="slash-pop" role="listbox" aria-label="Turn into" hidden></div>
         </div>
 
