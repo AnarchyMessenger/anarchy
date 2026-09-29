@@ -219,9 +219,9 @@ p { margin: 0; }
 .rail-me { width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: none; cursor: pointer; }
 .rail-me .avatar { width: 32px; height: 32px; }
 
-.workspace { position: relative; display: grid; grid-template-columns: 48px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "tools folders" "tools main"; min-height: 0; overflow: hidden; }
+.workspace { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 48px; grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "folders tools" "main tools"; min-height: 0; overflow: hidden; }
 .workspace > .tools { grid-area: tools; }
-.workspace.no-tools { grid-template-columns: 0 minmax(0, 1fr); }
+.workspace.no-tools { grid-template-columns: minmax(0, 1fr) 0; }
 .workspace.no-tools > .folders { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
 .workspace > .folders { grid-area: folders; }
 .workspace > .main { grid-area: main; }
@@ -635,7 +635,7 @@ form.start-card { cursor: default; }
 /* ---------- Ask drawer ---------- */
 .ask-btn { color: var(--primary); }
 .ask-btn:hover { background: var(--primary-soft, var(--surface-selected)); }
-.ask { position: absolute; top: 0; left: 0; bottom: 0; width: min(380px, 100%); z-index: 30; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--border); box-shadow: 18px 0 36px -28px rgb(0 0 0 / .35); animation: from-left .16s ease-out; }
+.ask { position: absolute; top: 0; right: 0; bottom: 0; width: min(380px, 100%); z-index: 30; display: flex; flex-direction: column; background: var(--surface); border-left: 1px solid var(--border); box-shadow: -18px 0 36px -28px rgb(0 0 0 / .35); animation: ask-in .16s ease-out; }
 @keyframes ask-in { from { transform: translateX(24px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .ask { animation: none; } }
 .ask-head { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--border); flex: none; }
@@ -721,7 +721,7 @@ form.start-card { cursor: default; }
 /* Leave room so the conversation stays readable beside a thread on wide windows. */
 @media (min-width: 1180px) { .main.with-panel .convo { padding-right: 400px; } }
 
-.tools { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; border-right: 1px solid var(--border); background: color-mix(in srgb, var(--surface-sunken) 55%, var(--surface)); border-radius: var(--radius-lg) 0 0 var(--radius-lg); }
+.tools { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; border-left: 1px solid var(--border); background: color-mix(in srgb, var(--surface-sunken) 55%, var(--surface)); border-radius: 0 var(--radius-lg) var(--radius-lg) 0; }
 .tool-btn { position: relative; display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-muted); cursor: pointer; }
 .tool-btn:hover { background: var(--surface-selected); color: var(--ink); }
 .tool-btn[aria-expanded="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgba(26,24,20,.06); }
@@ -729,7 +729,7 @@ form.start-card { cursor: default; }
 .tool-dot { position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 2px var(--surface); }
 
 /* Folder tabs sit on the canvas's top edge; the open one is part of the page below. */
-.folders { display: flex; align-items: flex-end; gap: 12px; min-width: 0; height: 42px; padding: 0 10px 0 8px; background: color-mix(in srgb, var(--surface-sunken) 55%, var(--surface)); border-bottom: 1px solid var(--border); border-radius: 0 var(--radius-lg) 0 0; }
+.folders { display: flex; align-items: flex-end; gap: 12px; min-width: 0; height: 42px; padding: 0 10px 0 8px; background: color-mix(in srgb, var(--surface-sunken) 55%, var(--surface)); border-bottom: 1px solid var(--border); border-radius: var(--radius-lg) 0 0 0; }
 .folder-tabs { display: flex; align-items: flex-end; gap: 2px; flex: none; margin-bottom: -1px; }
 .folder { position: relative; display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border: 1px solid transparent; border-bottom: 0; border-radius: 10px 10px 0 0; background: transparent; color: var(--ink-muted); font: inherit; font-size: 13px; font-weight: 540; cursor: pointer; white-space: nowrap; }
 .folder svg.i { width: 15px; height: 15px; }
@@ -756,3 +756,10 @@ button.person-row { cursor: pointer; } .person-row:hover { background: var(--sur
 .people-dm { padding: 12px 14px 16px; border-top: 1px solid var(--border); display: grid; gap: 6px; }
 .desks-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 18px; }
 .ov-desk.add { border-style: dashed; background: transparent; }
+
+#drawer-people { left: auto; right: 0; border-right: 0; border-left: 1px solid var(--border); box-shadow: -18px 0 36px -26px rgb(0 0 0 / .35); animation: ask-in .16s ease-out; }
+.side-toggle { position: relative; align-self: center; margin-right: 2px; }
+.side-toggle .tool-dot { top: 3px; right: 3px; }
+.drawer.pinned { background: color-mix(in srgb, var(--surface-sunken) 55%, var(--surface)); }
+#drawer-chats { width: 248px; }
+.workspace.chats-pinned .main { padding-left: 248px; }

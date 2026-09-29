@@ -162,9 +162,9 @@ $("lock-form").addEventListener("submit", async (e) => {
 const FLOW = ["s-account", "s-usage", "s-lock", "s-card"];
 function authStep(id) {
   for (const s of document.querySelectorAll(".auth-step")) show(s, s.id === id);
-  const at = FLOW.indexOf(id === "s-anon" || id === "s-guest" ? "s-account" : id);
+  const at = FLOW.indexOf(["s-anon", "s-guest", "s-invite", "s-server"].includes(id) ? "s-account" : id);
   $("steps").replaceChildren(...(at < 0 ? [] : FLOW.map((_, i) => el("i", { class: i <= at ? "on" : "" }))));
-  const focus = { "s-server": "server", "s-guest": "invite-code", "s-anon": "anon-name", "s-lock": "pass1", "s-card": "card-name" }[id];
+  const focus = { "s-server": "server", "s-invite": "invite-link", "s-guest": "invite-code", "s-anon": "anon-name", "s-lock": "pass1", "s-card": "card-name" }[id];
   if (focus) requestAnimationFrame(() => $(focus).focus());
   const notes = {
     "s-usage": "Nothing about how you use Anarchy leaves your account settings.",
@@ -178,24 +178,79 @@ function showAuth() {
   stopPolling();
   show("omnibox", false);
   show("starting", false); show("lock", false); show("app", false); show("auth");
-  if (status.last_server) $("server").value = hostOf(status.last_server);
   paintArt({});
-  authStep("s-server");
+  $("server").value = "";
+  authStep("s-account");
+  // No address to type first: the server you used last, or the public one.
+  connect(status.last_server || status.default_server);
+}
+
+// Loads a server's sign-in options. Failing to reach the default server
+// leaves a way out (another server, an invite) rather than a dead end.
+async function connect(server) {
+  show("account-methods", false); show("server-loading");
+  $("server-loading-host").textContent = hostOf(server);
+  setError("account-error", "");
+  try { workspace = await invoke("workspace_info", { server }); prepareAccount(); return true; }
+  catch (err) {
+    show("server-loading", false);
+    for (const id of ["to-anon", "to-guest"]) show(id, false);
+    $("org-server").textContent = hostOf(server);
+    setError("account-error", `${err} You can use a different server, or an invite.`);
+    return false;
+  }
 }
 
 $("s-server").addEventListener("submit", async (e) => {
   e.preventDefault();
   setError("server-error", "");
   await busy($("server-continue"), "Checking…", async () => {
-    try { workspace = await invoke("workspace_info", { server: $("server").value }); prepareAccount(); }
+    try { workspace = await invoke("workspace_info", { server: $("server").value }); pendingNote = ""; prepareAccount(); }
     catch (err) { setError("server-error", String(err)); }
+  });
+});
+$("server-back").addEventListener("click", () => authStep("s-account"));
+
+// Invite links look like https://<server>/i/<code>; a bare code means this server.
+let pendingSpaceCode = null;
+let pendingNote = "";
+function parseInvite(text) {
+  const t = text.trim();
+  const m = /^(https?:\/\/[^/\s]+)\/i\/([^\s/?#]+)/i.exec(t) || /^anarchy:\/\/join\?server=([^&\s]+)&code=([^&\s]+)/i.exec(t);
+  if (m) return { server: decodeURIComponent(m[1]), code: decodeURIComponent(m[2]) };
+  return { server: null, code: t };
+}
+$("to-invite").addEventListener("click", () => { setError("invite-error", ""); authStep("s-invite"); });
+$("invite-back").addEventListener("click", () => authStep("s-account"));
+$("s-invite").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const { server, code } = parseInvite($("invite-link").value);
+  if (!code) return setError("invite-error", "Paste the link or code you were given.");
+  await busy($("invite-continue"), "Checking…", async () => {
+    try {
+      if (server && server !== workspace?.server) workspace = await invoke("workspace_info", { server });
+      if (!workspace) throw new Error("Can't reach the server for that invite.");
+      // Company servers take guests with a code; elsewhere a code joins a space once you have an account.
+      if (workspace.config.guests_enabled) { $("invite-code").value = code; setError("guest-error", ""); authStep("s-guest"); return; }
+      pendingSpaceCode = code;
+      pendingNote = `Make an account or sign in on ${hostOf(workspace.server)}, and you'll join the space right after.`;
+      prepareAccount();
+    } catch (err) { setError("invite-error", String(err).replace(/^Error: /, "")); }
   });
 });
 
 function prepareAccount() {
   const c = workspace.config;
   const google = /accounts\.google\.com/.test(c.issuer || "");
-  $("account-title").textContent = c.open_signup ? "Create your account" : `Sign in to ${c.org_name}`;
+  show("server-loading", false); show("account-methods");
+  const isDefault = workspace.server === status.default_server;
+  $("account-title").textContent = c.open_signup ? "Welcome to Anarchy" : `Sign in to ${c.org_name}`;
+  $("account-sub").textContent = c.open_signup
+    ? "Messages are encrypted on this computer before they leave it. New here or coming back, it's the same step."
+    : "Use the account your organisation gave you.";
+  $("account-note").textContent = pendingNote;
+  show("account-note", !!pendingNote);
+  $("change-server").textContent = isDefault ? "Use a different server" : "Change";
   $("org-server").textContent = hostOf(workspace.server);
   $("guest-org").textContent = c.org_name;
   $("sso-label").textContent = google ? "Continue with Google" : `Continue with ${c.org_name} SSO`;
@@ -213,7 +268,7 @@ function prepareAccount() {
   authStep("s-account");
 }
 
-$("change-server").addEventListener("click", () => authStep("s-server"));
+$("change-server").addEventListener("click", () => { $("server").value = workspace && workspace.server !== status.default_server ? hostOf(workspace.server) : ""; setError("server-error", ""); authStep("s-server"); });
 
 $("sso").addEventListener("click", async () => {
   setError("account-error", "");
@@ -233,6 +288,16 @@ $("email-form").addEventListener("submit", async (e) => {
   setError("account-error", "");
   await busy($("email-send"), "Sending…", async () => {
     try {
+      // A work email can point to the company's own server (…/.well-known/anarchy.json).
+      const own = pendingSpaceCode ? null : await invoke("discover_server", { email: pendingEmail }).catch(() => null);
+      if (own && own !== workspace.server) {
+        workspace = await invoke("workspace_info", { server: own });
+        const domain = pendingEmail.split("@")[1];
+        pendingNote = `${domain} has its own Anarchy server, ${hostOf(own)}. You'll sign in there.`;
+        prepareAccount();
+        $("email").value = pendingEmail;
+        if (!workspace.config.email_enabled) return; // SSO only: the button is there now
+      }
       await invoke("request_email_code", { server: workspace.server, email: pendingEmail });
       $("sent-to").textContent = pendingEmail;
       for (const id of ["email-form", "sso", "or"]) show(id, false);
@@ -394,6 +459,11 @@ async function showApp() {
   go("home");
   await refreshChannels();
   startPolling();
+  if (pendingSpaceCode) {
+    const code = pendingSpaceCode; pendingSpaceCode = null; pendingNote = "";
+    try { const sp = await invoke("join_space", { code }); spaces = await invoke("spaces"); openSpace(spaces.find((x) => x.id === sp.id) || sp); }
+    catch (err) { alert(`Couldn't join with that invite: ${err}`); }
+  }
   refreshDeskNeeds().then(renderTabs);
   // Brings the local file share back up if it was on.
   invoke("mount_info").then((m) => { mount = m; }).catch(() => {});
@@ -782,7 +852,7 @@ function renderTabs() {
   show("tool-chats-dot", !pinned && drawer !== "chats" && channels.some((c) => c.unread && c.id !== current && belongsHere(c)));
 }
 document.addEventListener("keydown", (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === "\\") { e.preventDefault(); toggleDrawer("chats"); }
+  if ((e.ctrlKey || e.metaKey) && e.key === "\\") { e.preventDefault(); if (pinned) { pinned = false; writeStore("anarchy.chatsPinned", false); closeDrawers(); } else toggleDrawer("chats"); }
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "w" && current) { e.preventDefault(); const t = tabs.find((x) => tabKey(x) === activeTabKey()); if (t) closeTab(t); }
 });
 
@@ -816,6 +886,7 @@ function renderFolders() {
   $("folder-tabs").replaceChildren(...folders.map((f) => el("button", { class: `folder${f.active ? " active" : ""}`, type: "button", role: "tab", "aria-selected": String(!!f.active), onclick: f.go },
     f.icon ? icon(f.icon) : null, el("span", { text: f.label }),
     f.n ? el("span", { class: "tab-badge warn", text: String(f.n) }) : f.dot ? el("span", { class: "unread-dot", "aria-label": "unread" }) : null)));
+  $("nav-files").classList.toggle("active", view === "space" && channels.find((c) => c.id === current)?.desk === "files");
   show("tab-list", view !== "settings");
   show("tools", view !== "settings");
   $("workspace").classList.toggle("no-tools", view === "settings");
@@ -859,12 +930,13 @@ $("desks-new").addEventListener("click", () => openNewDesk());
 // ---------- drawers: chats and people pop over from the left ----------
 
 let drawer = null; // "chats" | "people" | null
-let pinned = readStore("anarchy.chatsPinned", false);
+let pinned = readStore("anarchy.chatsPinned", true);
 function toggleDrawer(name, force) {
   const open = force ?? drawer !== name;
   if (open && name !== "chats" && pinned) { /* the pinned list stays; the other panel opens over the canvas */ }
   drawer = open ? name : null;
   if (open) openAsk(false);
+  if (open && name === "people" && thread) closeThread();
   paintDrawers();
   if (open && name === "people") renderPeopleDrawer();
 }
@@ -877,10 +949,21 @@ function paintDrawers() {
   $("drawer-chats").classList.toggle("pinned", pinned);
   $("tool-chats").setAttribute("aria-expanded", String(chatsOn));
   if (chatsOn) show("tool-chats-dot", false);
+  show("drawer-chats", chatsOn && view !== "settings");
+  $("workspace").classList.toggle("chats-pinned", pinned && view !== "settings");
   $("tool-people").setAttribute("aria-expanded", String(drawer === "people"));
-  for (const b of document.querySelectorAll(".drawer-pin")) { b.setAttribute("aria-pressed", String(pinned)); b.title = pinned ? "Unpin: pop over instead" : "Keep open"; }
+  // Docked: the button collapses it. Popped over: the same button docks it.
+  for (const b of document.querySelectorAll(".drawer-pin")) {
+    b.setAttribute("aria-pressed", String(pinned));
+    b.title = pinned ? "Collapse the sidebar (Ctrl \\)" : "Keep the sidebar open";
+    b.setAttribute("aria-label", b.title);
+    b.firstElementChild.firstElementChild.setAttribute("href", pinned ? "#i-sidebar" : "#i-pin");
+  }
+  $("tool-chats").hidden = pinned;
+  $("tool-chats").title = "Show the sidebar (Ctrl \\)";
 }
-$("tool-chats").addEventListener("click", () => { if (pinned) { pinned = false; writeStore("anarchy.chatsPinned", false); closeDrawers(); } else toggleDrawer("chats"); });
+$("tool-chats").addEventListener("click", () => toggleDrawer("chats"));
+$("nav-files").addEventListener("click", () => openDriveOf(currentSpace));
 $("tool-people").addEventListener("click", () => toggleDrawer("people"));
 for (const b of document.querySelectorAll(".drawer-pin")) b.addEventListener("click", () => { pinned = !pinned; writeStore("anarchy.chatsPinned", pinned); if (!pinned) drawer = null; paintDrawers(); });
 // Picking something in a pop-over closes it; clicking the canvas does too.
@@ -1984,7 +2067,7 @@ $("space-form").addEventListener("submit", async (e) => {
   await busy($("space-submit"), join ? "Joining…" : "Creating…", async () => {
     try {
       const s = join
-        ? await invoke("join_space", { code: $("space-code").value })
+        ? await invoke("join_space", { code: parseInvite($("space-code").value).code })
         : await invoke("create_space", { name: $("space-new-name").value, kind: document.querySelector("input[name=space-kind]:checked")?.value || "personal" });
       $("dlg-space").close();
       spaces = await invoke("spaces");
@@ -2007,8 +2090,8 @@ $("space-invite-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
     const inv = await invoke("create_space_invite", { space: currentSpace.id, hours: Number($("sp-hours").value), maxUses: Number($("sp-uses").value) });
-    $("sp-code").textContent = inv.code;
-    $("sp-meta").textContent = `Works until ${dateTimeFmt.format(inv.expires_at_ms)}, ${inv.max_uses === 1 ? "once" : `${inv.max_uses} times`}. They use "Join with a code" on Home.`;
+    $("sp-code").textContent = `${status.session?.server || workspace?.server || ""}/i/${inv.code}`;
+    $("sp-meta").textContent = `Works until ${dateTimeFmt.format(inv.expires_at_ms)}, ${inv.max_uses === 1 ? "once" : `${inv.max_uses} times`}. New people paste the link when they sign up; people with an account use "Join with a code" on Home.`;
     show("sp-result"); show("sp-copy"); show("sp-create", false);
   } catch (err) { setError("sp-error", String(err)); }
 });

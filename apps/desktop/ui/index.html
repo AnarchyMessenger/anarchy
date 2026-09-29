@@ -54,6 +54,7 @@
   <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
   <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 4h6l-1 6 3 3v1H7v-1l3-3z"/><path d="M12 14v6"/></symbol>
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/></symbol>
+  <symbol id="i-apps" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="5" cy="5" r="1.9"/><circle cx="12" cy="5" r="1.9"/><circle cx="19" cy="5" r="1.9"/><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/><circle cx="5" cy="19" r="1.9"/><circle cx="12" cy="19" r="1.9"/><circle cx="19" cy="19" r="1.9"/></g></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8.5 7 10 4-1.5 7-5.5 7-10V6z"/></symbol>
   <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
@@ -104,20 +105,34 @@
       <div class="auth-body">
         <!-- 1. server -->
         <form class="auth-step" id="s-server" novalidate>
-          <h1>Welcome to Anarchy</h1>
-          <p class="sub">Your messages are encrypted on this computer before they leave it. Start with the server you use.</p>
+          <h1>Use a different server</h1>
+          <p class="sub">Companies and communities can run their own Anarchy. Enter the address you were given.</p>
           <label class="field" for="server">Server
             <input class="text-input" id="server" placeholder="chat.northwind.org" autocomplete="url" spellcheck="false"></label>
           <button class="btn-ink" id="server-continue" type="submit">Continue</button>
           <p class="error" id="server-error" role="alert" hidden></p>
-          <p class="fine">A company gives you its address. Self-hosting? See the setup guide.</p>
+          <p class="fine">Self-hosting? See the setup guide.</p>
+          <button class="link back" id="server-back" type="button"><svg class="i"><use href="#i-arrow-left"/></svg>Back</button>
+        </form>
+
+        <!-- an invite link or code picks the server -->
+        <form class="auth-step" id="s-invite" novalidate hidden>
+          <h1>Join with an invite</h1>
+          <p class="sub">Paste the link or code someone sent you. It takes you to the right server.</p>
+          <label class="field" for="invite-link">Invite link or code
+            <input class="text-input mono" id="invite-link" autocomplete="off" spellcheck="false" placeholder="https://chat.northwind.org/i/7QK2-MX9F…"></label>
+          <button class="btn-ink" id="invite-continue" type="submit">Continue</button>
+          <p class="error" id="invite-error" role="alert" hidden></p>
+          <button class="link back" id="invite-back" type="button"><svg class="i"><use href="#i-arrow-left"/></svg>Back</button>
         </form>
 
         <!-- 2. account -->
         <div class="auth-step" id="s-account" hidden>
-          <h1 id="account-title">Create your account</h1>
-          <p class="sub"><span id="org-server"></span> · <button class="link" id="change-server" type="button">Change</button></p>
-          <div class="stack">
+          <h1 id="account-title">Welcome to Anarchy</h1>
+          <p class="sub" id="account-sub">Messages are encrypted on this computer before they leave it.</p>
+          <p class="note" id="account-note" hidden></p>
+          <div class="waiting" id="server-loading" hidden><span class="pulse"></span><div><strong>Connecting…</strong><p class="fine" id="server-loading-host"></p></div></div>
+          <div class="stack" id="account-methods">
             <button class="btn-outline" id="sso" type="button" hidden><svg class="i" id="sso-icon"><use href="#i-key"/></svg><span id="sso-label">Continue with SSO</span></button>
             <div class="or" id="or" hidden><span>or</span></div>
             <form id="email-form" class="stack" novalidate hidden>
@@ -141,9 +156,11 @@
           <p class="error" id="account-error" role="alert" hidden></p>
           <div class="alt-routes">
             <button class="alt" id="to-anon" type="button" hidden><svg class="i"><use href="#i-user"/></svg><span><strong>Continue anonymously</strong><small>No email. Only this device can get back in.</small></span></button>
+            <button class="alt" id="to-invite" type="button"><svg class="i"><use href="#i-link"/></svg><span><strong>I have an invite</strong><small>A link or code for a space or a company</small></span></button>
             <button class="alt" id="to-guest" type="button" hidden><svg class="i"><use href="#i-ticket"/></svg><span><strong>I have a guest invite</strong><small>Join <span id="guest-org"></span> for a limited time.</small></span></button>
           </div>
           <p class="error" id="no-method" hidden>This server has no sign-in method turned on. Ask whoever runs it.</p>
+          <p class="fine server-line">Server: <span id="org-server"></span> · <button class="link" id="change-server" type="button">Use a different server</button></p>
         </div>
 
         <!-- 2b. anonymous -->
@@ -239,7 +256,7 @@
   <!-- ============ App ============ -->
   <section class="shell" id="app" hidden>
     <nav class="rail" aria-label="Spaces">
-      <button class="rail-btn home active" id="rail-home" title="Chats" aria-label="Chats"><svg class="i"><use href="#i-chat"/></svg><span class="rail-dot" id="home-dot" hidden></span></button>
+      <button class="rail-btn home active" id="rail-home" title="Home" aria-label="Home"><svg class="i"><use href="#i-apps"/></svg><span class="rail-dot" id="home-dot" hidden></span></button>
       <div class="rail-sep"></div>
       <div class="rail-spaces" id="rail-spaces"></div>
       <button class="rail-btn add" id="rail-add" title="Create or join a space" aria-label="Create or join a space"><svg class="i"><use href="#i-plus"/></svg></button>
@@ -255,14 +272,14 @@
     </nav>
 
     <div class="workspace panel" id="workspace">
-      <!-- Tools on the left: each pulls a panel over the canvas from this edge. -->
+      <!-- Tools on the right: people and Ask pull panels over the canvas from that edge. -->
       <nav class="tools" id="tools" aria-label="Panels">
-        <button class="tool-btn" id="tool-chats" type="button" title="Chats and channels (Ctrl \)" aria-label="Chats and channels" aria-expanded="false"><svg class="i"><use href="#i-list"/></svg><span class="tool-dot" id="tool-chats-dot" hidden></span></button>
         <button class="tool-btn" id="tool-people" type="button" title="People" aria-label="People" aria-expanded="false"><svg class="i"><use href="#i-users"/></svg></button>
         <button class="tool-btn ask-btn" id="tool-ask" data-ask type="button" title="Ask (Ctrl J)" aria-label="Ask" aria-expanded="false"><svg class="i"><use href="#i-sparkle"/></svg></button>
       </nav>
       <!-- Folders: the space's sections, then what's open right now (the working set). -->
       <div class="folders" id="tabs">
+        <button class="icon-btn side-toggle" id="tool-chats" type="button" title="Show the sidebar (Ctrl \)" aria-label="Sidebar" aria-expanded="false"><svg class="i"><use href="#i-sidebar"/></svg><span class="tool-dot" id="tool-chats-dot" hidden></span></button>
         <div class="folder-tabs" id="folder-tabs" role="tablist" aria-label="Sections"></div>
         <div class="tab-list" id="tab-list" role="tablist" aria-label="Open"></div>
       </div>
@@ -272,14 +289,15 @@
         <aside class="sidebar drawer" id="drawer-chats" aria-label="Chats and channels" hidden>
           <!-- Home: chats -->
           <div class="side" id="side-home">
-            <header class="side-head"><h2>Home</h2><button class="icon-btn drawer-pin" type="button" title="Keep open" aria-label="Keep open" aria-pressed="false"><svg class="i"><use href="#i-pin"/></svg></button></header>
+            <header class="side-head"><h2>Home</h2><button class="icon-btn drawer-pin" type="button" title="Collapse the sidebar" aria-label="Collapse the sidebar" aria-pressed="true"><svg class="i"><use href="#i-sidebar"/></svg></button></header>
             <div class="side-group"><span>Chats</span><button class="icon-btn sm" id="new-dm" title="New message" aria-label="New message"><svg class="i"><use href="#i-plus"/></svg></button></div>
             <div class="side-list" id="dm-list"></div>
             <p class="side-empty" id="no-dms">No conversations yet.</p>
           </div>
           <!-- Space: channels -->
           <div class="side" id="side-space" hidden>
-            <header class="side-head"><span class="space-tile" id="space-tile"></span><h2 id="space-name"></h2><button class="icon-btn drawer-pin" type="button" title="Keep open" aria-label="Keep open" aria-pressed="false"><svg class="i"><use href="#i-pin"/></svg></button></header>
+            <header class="side-head"><span class="space-tile" id="space-tile"></span><h2 id="space-name"></h2><button class="icon-btn drawer-pin" type="button" title="Collapse the sidebar" aria-label="Collapse the sidebar" aria-pressed="true"><svg class="i"><use href="#i-sidebar"/></svg></button></header>
+            <div class="side-list"><button class="side-item nav" id="nav-files" type="button"><svg class="i"><use href="#i-folder"/></svg><span class="name">Files</span></button></div>
             <div class="side-group"><span>Desks</span><button class="icon-btn sm" id="new-desk" aria-label="New desk" title="New desk"><svg class="i"><use href="#i-plus"/></svg></button></div>
             <div class="side-list" id="desk-list"></div>
             <button class="side-empty link-row" id="no-desks" type="button">Set up a desk for invoices, requests or jobs</button>

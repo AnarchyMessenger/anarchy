@@ -88,6 +88,8 @@ pub struct Status {
     appearance: Appearance,
     notifications: NotificationPrefs,
     last_server: Option<String>,
+    /// Where new accounts go unless an email domain, an invite or the person says otherwise.
+    default_server: String,
     session: Option<SessionInfo>,
 }
 
@@ -118,6 +120,7 @@ pub async fn status(i: &mut Inner) -> Result<Status, String> {
         appearance: read_json(device, "appearance").unwrap_or_default(),
         notifications: read_json(device, "notifications").unwrap_or_default(),
         last_server: read_json(device, "last_server"),
+        default_server: default_server(),
         session: i.saved().map(|s| SessionInfo {
             server: s.server.clone(),
             org_name: s.org_name.clone(),
@@ -181,6 +184,20 @@ pub async fn set_passphrase(i: &mut Inner, passphrase: String) -> Result<(), Str
 pub struct Workspace {
     server: String,
     config: AuthConfig,
+}
+
+/// The public server new people land on. Set at build time with
+/// `ANARCHY_DEFAULT_SERVER` (or at run time, for development).
+pub fn default_server() -> String {
+    std::env::var("ANARCHY_DEFAULT_SERVER")
+        .ok()
+        .or_else(|| option_env!("ANARCHY_DEFAULT_SERVER").map(str::to_owned))
+        .unwrap_or_else(|| "https://anarchy.chat".to_owned())
+}
+
+/// Looks for the server the email's organisation runs (see `oidc::discover_server`).
+pub async fn discover_server(_i: &mut Inner, email: String) -> Result<Option<String>, String> {
+    Ok(oidc::discover_server(&email).await)
 }
 
 /// Accepts what people type ("chat.northwind.org", "https://…"). Plain http only for this computer.

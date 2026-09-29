@@ -210,3 +210,9 @@ pub async fn public_js() -> Response {
 pub async fn public_css() -> Response {
     page("text/css; charset=utf-8", include_str!("../static/pay.css"))
 }
+
+/// What an invite link (`/i/{code}`) opens in a browser: how to use it in the app.
+/// The code stays in the address; the page never reads it.
+pub async fn invite_page(Path(_code): Path<String>) -> Response {
+    page("text/html; charset=utf-8", include_str!("../static/invite.html"))
+}

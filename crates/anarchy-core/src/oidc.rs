@@ -51,6 +51,74 @@ fn oidc_error(msg: impl Into<String>) -> Error {
 }
 
 /// Fetches a workspace's sign-in settings (`GET /v1/auth/config`).
+/// Webmail and other shared domains: nobody's organisation, so no lookup.
+const SHARED_DOMAINS: &[&str] = &[
+    "gmail.com",
+    "googlemail.com",
+    "outlook.com",
+    "hotmail.com",
+    "live.com",
+    "msn.com",
+    "yahoo.com",
+    "yahoo.fr",
+    "icloud.com",
+    "me.com",
+    "mac.com",
+    "proton.me",
+    "protonmail.com",
+    "gmx.com",
+    "gmx.de",
+    "gmx.fr",
+    "web.de",
+    "orange.fr",
+    "free.fr",
+    "laposte.net",
+    "sfr.fr",
+    "wanadoo.fr",
+    "aol.com",
+    "mail.com",
+    "zoho.com",
+    "yandex.com",
+    "fastmail.com",
+    "tutanota.com",
+];
+
+/// The server an organisation runs for its email domain, if it publishes one at
+/// `https://<domain>/.well-known/anarchy.json` as `{"server": "https://…"}`.
+/// Lets someone type their work email and land on their company's server
+/// without knowing its address. The lookup goes to the email's own domain only.
+pub async fn discover_server(email: &str) -> Option<String> {
+    let domain = email.rsplit_once('@')?.1.trim().to_ascii_lowercase();
+    if domain.is_empty()
+        || !domain.contains('.')
+        || SHARED_DOMAINS.contains(&domain.as_str())
+        || !domain
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+    {
+        return None;
+    }
+    #[derive(Deserialize)]
+    struct WellKnown {
+        server: String,
+    }
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(4))
+        .redirect(reqwest::redirect::Policy::limited(2))
+        .build()
+        .ok()?;
+    let resp = http
+        .get(format!("https://{domain}/.well-known/anarchy.json"))
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let found: WellKnown = resp.json().await.ok()?;
+    found.server.starts_with("https://").then_some(found.server)
+}
+
 pub async fn workspace_config(server_url: &str) -> Result<AuthConfig, Error> {
     let url = format!("{}/v1/auth/config", server_url.trim_end_matches('/'));
     let resp = reqwest::get(&url).await?;

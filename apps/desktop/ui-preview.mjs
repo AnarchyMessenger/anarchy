@@ -125,7 +125,7 @@ const mock = (startLocked) => {
   const commands = {
     status: async () => ({
       locked, profile, device_id: "cb4148ab-32b3-4ded-943c-d1f04b01d3f4", storage: locked ? { kind: "locked" } : storage,
-      appearance, notifications, last_server: null, session,
+      appearance, notifications, last_server: null, default_server: "https://anarchy.chat", session,
     }),
     unlock: async ({ passphrase }) => {
       await wait(200);
@@ -137,11 +137,14 @@ const mock = (startLocked) => {
     workspace_info: async ({ server }) => {
       await wait(100);
       if (!server.trim()) throw "Enter your server address, for example chat.northwind.org";
-      return { server: `https://${server.trim()}`, config: { org_name: "Anarchy Cloud", issuer: "https://accounts.google.com", client_id: "anarchy-desktop", email_enabled: true, guests_enabled: false, open_signup: true, anonymous_enabled: true, client_secret: "public" } };
+      const host = server.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
+      if (host === "chat.northwind.org") return { server: `https://${host}`, config: { org_name: "Northwind", issuer: "https://login.northwind.org", client_id: "anarchy", email_enabled: true, guests_enabled: true, open_signup: false, anonymous_enabled: false } };
+      return { server: `https://${host}`, config: { org_name: "Anarchy Cloud", issuer: "https://accounts.google.com", client_id: "anarchy-desktop", email_enabled: true, guests_enabled: false, open_signup: true, anonymous_enabled: true, client_secret: "public" } };
     },
     sign_in_sso: ({ server }) => new Promise((ok, fail) => { window.__cancel = () => fail("Sign-in cancelled"); window.__previewFinishSso = () => { signIn(server); ok(); }; }),
     cancel_sign_in: async () => window.__cancel?.(),
     request_email_code: async () => { await wait(100); },
+    discover_server: async ({ email }) => (email.toLowerCase().endsWith("@northwind.org") ? "https://chat.northwind.org" : null),
     sign_in_email: async ({ server, code }) => { await wait(100); if (code.replace(/\D/g, "") !== "482913") throw "That code isn't right"; signIn(server); },
     sign_in_anonymous: async ({ server, name }) => { signIn(server, { display_name: name || "Anonymous", username: "anon", tag: 5120, email: null, is_anonymous: true }); },
     join_as_guest: async () => { throw "This server doesn't allow guests"; },
@@ -249,11 +252,23 @@ async function pick(list, name) {
 const folder = (label) => page.click(`.folder >> text="${label}"`);
 
 // Sign-up and onboarding.
-await visible("#s-server");
-await shot("01-server");
-await page.fill("#server", "anarchy.chat");
-await page.click("#server-continue");
 await visible("#s-account");
+await visible("#email-form");
+await shot("01-welcome");
+await page.click("#to-invite");
+await page.fill("#invite-link", "https://chat.northwind.org/i/7QK2-MX9F");
+await shot("01b-invite");
+await page.click("#invite-back");
+await page.fill("#email", "maya@northwind.org");
+await page.click("#email-send");
+await visible("#code-form");
+await shot("01c-work-email-finds-company-server");
+await page.click("#change-server");
+await visible("#s-server");
+await page.fill("#server", "anarchy.chat");
+await shot("01d-other-server");
+await page.click("#server-continue");
+await visible("#email-form");
 await shot("02-create-account");
 await page.fill("#email", "maya.chen@hey.com");
 await page.click("#email-send");
@@ -295,15 +310,17 @@ await page.fill("#start-dm", "tomas#1881");
 await page.press("#start-dm", "Enter");
 await visible("#view-convo");
 await shot("09-dm");
+await page.click("#side-home .drawer-pin");
 await page.click("#tool-chats");
-await shot("09b-chats-popover");
+await page.waitForTimeout(200);
+await shot("09b-sidebar-popover");
+await page.click("#side-home .drawer-pin");
 await page.click('.dm-item >> text="Léa Martin"');
 await shot("10-dm-empty");
 await page.click("#tool-people");
 await visible("#drawer-people");
 await shot("10b-people-home");
 await page.keyboard.press("Escape");
-await page.click("#tool-chats");
 await page.click("#new-dm");
 await page.fill("#dm-handle", "nobody#0001");
 await page.click("#dm-open");
@@ -395,10 +412,10 @@ await page.press("#thread-input", "Enter");
 await page.waitForTimeout(300);
 await shot("13o-thread");
 await page.click("#thread-close");
-await page.click("#tool-chats");
 await page.click("#side-space .drawer-pin");
 await page.waitForTimeout(150);
-await shot("13p-chats-pinned");
+await shot("13p-sidebar-collapsed");
+await page.click("#tool-chats");
 await page.click("#side-space .drawer-pin");
 await page.click("#tool-people");
 await page.waitForTimeout(300);
@@ -452,7 +469,6 @@ await folder("Appearance");
 await page.click('#settings-appearance [data-display="dark"]');
 await shot("19-appearance-dark");
 await page.click("#rail-home");
-await page.click("#tool-chats");
 await page.click('.dm-item >> text="Tomás Ruiz"');
 await shot("20-dm-dark");
 await page.click("#rail-settings");

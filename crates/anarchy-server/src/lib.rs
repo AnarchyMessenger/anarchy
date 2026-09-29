@@ -179,6 +179,7 @@ pub fn router(state: AppState) -> Router {
             post(links::revoke),
         )
         .route("/p/{link}", get(links::public_page))
+        .route("/i/{code}", get(links::invite_page))
         .route("/p/{link}/sealed", get(links::public_sealed))
         .route("/p/{link}/paid", post(links::public_paid))
         .route("/pay-assets/pay.js", get(links::public_js))

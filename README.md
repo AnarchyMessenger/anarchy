@@ -44,11 +44,11 @@ Sign up with Google, email or anonymously, then say what it's for, lock the devi
 |---|---|
 | ![Desk mention](docs/screens/desk-mention.png) | ![Ask](docs/screens/ask.png) |
 
-| Thread beside the conversation | Channel list pinned open (`Ctrl \`) |
+| Thread beside the conversation | Sidebar collapsed (`Ctrl \`) |
 |---|---|
-| ![Thread](docs/screens/thread.png) | ![Channel list pinned](docs/screens/tabs.png) |
+| ![Thread](docs/screens/thread.png) | ![Sidebar collapsed](docs/screens/tabs.png) |
 
-| People, from the left | Desks folder |
+| People, from the right | Desks folder |
 |---|---|
 | ![People](docs/screens/people.png) | ![Desks](docs/screens/desks.png) |
 

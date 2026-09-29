@@ -41,6 +41,16 @@ Set `ANARCHY_OIDC_ISSUER=https://accounts.google.com`, create a "Desktop app" OA
 
 Drive chunks are stored in Postgres (`blobs` table) for now, up to 200 MB per file. They're encrypted before they reach the server. Plan database space for it, or wait for the object-storage backend if you expect large files. Deleted files keep their chunks until garbage collection is added.
 
+### Let people find your server by their email
+
+People type their work email in the app; it then looks for `https://<email domain>/.well-known/anarchy.json` and, if it's there, signs them in on your server instead of the public one. Publish this on your company's website (the email domain, not the Anarchy server):
+
+```json
+{ "server": "https://chat.northwind.org" }
+```
+
+It must be served over HTTPS. Invite links (`https://<your server>/i/<code>`) also carry your address, so people you invite never type it.
+
 ### Payment links
 
 Collections desks can send clients a link to a page on this server (`/p/…`) showing the invoice and how to pay. For clients to open it, the server must be reachable from the internet at the address the app signs in to, **over HTTPS**: the page decrypts in the browser with WebCrypto, which browsers only allow on HTTPS (or `localhost`). The server stores each page encrypted and never sees its key, but it serves the page's script, so whoever runs the server could change that script to read pages; that's the trade-off of any web page for people without the app.

@@ -85,6 +85,7 @@ op!(pay_links(channel: ChannelId) -> Vec<anarchy_proto::PayLinkStatus>);
 op!(revoke_pay_link(channel: ChannelId, id: String) -> ());
 op!(compose_email(to: String, subject: String, body: String) -> ());
 op!(workspace_info(server: String) -> ops::Workspace);
+op!(discover_server(email: String) -> Option<String>);
 op!(request_email_code(server: String, email: String) -> ());
 op!(sign_in_email(server: String, email: String, code: String) -> ());
 op!(join_as_guest(server: String, code: String, name: String) -> ());
@@ -412,6 +413,7 @@ fn main() {
             pay_links,
             revoke_pay_link,
             workspace_info,
+            discover_server,
             sign_in_sso,
             cancel_sign_in,
             request_email_code,
