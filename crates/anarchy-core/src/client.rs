@@ -300,6 +300,21 @@ impl Client {
         Ok(self.post("/v1/spaces", &body).await?.json().await?)
     }
 
+    pub async fn rename_space(&self, space: SpaceId, name: &str) -> Result<SpaceSummary, Error> {
+        self.put(
+            &format!("/v1/spaces/{space}"),
+            &anarchy_proto::RenameSpace {
+                name: name.to_owned(),
+            },
+        )
+        .await
+    }
+
+    pub async fn leave_space(&self, space: SpaceId) -> Result<(), Error> {
+        self.post(&format!("/v1/spaces/{space}/leave"), &()).await?;
+        Ok(())
+    }
+
     pub async fn create_space_invite(
         &self,
         space: SpaceId,

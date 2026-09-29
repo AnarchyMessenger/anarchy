@@ -68,6 +68,9 @@ op!(sign_in_anonymous(server: String, name: String) -> ());
 op!(me() -> anarchy_proto::Profile);
 op!(update_profile(update: ProfileUpdate) -> anarchy_proto::Profile);
 op!(spaces() -> Vec<anarchy_proto::SpaceSummary>);
+op!(rename_space(space: SpaceId, name: String) -> anarchy_proto::SpaceSummary);
+op!(leave_space(space: SpaceId) -> ());
+op!(notify(title: String, body: String) -> ());
 op!(create_space(name: String, kind: SpaceKind) -> anarchy_proto::SpaceSummary);
 op!(join_space(code: String) -> anarchy_proto::SpaceSummary);
 op!(create_space_invite(space: SpaceId, hours: u64, max_uses: u32) -> ops::InviteView);
@@ -392,6 +395,9 @@ fn main() {
             me,
             update_profile,
             spaces,
+            rename_space,
+            leave_space,
+            notify,
             create_space,
             join_space,
             create_space_invite,

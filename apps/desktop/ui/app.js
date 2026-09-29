@@ -460,6 +460,7 @@ async function showApp() {
   go("home");
   await refreshChannels();
   startPolling();
+  startReminders();
   if (pendingSpaceCode) {
     const code = pendingSpaceCode; pendingSpaceCode = null; pendingNote = "";
     try { const sp = await invoke("join_space", { code }); spaces = await invoke("spaces"); openSpace(spaces.find((x) => x.id === sp.id) || sp); }
@@ -945,16 +946,19 @@ $("desks-new").addEventListener("click", () => openNewDesk());
 
 // ---------- drawers: chats and people pop over from the left ----------
 
-let drawer = null; // "chats" | "people" | null
+let drawer = null; // "chats" | "people" | "notifs" | "spaceset" | null
+const RIGHT_PANELS = ["people", "notifs", "spaceset"];
 let pinned = readStore("anarchy.chatsPinned", true);
 function toggleDrawer(name, force) {
   const open = force ?? drawer !== name;
   if (open && name !== "chats" && pinned) { /* the pinned list stays; the other panel opens over the canvas */ }
   drawer = open ? name : null;
   if (open) openAsk(false);
-  if (open && name === "people" && thread) closeThread();
+  if (open && RIGHT_PANELS.includes(name) && thread) closeThread();
   paintDrawers();
   if (open && name === "people") renderPeopleDrawer();
+  if (open && name === "notifs") renderNotifs();
+  if (open && name === "spaceset") renderSpaceSettings();
 }
 function closeDrawers() { drawer = null; paintDrawers(); }
 function paintDrawers() {
@@ -962,7 +966,8 @@ function paintDrawers() {
   const chatSection = view !== "settings" && sectionNow() === "chats";
   const chatsOn = chatSection && (pinned || drawer === "chats");
   show("drawer-chats", chatsOn);
-  show("drawer-people", drawer === "people");
+  for (const n of RIGHT_PANELS) { show(`drawer-${n}`, drawer === n); $(`tool-${n}`).setAttribute("aria-expanded", String(drawer === n)); }
+  show("tool-spaceset", view === "space" && !!currentSpace);
   syncDock();
   $("workspace").classList.toggle("chats-pinned", pinned);
   $("drawer-chats").classList.toggle("pinned", pinned);
@@ -988,6 +993,8 @@ $("tool-chats").addEventListener("click", () => {
   else toggleDrawer("chats");
 });
 $("tool-people").addEventListener("click", () => toggleDrawer("people"));
+$("tool-notifs").addEventListener("click", () => toggleDrawer("notifs"));
+$("tool-spaceset").addEventListener("click", () => toggleDrawer("spaceset"));
 for (const b of document.querySelectorAll(".drawer-pin")) b.addEventListener("click", () => { pinned = !pinned; writeStore("anarchy.chatsPinned", pinned); if (!pinned) drawer = null; paintDrawers(); });
 // Picking something in a pop-over closes it; clicking the canvas does too.
 $("drawer-chats").addEventListener("click", (e) => { if (!pinned && e.target.closest(".side-item")) setTimeout(closeDrawers, 0); });
@@ -1327,7 +1334,7 @@ async function answer(q) {
 // People, Ask and threads sit next to the content and push it over, like a
 // second column; on narrow windows they cover it instead.
 function syncDock() {
-  const open = !$("ask").hidden || !$("drawer-people").hidden || !$("thread").hidden;
+  const open = !$("ask").hidden || !$("thread").hidden || RIGHT_PANELS.some((n) => !$(`drawer-${n}`).hidden);
   $("main").classList.toggle("dock-right", open && window.innerWidth >= 1100);
   // The composer's height depends on its width.
   requestAnimationFrame(fitComposer);
@@ -1339,7 +1346,7 @@ function paintSide() {
   paintDrawers();
   show("side-space", view === "space");
   show("side-home", view === "home");
-
+  renderTodos();
 }
 
 // ---------- personal desks: agenda and notes ----------
@@ -1859,6 +1866,7 @@ async function putCards(recs) {
   await invoke("put_items", { channel: board.channel, items: recs });
   board.items = await invoke("desk_items", { channel: board.channel });
   renderBoard();
+  loadTodos().then(renderTodos).catch(() => {});
   if (pendingAdder) { const col = document.querySelector(`.bcol[data-col="${pendingAdder}"] .col-add-btn`); pendingAdder = null; col?.click(); }
 }
 async function addCard(colId, title) {
@@ -2977,6 +2985,167 @@ async function removePerson(p) {
   catch (err) { setError("people-error", String(err)); }
 }
 
+
+// ---------- to-dos, reminders and notifications ----------
+// All worked out on this device from records it can already decrypt: the
+// agenda, task boards and Collections desks. Nothing about them goes to the
+// server. Read state and "already reminded" are kept in local storage.
+
+let todos = [];
+async function loadTodos() {
+  const out = [];
+  for (const d of channels.filter((c) => c.desk === "tasks")) {
+    const items = await invoke("desk_items", { channel: d.id }).catch(() => []);
+    const done = new Set(boardColumns(items).filter((c) => c.done).map((c) => c.id));
+    for (const i of items) if (i.kind === "card" && !i.data.deleted && !done.has(i.data.column)) out.push({ id: i.id, ...i.data, desk: d });
+  }
+  // Late first, then by due date, then undated in board order.
+  out.sort((a, b) => (a.due ? 0 : 1) - (b.due ? 0 : 1) || (a.due || "").localeCompare(b.due || "") || (a.order ?? 0) - (b.order ?? 0));
+  todos = out;
+}
+function todosHere() {
+  return todos.filter((t) => view === "space" ? t.desk.space === currentSpace?.id : true);
+}
+function renderTodos() {
+  const list = todosHere();
+  const today = isoToday();
+  const rows = list.slice(0, 8).map((t) => el("button", { class: `todo${t.due && t.due < today ? " late" : ""}`, type: "button", title: `${t.title} · ${t.desk.kind === "personal" ? "My tasks" : t.desk.name}`, onclick: () => openTodo(t) },
+    el("span", { class: "tick" }), el("span", { class: "t", text: t.title }), t.due ? el("small", { text: t.due < today ? "Late" : t.due === today ? "Today" : shortDay(t.due) }) : null));
+  const boards = [...new Set(list.map((t) => t.desk))];
+  for (const box of document.querySelectorAll("[data-todo]")) {
+    box.replaceChildren(...(list.length ? [el("div", { class: "todo-head" }, el("span", { text: `To do · ${list.length}` }),
+      boards.length === 1 ? el("button", { class: "link", type: "button", text: "Board", onclick: () => openChannel(boards[0].id) }) : null), ...rows] : []));
+  }
+}
+const shortDay = (iso) => new Date(`${iso}T12:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+async function openTodo(t) {
+  await openBoard(t.desk);
+  const c = boardCards().find((x) => x.id === t.id);
+  if (c) openCard(c);
+}
+
+// Notifications: reminders that are due, then activity (new messages, what desks need).
+let reminded = readStore("anarchy.reminded", {});
+let notifRead = readStore("anarchy.notifRead", {});
+function notifItems() {
+  const now = new Date(), today = isoOf(now), soon = new Date(now.getTime() + 24 * 3600e3);
+  const out = [];
+  for (const e of events()) {
+    if (e.all_day || !e.start) { if (e.date === today) out.push({ key: `ev:${e.id}:${e.date}`, icon: "calendar", title: e.title, sub: "Today", at: `${e.date}T00:00`, go: () => openAgenda() }); continue; }
+    const at = new Date(`${e.date}T${e.start}`);
+    if (at >= new Date(now.getTime() - 3600e3) && at <= soon) out.push({ key: `ev:${e.id}:${e.date}:${e.start}`, icon: "calendar", title: e.title, sub: `${at.toDateString() === now.toDateString() ? "Today" : "Tomorrow"} at ${e.start}${e.where ? ` · ${e.where}` : ""}`, at: `${e.date}T${e.start}`, start: at, go: () => openAgenda() });
+  }
+  for (const d of agenda.dues) {
+    if (d.date > today) continue;
+    const late = d.date < today;
+    out.push({ key: `due:${d.channel}:${d.title}:${d.date}`, icon: d.task ? "board" : "receipt", late, title: d.title, sub: late ? `Was due ${shortDay(d.date)}` : "Due today", at: `${d.date}T09:00`, go: () => openChannel(d.channel) });
+  }
+  for (const c of channels) {
+    if (!c.unread || c.id === current || c.kind === "personal") continue;
+    out.push({ key: `msg:${c.id}:${c.last_ts || 0}`, icon: c.kind === "dm" ? "chat" : "thread", title: c.kind === "dm" ? c.name : `#${c.name}`, sub: c.last_text || "New messages", at: new Date(c.last_ts || Date.now()).toISOString(), go: () => goTo(c.id) });
+  }
+  for (const [id, n] of deskNeeds) {
+    const c = channels.find((x) => x.id === id);
+    if (c && n) out.push({ key: `desk:${id}:${n}:${today}`, icon: "receipt", late: true, title: c.name, sub: `${n} ${n === 1 ? "thing needs" : "things need"} you`, at: `${today}T09:00`, go: () => openChannel(id) });
+  }
+  return out.sort((a, b) => (b.late ? 1 : 0) - (a.late ? 1 : 0) || b.at.localeCompare(a.at));
+}
+function renderNotifs() {
+  const items = notifItems();
+  show("notif-dot", items.some((n) => !notifRead[n.key]));
+  if ($("drawer-notifs").hidden) return;
+  $("notif-list").replaceChildren(...(items.length ? items.map((n) => el("button", { class: `notif${notifRead[n.key] ? "" : " unread"}${n.late ? " late" : ""}`, type: "button", onclick: () => { markRead([n.key]); n.go(); } },
+    icon(n.icon), el("strong", { text: n.title }), el("small", { text: n.sub }))) : [el("p", { class: "notif-empty", text: "Nothing right now. Reminders for events, due invoices and tasks show up here." })]));
+}
+function markRead(keys) {
+  for (const k of keys) notifRead[k] = Date.now();
+  // Forget read marks older than 30 days.
+  for (const [k, t] of Object.entries(notifRead)) if (Date.now() - t > 30 * 864e5) delete notifRead[k];
+  writeStore("anarchy.notifRead", notifRead);
+  renderNotifs();
+}
+$("notifs-read").addEventListener("click", () => markRead(notifItems().map((n) => n.key)));
+
+// Desktop reminders: 15 minutes before a timed event, and from 9:00 on the day
+// something falls due (once a day while it stays late). Each fires once.
+async function remind() {
+  try { await loadAgenda(); await loadTodos(); } catch { return; }
+  renderTodos();
+  const now = new Date(), today = isoOf(now);
+  const fire = (key, title, body) => {
+    if (reminded[key]) return;
+    reminded[key] = Date.now();
+    invoke("notify", { title, body }).catch(() => {});
+  };
+  for (const e of events()) {
+    if (e.all_day || !e.start) continue;
+    const at = new Date(`${e.date}T${e.start}`);
+    const mins = (at - now) / 60e3;
+    if (mins <= 15 && mins > -5) fire(`ev:${e.id}:${e.date}:${e.start}`, e.title, `Starts at ${e.start}${e.where ? ` · ${e.where}` : ""}`);
+  }
+  if (now.getHours() >= 9) for (const d of agenda.dues) {
+    if (d.date > today) continue;
+    fire(`due:${d.channel}:${d.title}:${today}`, d.task ? "Task due" : "Invoice due", d.date < today ? `${d.title} (was due ${shortDay(d.date)})` : d.title);
+  }
+  for (const [k, t] of Object.entries(reminded)) if (Date.now() - t > 14 * 864e5) delete reminded[k];
+  writeStore("anarchy.reminded", reminded);
+  renderNotifs();
+}
+let remindTimer = null;
+function startReminders() { if (!remindTimer) { remind(); remindTimer = setInterval(remind, 60e3); } }
+
+// ---------- space settings ----------
+// Name, members, leaving. Integrations are listed honestly: each one needs its
+// own connector, and the ones that send data to a model provider need a policy
+// decision, so none of them is switched on from here yet.
+
+const INTEGRATIONS = [
+  { name: "Linear", color: "#5e6ad2", mark: "L", text: "Turn a message or task card into a Linear issue, and show its status on the card. Needs an OAuth connector; issue titles would leave the device." },
+  { name: "GitHub", color: "#24292f", mark: "GH", text: "Link pull requests and issues to channels and cards. Same connector model as Linear." },
+  { name: "AI models", color: "#10a37f", mark: "AI", text: "Let Ask answer with a model (a local one, or OpenAI, Anthropic, Mistral). The space owner decides which channels a model may read; Sealed channels never." },
+  { name: "Calendars", color: "#1a73e8", mark: "31", text: "Show Google or Microsoft calendars in the agenda (read-only first), and send invites." },
+  { name: "Stripe", color: "#635bff", mark: "S", text: "Card payments on pay links, marked paid automatically. Needs the space's own Stripe account." },
+  { name: "Mail", color: "#c2410c", mark: "@", text: "Send desk reminders from your own address (IMAP/SMTP, then Gmail and Microsoft)." },
+];
+async function renderSpaceSettings() {
+  const sp = currentSpace;
+  if (!sp) return;
+  const owner = sp.role === "owner";
+  $("ss-name").value = sp.name;
+  $("ss-name").disabled = !owner; $("ss-save").hidden = !owner;
+  show("ss-saved", false); setError("ss-error", "");
+  $("ss-kind").textContent = KIND_LABEL[sp.kind] || "Space";
+  $("ss-role").textContent = owner ? "Owner" : "Member";
+  $("ss-members").textContent = String(sp.members);
+  $("ss-leave").disabled = sp.is_default;
+  $("ss-leave").title = sp.is_default ? "Everyone in the organisation is in this space." : "";
+  $("integ-list").replaceChildren(...INTEGRATIONS.map((g) => el("div", { class: "integ" },
+    el("span", { class: "mark", style: `background:${g.color}`, text: g.mark }),
+    el("strong", {}, g.name, el("span", { class: "soon", text: "Not connected yet" })), el("small", { text: g.text }))));
+}
+$("spaceset-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("ss-name").value.trim();
+  if (!name) return setError("ss-error", "A space needs a name.");
+  try {
+    const sp = await invoke("rename_space", { space: currentSpace.id, name });
+    spaces = spaces.map((x) => (x.id === sp.id ? sp : x));
+    currentSpace = sp;
+    show("ss-saved", true);
+    renderRail(); renderFolders(); refreshChannels();
+  } catch (err) { setError("ss-error", String(err)); }
+});
+$("ss-leave").addEventListener("click", async () => {
+  const sp = currentSpace;
+  if (!sp || !confirm(`Leave ${sp.name}? It leaves your account; channels you're in stay until a member removes you.`)) return;
+  try {
+    await invoke("leave_space", { space: sp.id });
+    spaces = await invoke("spaces");
+    closeDrawers();
+    renderRail(); go("home"); refreshChannels();
+  } catch (err) { setError("ss-error", String(err)); }
+});
+
 // Polling (WebSocket push comes later)
 
 function startPolling() {
@@ -2988,6 +3157,7 @@ function startPolling() {
       const r = await invoke("sync_all");
       if (r.new_messages || r.joined || r.removed) {
         await refreshChannels();
+        renderNotifs();
         if (current && (!$("view-convo").hidden || !$("view-desk").hidden)) await openChannel(current);
       }
       if (desk && !$("view-desk").hidden && Date.now() - desk.linksAt > 15000) {

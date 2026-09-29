@@ -408,6 +408,24 @@ pub async fn update_profile(i: &mut Inner, update: ProfileUpdate) -> Result<Prof
 
 // ---------- spaces ----------
 
+pub async fn rename_space(i: &mut Inner, space: SpaceId, name: String) -> Result<SpaceSummary, String> {
+    i.client()?.rename_space(space, &name).await.map_err(err)
+}
+
+pub async fn leave_space(i: &mut Inner, space: SpaceId) -> Result<(), String> {
+    i.client()?.leave_space(space).await.map_err(err)
+}
+
+/// A desktop notification (reminders). Shown through the same path as
+/// message notifications, so it never blocks the engine.
+pub async fn notify(i: &mut Inner, title: String, body: String) -> Result<(), String> {
+    let prefs: NotificationPrefs = read_json(i.device(), "notifications").unwrap_or_default();
+    if prefs.desktop {
+        (i.notify)(title, body);
+    }
+    Ok(())
+}
+
 pub async fn spaces(i: &mut Inner) -> Result<Vec<SpaceSummary>, String> {
     i.client()?.spaces().await.map_err(err)
 }

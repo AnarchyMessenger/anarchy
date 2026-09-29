@@ -152,6 +152,8 @@ pub fn router(state: AppState) -> Router {
             post(accounts::create_space).get(accounts::my_spaces),
         )
         .route("/v1/spaces/join", post(accounts::join_space))
+        .route("/v1/spaces/{space}", axum::routing::put(accounts::rename_space))
+        .route("/v1/spaces/{space}/leave", post(accounts::leave_space))
         .route("/v1/spaces/{space}/invites", post(accounts::create_space_invite))
         .route("/v1/dms", post(accounts::start_dm))
         .route("/v1/invites", post(create_invite))

@@ -58,6 +58,9 @@
   <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
   <symbol id="i-note" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></symbol>
   <symbol id="i-board" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/><path d="M5.5 8h1.5M11 8h1.5M17 8h1.5"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0z"/><path d="M12 16v5"/></symbol>
+  <symbol id="i-clock2" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/></symbol>
+  <symbol id="i-user2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8.5 7 10 4-1.5 7-5.5 7-10V6z"/></symbol>
   <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
@@ -279,6 +282,9 @@
       <nav class="tools" id="tools" aria-label="Panels">
         <button class="tool-btn" id="tool-people" type="button" title="People" aria-label="People" aria-expanded="false"><svg class="i"><use href="#i-users"/></svg></button>
         <button class="tool-btn ask-btn" id="tool-ask" data-ask type="button" title="Ask (Ctrl J)" aria-label="Ask" aria-expanded="false"><svg class="i"><use href="#i-sparkle"/></svg></button>
+        <button class="tool-btn" id="tool-notifs" type="button" title="Notifications" aria-label="Notifications" aria-expanded="false"><svg class="i"><use href="#i-bell"/></svg><span class="tool-dot" id="notif-dot" hidden></span></button>
+        <span class="spacer"></span>
+        <button class="tool-btn" id="tool-spaceset" type="button" title="Space settings" aria-label="Space settings" aria-expanded="false" hidden><svg class="i"><use href="#i-settings"/></svg></button>
       </nav>
       <!-- Folders: the space's sections, then what's open right now (the working set). -->
       <div class="folders" id="tabs">
@@ -297,16 +303,39 @@
             <div class="side-list"><button class="side-item nav" id="new-dm" type="button"><svg class="i"><use href="#i-plus"/></svg><span class="name">New message</span></button></div>
             <div class="side-list" id="dm-list"></div>
             <p class="side-empty" id="no-dms">No conversations yet.</p>
+            <div class="side-todo" data-todo></div>
           </div>
           <!-- Space: its channels (desks, files and the overview are folders above) -->
           <div class="side" id="side-space" hidden>
             <div class="side-group"><span>Channels</span><button class="icon-btn sm" id="new-channel" aria-label="New channel" title="New channel"><svg class="i"><use href="#i-plus"/></svg></button></div>
             <div class="side-list" id="channel-list"></div>
             <p class="side-empty" id="no-channels">No channels yet.</p>
+            <div class="side-todo" data-todo></div>
           </div>
         </aside>
 
-        <aside class="drawer" id="drawer-people" aria-label="People" hidden>
+        <aside class="drawer rpanel" id="drawer-notifs" aria-label="Notifications" hidden>
+          <header class="side-head"><h2>Notifications</h2><span class="spacer"></span><button class="link" id="notifs-read" type="button">Mark all read</button></header>
+          <div class="notif-list" id="notif-list"></div>
+          <p class="fine notif-foot">Reminders are worked out on this device from your agenda, tasks and invoices. Turn desktop alerts on or off in Settings, Notifications.</p>
+        </aside>
+        <aside class="drawer rpanel" id="drawer-spaceset" aria-label="Space settings" hidden>
+          <header class="side-head"><h2>Space settings</h2></header>
+          <div class="spaceset" id="spaceset">
+            <form class="stack" id="spaceset-form" novalidate>
+              <label class="field" for="ss-name">Name<input class="text-input" id="ss-name" maxlength="64"></label>
+              <div class="row-actions"><button class="btn-ink inline sm" type="submit" id="ss-save">Rename</button><span class="saved" id="ss-saved" hidden>Saved</span></div>
+              <p class="error" id="ss-error" hidden></p>
+            </form>
+            <dl class="facts-list compact"><div><dt>Kind</dt><dd id="ss-kind"></dd></div><div><dt>You are</dt><dd id="ss-role"></dd></div><div><dt>Members</dt><dd id="ss-members"></dd></div></dl>
+            <p class="block-label">Integrations</p>
+            <div class="integ-list" id="integ-list"></div>
+            <p class="block-label">Leave</p>
+            <button class="btn-outline danger sm" id="ss-leave" type="button">Leave this space</button>
+            <p class="fine">The space, its people and its directory disappear from your account. Channels and desks you're already in keep your devices until a member removes you: leaving an encrypted channel yourself isn't built yet.</p>
+          </div>
+        </aside>
+        <aside class="drawer rpanel" id="drawer-people" aria-label="People" hidden>
           <header class="side-head"><h2 id="people-title">People</h2><span class="spacer"></span><button class="btn-outline sm" id="space-invite" type="button"><svg class="i"><use href="#i-plus"/></svg><span>Invite</span></button></header>
           <div class="people-list" id="drawer-people-list"></div>
           <form class="people-dm" id="people-dm-form" novalidate hidden><label class="block-label" for="people-dm">Message someone</label><span class="inline-field"><input class="text-input mono" id="people-dm" placeholder="username#0000" spellcheck="false"><button class="btn-ink sm" type="submit">Open</button></span><p class="error" id="people-dm-error" hidden></p></form>

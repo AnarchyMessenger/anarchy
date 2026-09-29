@@ -621,6 +621,76 @@ pub async fn create_space(
     Ok(Json(summary(&s.db, id, user.user_id).await?))
 }
 
+/// Owners rename a space. The name is visible to the server (it routes invites
+/// and lists spaces); what's said inside stays encrypted.
+pub async fn rename_space(
+    State(s): State<AppState>,
+    user: AuthUser,
+    Path(space): Path<Uuid>,
+    Json(req): Json<anarchy_proto::RenameSpace>,
+) -> ApiResult<Json<SpaceSummary>> {
+    let name = req.name.trim();
+    if name.is_empty() || name.chars().count() > 64 {
+        return Err(ApiError::bad_request("space names are 1 to 64 characters"));
+    }
+    let role: Option<String> =
+        sqlx::query_scalar("SELECT role FROM space_members WHERE space_id = $1 AND user_id = $2")
+            .bind(space)
+            .bind(user.user_id)
+            .fetch_optional(&s.db)
+            .await?;
+    match role.as_deref() {
+        None => return Err(ApiError::not_found("no such space")),
+        Some("owner") => {}
+        Some(_) => return Err(ApiError::forbidden("only the space's owners can rename it")),
+    }
+    sqlx::query("UPDATE spaces SET name = $1 WHERE id = $2")
+        .bind(name)
+        .bind(space)
+        .execute(&s.db)
+        .await?;
+    Ok(Json(summary(&s.db, space, user.user_id).await?))
+}
+
+/// Leaves a space. The organisation's own space can't be left, and a space
+/// keeps at least one owner.
+pub async fn leave_space(
+    State(s): State<AppState>,
+    user: AuthUser,
+    Path(space): Path<Uuid>,
+) -> ApiResult<axum::http::StatusCode> {
+    let row: Option<(String, bool)> = sqlx::query_as(
+        "SELECT m.role, sp.is_default FROM space_members m JOIN spaces sp ON sp.id = m.space_id
+         WHERE m.space_id = $1 AND m.user_id = $2",
+    )
+    .bind(space)
+    .bind(user.user_id)
+    .fetch_optional(&s.db)
+    .await?;
+    let (role, is_default) = row.ok_or_else(|| ApiError::not_found("no such space"))?;
+    if is_default {
+        return Err(ApiError::forbidden("everyone stays in the organisation's space"));
+    }
+    if role == "owner" {
+        let owners: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM space_members WHERE space_id = $1 AND role = 'owner'")
+                .bind(space)
+                .fetch_one(&s.db)
+                .await?;
+        if owners <= 1 {
+            return Err(ApiError::bad_request(
+                "you're the only owner; make someone else an owner first",
+            ));
+        }
+    }
+    sqlx::query("DELETE FROM space_members WHERE space_id = $1 AND user_id = $2")
+        .bind(space)
+        .bind(user.user_id)
+        .execute(&s.db)
+        .await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
 pub async fn my_spaces(State(s): State<AppState>, user: AuthUser) -> ApiResult<Json<Vec<SpaceSummary>>> {
     let ids: Vec<Uuid> = sqlx::query_scalar(
         "SELECT s.id FROM spaces s JOIN space_members m ON m.space_id = s.id

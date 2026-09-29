@@ -32,7 +32,8 @@ Remaining:
 - [x] Passphrase lock for the device, which also saves devices on computers without a keychain (D16).
 - [x] Onboarding: account → what it's for → passphrase → welcome card → Home.
 - [ ] Changing or removing the passphrase; adding an email to an anonymous account.
-- [ ] Space roles and settings (rename, leave, remove people from the space).
+- [x] Space settings: rename (owners), leave (D28).
+- [ ] Space roles; removing people from a space; leaving takes your devices out of its channels.
 - [ ] A new device of yours joins your existing conversations (today only devices present when a conversation starts are in it).
 - [ ] Blocking and reporting people in DMs.
 - [ ] Company Brain settings page (needs the Brain binary first).
@@ -88,7 +89,8 @@ Pulled forward from phase 4:
 - [x] First client-facing surface: payment links for Collections, sealed with the key in the URL fragment (D20).
 - [x] Personal agenda and Notion-style notes in personal channels; drive text files open in the same editor (D25).
 - [x] Tasks boards (desk kind and personal), personal Files, agenda quick-add and day view (D27).
-- [ ] Shared pages in spaces (a wiki), reminders on due dates, time tracking into invoices.
+- [x] Reminders for events and due dates, notifications panel, sidebar to-dos (D28).
+- [ ] Shared pages in spaces (a wiki), time tracking into invoices, client cards, intake forms.
 - [ ] Mail: IMAP/SMTP with app passwords first, then Gmail and Microsoft OAuth; triage view with drafted replies.
 - [x] Threads (replies to a message, shown beside the conversation) and tabs for the working set with a collapsible sidebar (D22).
 - In-app agents (scribe: summaries, catch-up, meeting notes via call transcription).

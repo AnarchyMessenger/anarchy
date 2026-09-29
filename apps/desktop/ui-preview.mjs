@@ -196,6 +196,9 @@ const mock = (startLocked) => {
     set_notifications: async ({ prefs }) => { notifications = prefs; },
     sign_out: async () => { session = null; profile = null; },
     spaces: async () => spaces,
+    rename_space: async ({ space, name }) => { const s = spaces.find((x) => x.id === space); s.name = name; return s; },
+    leave_space: async ({ space }) => { spaces = spaces.filter((x) => x.id !== space); },
+    notify: async () => {},
     create_space: async ({ name, kind }) => { const s = { id: `sp${spaces.length + 1}`, name, kind, role: "owner", members: 1, is_default: false }; spaces.push(s); return s; },
     join_space: async () => { throw "This invite code isn't valid; ask for a new one"; },
     create_space_invite: async ({ hours, maxUses }) => ({ code: "PQ4T-7HWN-K2XA-9MRD-3FZL-VE6B-YC", expires_at_ms: Date.now() + hours * 3600e3, max_uses: maxUses }),
@@ -281,7 +284,7 @@ async function newPage(startLocked) {
 }
 let page = await newPage(false);
 const shot = async (name) => { await page.waitForTimeout(160); await page.screenshot({ path: join(out, `${name}.png`) }); console.log("saved", name); };
-const visible = (sel) => page.waitForSelector(`${sel}:not([hidden])`, { timeout: 5000 });
+const visible = (sel) => page.waitForSelector(`${sel}:not([hidden])`, { timeout: 5000 }).catch(async (e) => { await page.screenshot({ path: join(out, "FAIL.png") }); throw e; });
 // The chats list pops over from the left; open it, pick, and it closes.
 async function pick(list, name) {
   // The list lives in the Chats / Channels section only.
@@ -578,6 +581,21 @@ await page.click('.bcard[data-id="t3"]');
 await visible("#dlg-card");
 await shot("13u-task-card");
 await page.click("#card-cancel");
+await folder("Channels");
+await page.waitForTimeout(300);
+await shot("13v-sidebar-todos");
+await page.click('.todo >> nth=0');
+await visible("#dlg-card");
+await shot("13w-todo-opens-card");
+await page.click("#card-cancel");
+await page.click("#tool-notifs");
+await visible("#drawer-notifs");
+await page.waitForTimeout(200);
+await shot("13x-notifications");
+await page.click("#tool-spaceset");
+await visible("#drawer-spaceset");
+await shot("13y-space-settings");
+await page.click("#tool-spaceset");
 await folder("Overview");
 await page.click("#rail-me");
 await shot("13m-me-popover");

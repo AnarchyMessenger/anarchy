@@ -185,6 +185,12 @@ pub struct CreateSpace {
     pub kind: SpaceKind,
 }
 
+/// `PUT /v1/spaces/{space}`: owners rename a space.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RenameSpace {
+    pub name: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpaceSummary {
     pub id: SpaceId,

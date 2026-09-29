@@ -261,6 +261,23 @@ async fn spaces_scope_who_you_see_and_who_can_be_added() {
     assert_eq!(status(stranger.join_space("not-a-code").await), 403);
     assert_eq!(stranger.spaces().await.unwrap().len(), 0);
     assert_eq!(tomas.spaces().await.unwrap()[0].name, "Studio Chen");
+
+    // Owners rename; members and outsiders can't.
+    assert_eq!(
+        maya.rename_space(space.id, "Chen Studio").await.unwrap().name,
+        "Chen Studio"
+    );
+    assert_eq!(status(tomas.rename_space(space.id, "Mine now").await), 403);
+    assert_eq!(status(stranger.rename_space(space.id, "Mine now").await), 404);
+    assert_eq!(status(maya.rename_space(space.id, "  ").await), 400);
+    assert_eq!(tomas.spaces().await.unwrap()[0].name, "Chen Studio");
+
+    // The last owner can't leave; a member can, and then sees nothing of it.
+    assert_eq!(status(maya.leave_space(space.id).await), 400);
+    tomas.leave_space(space.id).await.unwrap();
+    assert!(tomas.spaces().await.unwrap().is_empty());
+    assert_eq!(status(tomas.directory_in(space.id).await), 404);
+    assert_eq!(maya.spaces().await.unwrap()[0].members, 1);
 }
 
 #[tokio::test]
