@@ -492,6 +492,8 @@
             </form>
           </aside>
           <section class="desk-board">
+            <div class="desk-viewbar"><nav class="navseg desk-views" id="desk-views" role="tablist" aria-label="Desk views"><button type="button" role="tab" data-v="invoices" aria-selected="true">Invoices</button><button type="button" role="tab" data-v="clients" aria-selected="false">Clients</button><button type="button" role="tab" data-v="time" aria-selected="false">Time</button></nav><span class="spacer"></span><span class="timer-pill" id="timer-pill" hidden></span></div>
+            <div id="desk-invoices">
             <div class="desk-hero">
               <div class="hero-text">
                 <p class="hero-kind" id="desk-kind">Collections</p>
@@ -513,6 +515,34 @@
                 <tbody id="desk-rows"></tbody>
               </table>
               <div class="desk-empty" id="desk-empty" hidden><svg class="i"><use href="#i-receipt"/></svg><strong id="desk-empty-title">No invoices yet</strong><p class="fine" id="desk-empty-sub">Create the first one. Everyone on this desk sees it, and nobody else, the server included.</p></div>
+            </div>
+            </div>
+
+            <div class="desk-sub" id="desk-clients" hidden>
+              <div class="sub-head">
+                <div><p class="hero-kind">Clients</p><h1 class="hero-line" id="clients-headline"></h1></div>
+                <span class="spacer"></span>
+                <label class="search pill"><svg class="i"><use href="#i-search"/></svg><input id="client-search" placeholder="Find a client" aria-label="Find a client"></label>
+                <button class="btn-ink inline" id="new-client" type="button"><svg class="i"><use href="#i-plus"/></svg>New client</button>
+              </div>
+              <div class="client-grid" id="client-grid"></div>
+              <div class="desk-empty" id="clients-empty" hidden><svg class="i"><use href="#i-user2"/></svg><strong>No clients yet</strong><p class="fine">Add the people you bill. Invoices and tracked time link to them, and intake forms can add them for you.</p></div>
+            </div>
+
+            <div class="desk-sub" id="desk-time" hidden>
+              <div class="sub-head">
+                <div><p class="hero-kind">Time</p><h1 class="hero-line" id="time-headline"></h1></div>
+              </div>
+              <form class="timer-bar" id="timer-form" novalidate>
+                <input class="text-input" id="tm-what" maxlength="120" placeholder="What are you working on?" aria-label="What are you working on?">
+                <select class="text-input" id="tm-client" aria-label="Client"></select>
+                <span class="timer-clock mono" id="tm-clock">0:00:00</span>
+                <button class="btn-ink inline" id="tm-toggle" type="submit"><svg class="i"><use href="#i-clock2"/></svg><span>Start</span></button>
+                <button class="btn-outline inline" id="tm-manual" type="button">Add time</button>
+              </form>
+              <div class="desk-tools"><div class="seg" id="time-tabs" role="tablist"></div><span class="spacer"></span><button class="btn-outline inline" id="time-invoice" type="button" disabled><svg class="i"><use href="#i-receipt"/></svg>Invoice selected</button></div>
+              <div class="time-list" id="time-list"></div>
+              <div class="desk-empty" id="time-empty" hidden><svg class="i"><use href="#i-clock2"/></svg><strong>No time tracked yet</strong><p class="fine">Start the timer or add hours by hand. Unbilled hours turn into a draft invoice in one step.</p></div>
             </div>
           </section>
         </div>
@@ -693,6 +723,7 @@
     <div class="kind-grid" role="radiogroup" aria-label="Kind of desk">
       <button type="button" class="kind" role="radio" data-kind="collections" aria-checked="true"><svg class="i"><use href="#i-receipt"/></svg><strong>Collections</strong><small>Invoices out, who paid, reminders.</small></button>
       <button type="button" class="kind" role="radio" data-kind="tasks" aria-checked="false"><svg class="i"><use href="#i-board"/></svg><strong>Tasks</strong><small>A board of cards: to do, doing, done.</small></button>
+      <button type="button" class="kind" role="radio" data-kind="pages" aria-checked="false"><svg class="i"><use href="#i-note"/></svg><strong>Pages</strong><small>A shared wiki: docs, how-tos, meeting notes.</small></button>
       <button type="button" class="kind" disabled><svg class="i"><use href="#i-phone"/></svg><strong>Front desk</strong><small>Calls, texts, bookings.</small><span class="tag">Needs a phone partner</span></button>
       <button type="button" class="kind" disabled><svg class="i"><use href="#i-lifebuoy"/></svg><strong>Help desk</strong><small>Questions in, answers from your docs.</small><span class="tag">Needs the Brain</span></button>
       <button type="button" class="kind" disabled><svg class="i"><use href="#i-truck"/></svg><strong>Dispatch</strong><small>Jobs, crews, schedule changes.</small><span class="tag">Later</span></button>
@@ -709,7 +740,7 @@
   <form id="invoice-form" novalidate>
     <h2 id="dlg-invoice-title">New invoice</h2>
     <div class="form-grid">
-      <label class="field span2" for="inv-customer">Customer<input class="text-input" id="inv-customer" maxlength="80" autocomplete="off" placeholder="Acme Corp"></label>
+      <label class="field span2" for="inv-customer">Customer<input class="text-input" id="inv-customer" maxlength="80" autocomplete="off" placeholder="Acme Corp" list="inv-clients"><datalist id="inv-clients"></datalist></label>
       <label class="field span2" for="inv-email"><span>Billing email <span class="optional">· for reminders</span></span><input class="text-input" id="inv-email" type="email" autocomplete="off" placeholder="billing@acme.com"></label>
       <label class="field" for="inv-amount">Amount (€)<input class="text-input" id="inv-amount" inputmode="decimal" placeholder="1 200.00"></label>
       <label class="field" for="inv-number">Number<input class="text-input mono" id="inv-number" maxlength="24"></label>
@@ -717,6 +748,7 @@
       <label class="field" for="inv-terms">Terms<select class="text-input" id="inv-terms"><option value="0">Due on receipt</option><option value="15">Net 15</option><option value="30" selected>Net 30</option><option value="60">Net 60</option><option value="90">Net 90</option></select></label>
       <label class="field span2" for="inv-status">Status<select class="text-input" id="inv-status"><option value="draft">Draft</option><option value="sent" selected>Sent</option><option value="paid">Paid</option><option value="void">Void</option></select></label>
     </div>
+    <p class="fine inv-lines" id="inv-lines" hidden></p>
     <div class="paylink" id="inv-link" hidden>
       <div class="paylink-head"><svg class="i"><use href="#i-link"/></svg><strong>Payment link</strong><span class="flag-pill warn">Client can see</span></div>
       <p class="fine" id="inv-link-state"></p>
@@ -724,6 +756,40 @@
     </div>
     <p class="error" id="invoice-error" hidden></p>
     <div class="modal-actions"><button class="btn-outline" type="button" id="invoice-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="invoice-save">Save invoice</button></div>
+  </form>
+</dialog>
+
+<dialog class="modal panel" id="dlg-client" aria-labelledby="dlg-client-title">
+  <form id="client-form" novalidate>
+    <h2 id="dlg-client-title">New client</h2>
+    <div class="form-grid">
+      <label class="field span2" for="cl-name">Name<input class="text-input" id="cl-name" maxlength="80" autocomplete="off" placeholder="Acme Corp"></label>
+      <label class="field" for="cl-contact"><span>Contact <span class="optional">· optional</span></span><input class="text-input" id="cl-contact" maxlength="80" autocomplete="off" placeholder="Jane Doe"></label>
+      <label class="field" for="cl-email"><span>Email <span class="optional">· for invoices</span></span><input class="text-input" id="cl-email" type="email" autocomplete="off"></label>
+      <label class="field" for="cl-phone"><span>Phone <span class="optional">· optional</span></span><input class="text-input" id="cl-phone" maxlength="40" autocomplete="off"></label>
+      <label class="field" for="cl-rate"><span>Hourly rate (€) <span class="optional">· for time</span></span><input class="text-input" id="cl-rate" inputmode="decimal" placeholder="80"></label>
+      <label class="field span2" for="cl-address"><span>Address <span class="optional">· optional</span></span><input class="text-input" id="cl-address" maxlength="200" autocomplete="off"></label>
+      <label class="field span2" for="cl-notes"><span>Notes <span class="optional">· only people on this desk see them</span></span><textarea class="text-input" id="cl-notes" rows="3" maxlength="2000"></textarea></label>
+    </div>
+    <div class="client-history" id="cl-history" hidden></div>
+    <p class="error" id="client-error" hidden></p>
+    <div class="modal-actions"><button class="btn-outline danger" type="button" id="client-delete" hidden>Delete</button><span class="spacer"></span><button class="btn-outline" type="button" id="client-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="client-save">Save client</button></div>
+  </form>
+</dialog>
+
+<dialog class="modal panel" id="dlg-time" aria-labelledby="dlg-time-title">
+  <form id="time-form" novalidate>
+    <h2 id="dlg-time-title">Add time</h2>
+    <div class="form-grid">
+      <label class="field span2" for="te-what">What<input class="text-input" id="te-what" maxlength="120" autocomplete="off" placeholder="Logo revisions"></label>
+      <label class="field span2" for="te-client">Client<select class="text-input" id="te-client"></select></label>
+      <label class="field" for="te-date">Day<input class="text-input" id="te-date" type="date"></label>
+      <label class="field" for="te-hours"><span>Time <span class="optional">· 1.5 or 1:30</span></span><input class="text-input mono" id="te-hours" inputmode="decimal" placeholder="1:30"></label>
+      <label class="field span2" for="te-rate">Rate (€ an hour)<input class="text-input" id="te-rate" inputmode="decimal" placeholder="80"></label>
+    </div>
+    <p class="fine" id="te-billed" hidden></p>
+    <p class="error" id="time-error" hidden></p>
+    <div class="modal-actions"><button class="btn-outline danger" type="button" id="time-delete" hidden>Delete</button><span class="spacer"></span><button class="btn-outline" type="button" id="time-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="time-save">Save</button></div>
   </form>
 </dialog>
 

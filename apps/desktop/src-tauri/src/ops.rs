@@ -793,7 +793,7 @@ pub async fn space_members(i: &mut Inner, space: SpaceId) -> Result<Vec<PeerView
 
 // ---------- desks ----------
 
-pub const DESK_KINDS: [&str; 3] = ["collections", "files", "tasks"];
+pub const DESK_KINDS: [&str; 4] = ["collections", "files", "tasks", "pages"];
 
 pub async fn create_desk(
     i: &mut Inner,

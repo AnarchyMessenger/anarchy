@@ -74,6 +74,7 @@ const mock = (startLocked) => {
   channels.push({ id: "pf", kind: "personal", space: null, desk: "files", name: "My files", topic: "", trust: "sealed", unread: false, messages: [] });
   channels.push({ id: "pt", kind: "personal", space: null, desk: "tasks", name: "Tasks", topic: "", trust: "sealed", unread: false, messages: [] });
   channels.push({ id: "kt", kind: "channel", space: "sp1", desk: "tasks", name: "Launch plan", topic: "", trust: "company", unread: false, messages: [] });
+  channels.push({ id: "kw", kind: "channel", space: "sp1", desk: "pages", name: "Studio handbook", topic: "", trust: "company", unread: false, messages: [] });
   const dayIso = (k) => { const d = new Date(now + k * 864e5); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
   const ev = (id, k, title, start, end, color, where = "") => ({ id, kind: "event", data: { title, date: dayIso(k), start, end, all_day: !start, color, where }, seq: 1, updated_ms: now });
   const agendaItems = [
@@ -93,6 +94,12 @@ const mock = (startLocked) => {
   ];
   const myCards = [card("m1", "Renew passport", "todo", 1, { due: dayIso(9), color: "plum" }), card("m2", "Send the Q3 VAT return", "doing", 1, { due: dayIso(3), color: "ember" }), card("m3", "Book the dentist", "done", 1)];
   const myFiles = [];
+  const wb = (type, text, checked = false) => ({ id: Math.random().toString(36).slice(2, 10), type, text, checked });
+  const wikiPages = [
+    page("w1", "How we onboard a client", "🤝", [wb("p", "Every new client goes through the same five steps, so nothing depends on who took the call."), wb("h2", "Before the kickoff"), wb("todo", "Send the intake form", true), wb("todo", "Create their client card in Collections", true), wb("todo", "Agree the rate and write it on the card"), wb("h2", "Kickoff"), wb("bullet", "Share the moodboard folder in Files"), wb("bullet", "Book the review dates in everyone's agenda"), wb("quote", "Deposit before any work starts. No exceptions.")], 90),
+    page("w2", "File naming", "🗂️", [wb("p", "client_project_version_date, lowercase, no spaces.")], 60 * 24 * 3),
+    page("w3", "Rates 2026", "🧾", [wb("p", "Design €90/h, retouching €80/h, rush +25%.")], 60 * 24 * 12),
+  ];
   const noteItems = [
     page("n1", "Acme rebrand, direction 2", "🎯", [
       { id: "a", type: "p", text: "Warmer, less corporate. Keep the serif for headlines only." },
@@ -147,6 +154,19 @@ const mock = (startLocked) => {
     inv(1033, "Field & Forest", "billing@fieldforest.ie", 1450, 150, 30, "paid", 118),
     inv(1032, "Saltwater Supply", "ops@saltwater.pt", 990, 176, 30, "paid", 150),
   ];
+  const client = (id, name, extra) => ({ id, kind: "client", seq: 1, updated_ms: now, data: { name, added: now, ...extra } });
+  const tentry = (id, what, cl, daysAgo, hour, minutes, rate, extra = {}) => { const start = new Date(now - daysAgo * 864e5); start.setHours(hour, 0, 0, 0); return { id, kind: "time", seq: 1, updated_ms: now, data: { what, client: cl, rate: rate * 100, start: start.getTime(), end: start.getTime() + minutes * 60e3, minutes, who: "me", who_name: "Maya Chen", ...extra } }; };
+  items.push(
+    client("c1", "Urban Threads", { contact: "Jonas Weber", email: "ap@urbanthreads.eu", phone: "+49 30 1234 567", rate: 9000 }),
+    client("c2", "Glow Beauty Hub", { contact: "Priya Nair", email: "billing@glowbeauty.com", rate: 8000 }),
+    client("c3", "Trendy Terra", { contact: "Camille Roux", email: "finance@trendyterra.fr", rate: 8500, notes: "Pays late; call Camille, not the AP inbox." }),
+    client("c4", "Nordic Outfitters", { contact: "Erik Lind", email: "ap@nordic.se", rate: 9500 }),
+    tentry("t1", "Lookbook layout", "c1", 0, 9, 135, 90),
+    tentry("t2", "Client call", "c1", 0, 14, 40, 90),
+    tentry("t3", "Packaging mockups", "c3", 1, 10, 210, 85),
+    tentry("t4", "Retouching, batch 2", "c2", 2, 9, 180, 80),
+    tentry("t5", "Brand audit", "c4", 4, 13, 150, 95, { billed: "i1041" }),
+  );
   const me = () => profile?.display_name || "You";
   const view = (c) => ({
     id: c.id, kind: c.kind, space: c.space ?? null, desk: c.desk ?? null, peer: c.kind === "dm" ? peer(c.peer) : null,
@@ -219,7 +239,7 @@ const mock = (startLocked) => {
     send_message: async ({ channel, text, thread }) => { await wait(120); channels.find((x) => x.id === channel).messages.push({ sender: "ME", ts: Date.now(), text, thread: thread ?? null }); },
     create_channel: async ({ space, name, topic, trust }) => { const id = `c${channels.length + 1}`; channels.push({ id, kind: "channel", space, name: name.trim().toLowerCase().replace(/\s+/g, "-"), topic, trust, unread: false, messages: [] }); return id; },
     create_desk: async ({ space, name }) => { const id = `k${channels.length + 1}`; channels.push({ id, kind: "channel", space, desk: "collections", name, trust: "company", unread: false, messages: [] }); return id; },
-    desk_items: async ({ channel }) => (channel === "k1" ? items : channel === "f1" ? driveItems : channel === "pa" ? agendaItems : channel === "pn" ? noteItems : channel === "kt" ? launchCards : channel === "pt" ? myCards : channel === "pf" ? myFiles : []),
+    desk_items: async ({ channel }) => (channel === "k1" ? items : channel === "f1" ? driveItems : channel === "pa" ? agendaItems : channel === "pn" ? noteItems : channel === "kt" ? launchCards : channel === "pt" ? myCards : channel === "pf" ? myFiles : channel === "kw" ? wikiPages : []),
     ensure_personal: async ({ kind }) => ({ agenda: "pa", notes: "pn", files: "pf", tasks: "pt" })[kind],
     save_text_file: async () => { await wait(80); },
     ensure_drive: async () => "f1",
@@ -235,7 +255,7 @@ const mock = (startLocked) => {
       }
       return { kind: "none", data: "" };
     },
-    put_items: async ({ channel, items: put }) => { const list = channel === "pa" ? agendaItems : channel === "pn" ? noteItems : channel === "kt" ? launchCards : channel === "pt" ? myCards : items; for (const r of put) { const at = list.findIndex((i) => i.id === r.id); const item = { ...r, seq: 99, updated_ms: Date.now() }; if (at >= 0) list[at] = item; else list.unshift(item); } },
+    put_items: async ({ channel, items: put }) => { const list = channel === "pa" ? agendaItems : channel === "pn" ? noteItems : channel === "kw" ? wikiPages : channel === "kt" ? launchCards : channel === "pt" ? myCards : items; for (const r of put) { const at = list.findIndex((i) => i.id === r.id); const item = { ...r, seq: 99, updated_ms: Date.now() }; if (at >= 0) list[at] = item; else list.unshift(item); } },
     pay_links: async () => payLinks,
     create_pay_link: async () => { const id = `L${payLinks.length + 1}`; payLinks.push({ id, expires_at_ms: now + 90 * 864e5, revoked: false, views: 0, last_viewed_at_ms: null, claimed_paid_at_ms: null }); return { id, url: `https://chat.studiochen.fr/p/${id}#k3y` }; },
     update_pay_link: async () => {},
@@ -504,6 +524,27 @@ await page.click("#invoice-cancel");
 await page.click("#desk-paydetails");
 await shot("13i-payment-details");
 await page.click("#paydetails-cancel");
+await page.click('#desk-views button[data-v="clients"]');
+await visible("#desk-clients");
+await shot("13i2-clients");
+await page.click('.client-card >> text="Trendy Terra"');
+await visible("#dlg-client");
+await shot("13i3-client-card");
+await page.click("#client-cancel");
+await page.click('#desk-views button[data-v="time"]');
+await visible("#desk-time");
+await page.fill("#tm-what", "Deck cover, second pass");
+await page.selectOption("#tm-client", "c1");
+await page.click("#tm-toggle");
+await page.waitForTimeout(1300);
+await page.check('.time-row:has-text("Lookbook layout") input');
+await page.check('.time-row:has-text("Client call") input');
+await shot("13i4-time");
+await page.click("#time-invoice");
+await visible("#dlg-invoice");
+await shot("13i5-invoice-from-time");
+await page.click("#invoice-cancel");
+await page.click('#desk-views button[data-v="invoices"]');
 await pick("#channel-list", "acme-rebrand");
 await visible("#view-convo");
 await page.fill("#message", "");
@@ -563,6 +604,14 @@ await folder("Desks");
 await visible("#view-desks");
 await page.waitForTimeout(300);
 await shot("13r-desks");
+await page.click('#desks-grid .ov-desk >> text="Studio handbook"');
+await visible("#view-notes");
+await page.waitForTimeout(250);
+await shot("13r2-shared-pages");
+await folder("Desks");
+await page.waitForTimeout(150);
+if (await page.isHidden("#view-desks")) { await folder("Desks"); await page.waitForTimeout(150); }
+await visible("#view-desks");
 await page.click('#desks-grid .ov-desk >> text="Launch plan"');
 await visible("#view-board");
 await page.waitForTimeout(200);

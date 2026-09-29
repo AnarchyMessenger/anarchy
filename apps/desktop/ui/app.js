@@ -594,6 +594,7 @@ async function openChannel(id) {
   if (c.desk === "files") return openDrive(c);
   if (c.desk === "agenda") return openAgenda();
   if (c.desk === "notes") return openNotes();
+  if (c.desk === "pages") return openNotes(undefined, c);
   if (c.desk === "tasks") return openBoard(c);
   if (c.desk) return openDesk(c);
   hideMain(); show("view-convo");
@@ -875,7 +876,7 @@ function sectionNow() {
   if (!cur && chatsHint && (view === "home" || view === "space")) return "chats";
   if (!$("view-desks").hidden) return "desks";
   if (!$("view-agenda").hidden) return "agenda";
-  if (!$("view-notes").hidden) return note?.file ? "files" : "notes";
+  if (!$("view-notes").hidden) return note?.file ? "files" : notesState.shared ? "desks" : "notes";
   if (!cur) return "overview";
   if (cur.desk === "files") return "files";
   if (cur.desk === "tasks" && cur.kind === "personal") return "tasks";
@@ -1065,7 +1066,7 @@ $("composer").addEventListener("submit", async (e) => {
 // text, so a mention never reveals a desk to people outside it. The message is
 // also copied into the desk's activity, because the sender chose to address it.
 
-const DESK_ICON = { collections: "receipt", files: "folder", agenda: "calendar", notes: "note", tasks: "board" };
+const DESK_ICON = { collections: "receipt", files: "folder", agenda: "calendar", notes: "note", tasks: "board", pages: "note" };
 function desksInScope() {
   const here = channels.find((c) => c.id === current);
   const space = view === "space" ? currentSpace?.id : here?.space;
@@ -1132,6 +1133,12 @@ async function deskSummary(d) {
     const late = inv.filter((i) => i.state === "overdue");
     if (!inv.length) return "No invoices yet";
     return `${money(open.reduce((n, i) => n + i.amount, 0))} outstanding · ${late.length} overdue · ${inv.filter((i) => i.state === "paid").length} paid`;
+  }
+  if (d.desk === "pages") {
+    const ps = items.filter((i) => i.kind === "page" && !i.data.deleted);
+    if (!ps.length) return "No pages yet";
+    const last = ps.reduce((m, i) => Math.max(m, i.data.updated || 0), 0);
+    return `${ps.length} ${ps.length === 1 ? "page" : "pages"} · edited ${sinceFmt(last)}`;
   }
   if (d.desk === "tasks") {
     const st = taskStats(items);
@@ -1217,7 +1224,7 @@ function mentionKey(e) {
   if (e.key === "Escape") { e.preventDefault(); closeMention(); return true; }
   return false;
 }
-const KIND_OF_DESK = { collections: "Collections", files: "Files", tasks: "Tasks" };
+const KIND_OF_DESK = { collections: "Collections", files: "Files", tasks: "Tasks", pages: "Pages" };
 
 // ---------- Ask ----------
 // The pull-out panel where the AI will live. Until a model is connected it's
@@ -1520,7 +1527,7 @@ $("event-delete").addEventListener("click", async () => {
 
 const BLOCKS = [["p", "Text", "Just writing"], ["h1", "Heading 1", "Big section title"], ["h2", "Heading 2", "Medium title"], ["h3", "Heading 3", "Small title"], ["bullet", "Bulleted list", "A simple list"], ["todo", "To-do", "Track tasks"], ["quote", "Quote", "Set text apart"], ["code", "Code", "Monospace, as typed"], ["divider", "Divider", "A line between sections"]];
 const PAGE_ICONS = ["📝", "💡", "📌", "📅", "✅", "📚", "🧾", "🌱", "🎯", "🗂️"];
-let notesState = { channel: null, items: [], query: "" };
+let notesState = { channel: null, items: [], query: "", shared: null }; // shared: the pages desk, when not your own notes
 let note = null; // { id, title, icon, blocks, file?: { channel, id, name, folder } }
 let noteTimer = null;
 const newBlock = (type = "p", text = "") => ({ id: crypto.randomUUID().slice(0, 8), type, text, checked: false });
@@ -1531,10 +1538,15 @@ function pages() {
     .filter((p) => !q || `${p.title} ${(p.blocks || []).map((b) => b.text).join(" ")}`.toLowerCase().includes(q))
     .sort((a, b) => (b.updated || 0) - (a.updated || 0));
 }
-async function openNotes(pageId) {
+// A pages desk (a space's shared wiki) opens in the same editor; everyone on
+// the desk can read and edit its pages, and nobody else, the server included.
+async function openNotes(pageId, shared = null) {
   if (thread) closeThread();
   hideMain(); show("view-notes");
-  notesState.channel = await personalDesk("notes").catch((err) => { alert(String(err)); return null; });
+  if (shared && notesState.shared?.id !== shared.id) { flushNote(); note = null; notesState.query = ""; $("note-search").value = ""; }
+  if (!shared && notesState.shared) { flushNote(); note = null; }
+  notesState.shared = shared;
+  notesState.channel = shared ? shared.id : await personalDesk("notes").catch((err) => { alert(String(err)); return null; });
   if (!notesState.channel) return;
   current = notesState.channel; invoke("blur");
   notesState.items = await invoke("desk_items", { channel: notesState.channel });
@@ -1557,20 +1569,20 @@ $("note-search").addEventListener("input", () => { notesState.query = $("note-se
 $("note-new").addEventListener("click", async () => {
   flushNote();
   note = { id: crypto.randomUUID(), title: "", icon: PAGE_ICONS[Math.floor(Math.random() * PAGE_ICONS.length)], blocks: [newBlock()] };
-  if ($("view-notes").hidden) await openNotes();
+  if ($("view-notes").hidden) await openNotes(undefined, notesState.shared);
   renderNote(); saveNoteSoon(0);
   $("note-title").focus();
 });
 function renderNote() {
   show("note-page", !!note);
   if (!note) {
-    $("note-crumbs").replaceChildren(el("span", { text: "Notes" }));
+    $("note-crumbs").replaceChildren(el("span", { text: notesState.shared ? notesState.shared.name : "Notes" }));
     $("note-blocks").replaceChildren();
     return;
   }
   $("note-crumbs").replaceChildren(...(note.file
     ? [el("button", { class: "link", type: "button", text: "Files", onclick: () => { flushNote(); goTo(note.file.channel); } }), el("span", { text: " / " }), el("span", { text: `${note.file.folder === "/" ? "" : `${note.file.folder.slice(1)} / `}${note.file.name}` })]
-    : [el("span", { text: "Notes" }), el("span", { text: " / " }), el("span", { text: note.title || "Untitled" })]));
+    : [el("span", { text: notesState.shared ? notesState.shared.name : "Notes" }), el("span", { text: " / " }), el("span", { text: note.title || "Untitled" })]));
   $("note-icon").textContent = note.file ? "📄" : note.icon;
   $("note-icon").disabled = !!note.file;
   $("note-title").textContent = note.file ? note.file.name : note.title;
@@ -1713,12 +1725,13 @@ $("note-title").addEventListener("input", () => {
 $("note-title").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); const t = txtOf(note.blocks[0].id); if (t) placeCaret(t, 0); } });
 $("note-icon").addEventListener("click", () => { if (!note || note.file) return; note.icon = PAGE_ICONS[(PAGE_ICONS.indexOf(note.icon) + 1) % PAGE_ICONS.length]; $("note-icon").textContent = note.icon; saveNoteSoon(); });
 $("note-delete").addEventListener("click", async () => {
-  if (!note || note.file || !confirm(`Delete "${note.title || "Untitled"}"? It's removed from all your devices.`)) return;
+  if (!note || note.file || !confirm(`Delete "${note.title || "Untitled"}"? ${notesState.shared ? "It's removed for everyone on this desk." : "It's removed from all your devices."}`)) return;
   const { id, file, ...data } = note; void file;
   clearTimeout(noteTimer);
   await invoke("put_items", { channel: notesState.channel, items: [{ id, kind: "page", data: { ...data, deleted: true, updated: Date.now() } }] });
+  if (notesState.shared) invoke("send_message", { channel: notesState.channel, text: `Deleted the page "${data.title || "Untitled"}".` }).catch(() => {});
   note = null;
-  await openNotes();
+  await openNotes(undefined, notesState.shared);
 });
 function saveNoteSoon(ms = 700) {
   if (!note) return;
@@ -1730,19 +1743,22 @@ function flushNote() { if (noteTimer) { clearTimeout(noteTimer); noteTimer = nul
 async function saveNote() {
   noteTimer = null;
   if (!note) return;
-  const n = note;
+  const n = note, ch = notesState.channel, shared = notesState.shared;
   try {
     if (n.file) {
       await invoke("save_text_file", { channel: n.file.channel, id: n.file.id, text: toMarkdown(n.blocks) });
     } else {
       const data = { title: n.title, icon: n.icon, blocks: n.blocks.map(({ id, type, text, checked }) => ({ id, type, text, checked })), updated: Date.now() };
-      await invoke("put_items", { channel: notesState.channel, items: [{ id: n.id, kind: "page", data }] });
+      await invoke("put_items", { channel: ch, items: [{ id: n.id, kind: "page", data }] });
+      if (notesState.channel !== ch) return; // moved to another notes desk meanwhile
       const at = notesState.items.findIndex((i) => i.id === n.id);
+      // Shared pages: a new page is announced once in the desk's activity (edits aren't, they'd flood it).
+      if (at < 0 && shared && n.title) invoke("send_message", { channel: ch, text: `Added the page "${n.title}".` }).catch(() => {});
       const rec = { id: n.id, kind: "page", data, seq: 0, updated_ms: data.updated };
       if (at >= 0) notesState.items[at] = rec; else notesState.items.push(rec);
       renderNoteList();
     }
-    if (note === n) $("note-saved").textContent = n.file ? "Saved to the drive, encrypted" : "Saved · only your devices can read it";
+    if (note === n) $("note-saved").textContent = n.file ? "Saved to the drive, encrypted" : notesState.shared ? "Saved · everyone on this desk can read it" : "Saved · only your devices can read it";
   } catch (err) { $("note-saved").textContent = `Not saved: ${err}`; }
 }
 function toMarkdown(blocks) {
@@ -2404,7 +2420,7 @@ async function openDesk(c) {
   hideMain(); show("view-desk");
   for (const b of document.querySelectorAll(".side-item[data-id]")) b.classList.toggle("active", b.dataset.id === c.id);
   const fresh = !desk || desk.channel !== c.id;
-  if (fresh) desk = { channel: c.id, name: c.name, space: c.space, items: [], messages: [], links: {}, linksAt: 0, tab: "all", query: "", selected: new Set() };
+  if (fresh) desk = { channel: c.id, name: c.name, space: c.space, items: [], messages: [], links: {}, linksAt: 0, tab: "all", query: "", selected: new Set(), view: "invoices", clientQuery: "", timeTab: "unbilled", timeSel: new Set() };
   const [items, messages] = await Promise.all([invoke("desk_items", { channel: c.id }), invoke("open_channel", { channel: c.id })]);
   desk.items = items; desk.messages = messages;
   await refreshLinks();
@@ -2412,6 +2428,7 @@ async function openDesk(c) {
   if (fresh) $("desk-search").value = "";
   $("desk-kind").textContent = c.name;
   renderDesk();
+  renderDeskView();
   refreshChannels();
 }
 
@@ -2737,6 +2754,10 @@ function openInvoice(inv) {
   $("inv-terms").value = String(inv?.terms ?? 30);
   $("inv-status").value = inv?.status || "sent";
   $("invoice-save").textContent = inv ? "Save changes" : "Save invoice";
+  $("inv-clients").replaceChildren(...clients().map((c) => el("option", { value: c.name })));
+  const lines = inv?.lines || [];
+  show("inv-lines", lines.length > 0);
+  if (lines.length) $("inv-lines").textContent = `From tracked time: ${lines.map((l) => `${l.what || "work"} ${hoursFmt(l.minutes)}`).join(", ")}.`;
   paintLinkSection();
   setError("invoice-error", "");
   $("dlg-invoice").showModal();
@@ -2758,6 +2779,7 @@ $("invoice-form").addEventListener("submit", async (e) => {
   const inv = {
     ...(editing || {}), id: editing?.id || crypto.randomUUID(), number: $("inv-number").value.trim() || `INV-${Date.now() % 100000}`,
     customer, email, amount, currency: "EUR", issued, terms, due: addDays(issued, terms), status,
+    client_id: clientByName(customer)?.id || editing?.client_id,
     paid_on: status === "paid" ? (editing?.paid_on || isoToday()) : undefined,
   };
   await busy($("invoice-save"), "Saving…", async () => {
@@ -2770,6 +2792,305 @@ $("invoice-form").addEventListener("submit", async (e) => {
       openChannel(desk.channel);
     } catch (err) { setError("invoice-error", String(err)); }
   });
+});
+
+
+$("inv-customer").addEventListener("change", () => {
+  const c = clientByName($("inv-customer").value);
+  if (c?.email && !$("inv-email").value) $("inv-email").value = c.email;
+});
+
+// ---------- Collections: clients and time ----------
+// Clients (a light CRM) and time entries are records in the same desk channel
+// as the invoices, so an invoice made from hours is one encrypted write, and
+// everyone on the desk, and only them, can see who the clients are.
+
+const hoursFmt = (min) => { const h = Math.floor(min / 60), m = Math.round(min % 60); return h ? `${h} h${m ? ` ${pad2(m)}` : ""}` : `${m} min`; };
+const moneyIn = (v) => { const n = parseFloat(String(v).replace(/\s/g, "").replace(",", ".")); return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : null; };
+function clients() {
+  return desk.items.filter((i) => i.kind === "client" && !i.data.deleted).map((i) => ({ id: i.id, ...i.data })).sort((a, b) => a.name.localeCompare(b.name));
+}
+function clientByName(name) { const n = String(name || "").trim().toLowerCase(); return n ? clients().find((c) => c.name.toLowerCase() === n) : null; }
+function clientOf(inv) { return inv.client_id ? clients().find((c) => c.id === inv.client_id) : clientByName(inv.customer); }
+function timeEntries() {
+  return desk.items.filter((i) => i.kind === "time" && !i.data.deleted).map((i) => ({ id: i.id, ...i.data })).sort((a, b) => (b.start || 0) - (a.start || 0));
+}
+const entryMinutes = (t) => (t.end ? t.minutes ?? Math.round((t.end - t.start) / 60e3) : Math.round((Date.now() - t.start) / 60e3));
+const entryValue = (t) => Math.round((entryMinutes(t) / 60) * (t.rate || 0));
+function myTimer() { return timeEntries().find((t) => !t.end && t.who === profile?.user_id); }
+async function putRecords(recs) {
+  await invoke("put_items", { channel: desk.channel, items: recs });
+  desk.items = await invoke("desk_items", { channel: desk.channel });
+}
+
+function renderDeskView() {
+  if (!desk) return;
+  for (const b of document.querySelectorAll("#desk-views button")) b.setAttribute("aria-selected", String(b.dataset.v === desk.view));
+  show("desk-invoices", desk.view === "invoices");
+  show("desk-clients", desk.view === "clients");
+  show("desk-time", desk.view === "time");
+  if (desk.view === "clients") renderClients();
+  if (desk.view === "time") renderTime();
+  paintTimerPill();
+}
+for (const b of document.querySelectorAll("#desk-views button")) b.addEventListener("click", () => { desk.view = b.dataset.v; renderDeskView(); });
+
+function renderClients() {
+  const all = clients();
+  const inv = invoices();
+  const today = isoToday();
+  const stats = (c) => {
+    const mine = inv.filter((i) => clientOf(i)?.id === c.id);
+    const open = mine.filter((i) => i.state === "open" || i.state === "overdue");
+    const unbilled = timeEntries().filter((t) => t.client === c.id && t.end && !t.billed);
+    return { invoices: mine, owed: open.reduce((n, i) => n + i.amount, 0), late: mine.filter((i) => i.state === "overdue").length,
+      paid: mine.filter((i) => i.state === "paid").reduce((n, i) => n + i.amount, 0), unbilledMin: unbilled.reduce((n, t) => n + entryMinutes(t), 0), last: mine[0]?.issued };
+  };
+  const withOwed = all.map((c) => ({ c, st: stats(c) }));
+  const owing = withOwed.filter((x) => x.st.owed > 0);
+  $("clients-headline").replaceChildren(...(all.length
+    ? [`${all.length} ${all.length === 1 ? "client" : "clients"}. `, el("span", { class: "soft", text: owing.length ? `${owing.length} ${owing.length === 1 ? "owes" : "owe"} you ${money(owing.reduce((n, x) => n + x.st.owed, 0))}.` : "Nobody owes you anything." })]
+    : ["No clients ", el("span", { class: "soft", text: "yet." })]));
+  const q = desk.clientQuery.toLowerCase();
+  const shown = withOwed.filter(({ c }) => !q || `${c.name} ${c.contact || ""} ${c.email || ""}`.toLowerCase().includes(q));
+  show("clients-empty", all.length === 0);
+  // Customers on invoices who have no card yet: one click makes one.
+  const loose = [...new Set(inv.map((i) => i.customer).filter((n) => n && !clientByName(n)))];
+  $("client-grid").replaceChildren(...shown.map(({ c, st }) => el("button", { class: "client-card", type: "button", onclick: () => openClient(c) },
+    el("span", { class: "cc-top" }, avatarEl(c.name, { size: "sm" }), el("span", { class: "lines" }, el("strong", { text: c.name }), el("small", { text: [c.contact, c.email].filter(Boolean).join(" · ") || "No contact yet" }))),
+    el("span", { class: "cc-figs" },
+      el("span", {}, el("small", { text: "Owes" }), el("b", { class: st.late ? "late" : "", text: st.owed ? money(st.owed) : "—" })),
+      el("span", {}, el("small", { text: "Paid" }), el("b", { text: st.paid ? moneyShort(st.paid) : "—" })),
+      el("span", {}, el("small", { text: "Unbilled" }), el("b", { text: st.unbilledMin ? hoursFmt(st.unbilledMin) : "—" }))),
+    el("span", { class: "cc-foot fine", text: st.late ? `${st.late} overdue` : st.last ? `Last invoice ${shortDay(st.last)}` : c.rate ? `${money(c.rate)} an hour` : "No invoices yet" }))),
+    ...(loose.length && !q ? [el("div", { class: "client-loose" }, el("p", { class: "fine", text: "On invoices, without a card:" }), ...loose.slice(0, 8).map((n) => el("button", { class: "chip", type: "button", onclick: () => openClient(null, { name: n, email: inv.find((i) => i.customer === n)?.email || "" }) }, icon("plus"), n)))] : []));
+  void today;
+}
+$("client-search").addEventListener("input", () => { desk.clientQuery = $("client-search").value; renderClients(); });
+
+let editingClient = null;
+function openClient(c, preset = {}) {
+  editingClient = c || null;
+  const v = c || preset;
+  $("dlg-client-title").textContent = c ? c.name : "New client";
+  $("cl-name").value = v.name || ""; $("cl-contact").value = v.contact || ""; $("cl-email").value = v.email || "";
+  $("cl-phone").value = v.phone || ""; $("cl-address").value = v.address || ""; $("cl-notes").value = v.notes || "";
+  $("cl-rate").value = v.rate ? (v.rate / 100).toString() : "";
+  show("client-delete", !!c);
+  setError("client-error", "");
+  // What's happened with them: invoices and unbilled time, newest first.
+  const hist = $("cl-history");
+  if (c) {
+    const inv = invoices().filter((i) => clientOf(i)?.id === c.id);
+    const time = timeEntries().filter((t) => t.client === c.id && t.end && !t.billed);
+    hist.replaceChildren(
+      el("p", { class: "block-label", text: "Invoices" }),
+      ...(inv.length ? inv.slice(0, 6).map((i) => el("button", { class: "hist-row", type: "button", onclick: () => { $("dlg-client").close(); desk.view = "invoices"; renderDeskView(); openInvoice(i); } },
+        el("span", { class: "mono", text: i.number }), el("span", { text: shortDay(i.issued) }), el("span", { class: `st ${i.state}`, text: i.state }), el("b", { text: money(i.amount) }))) : [el("p", { class: "fine", text: "None yet." })]),
+      el("p", { class: "block-label", text: "Unbilled time" }),
+      el("p", { class: "fine", text: time.length ? `${hoursFmt(time.reduce((n, t) => n + entryMinutes(t), 0))}, worth ${money(time.reduce((n, t) => n + entryValue(t), 0))}.` : "None." }));
+  }
+  show("cl-history", !!c);
+  $("dlg-client").showModal();
+  $("cl-name").focus();
+}
+$("new-client").addEventListener("click", () => openClient(null));
+$("client-cancel").addEventListener("click", () => $("dlg-client").close());
+$("client-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("cl-name").value.trim();
+  const email = $("cl-email").value.trim();
+  if (!name) return setError("client-error", "A client needs a name.");
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return setError("client-error", "That email doesn't look right.");
+  const clash = clientByName(name);
+  if (clash && clash.id !== editingClient?.id) return setError("client-error", `${clash.name} already has a card.`);
+  const rateRaw = $("cl-rate").value.trim();
+  const rate = rateRaw ? moneyIn(rateRaw) : null;
+  if (rateRaw && rate == null) return setError("client-error", "Enter a rate like 80 or 92.50.");
+  const { id: _id, ...prev } = editingClient || {}; void _id;
+  const data = { ...prev, name, contact: $("cl-contact").value.trim(), email, phone: $("cl-phone").value.trim(), address: $("cl-address").value.trim(), notes: $("cl-notes").value.trim(), rate, added: editingClient?.added || Date.now() };
+  await busy($("client-save"), "Saving…", async () => {
+    try {
+      await putRecords([{ id: editingClient?.id || crypto.randomUUID(), kind: "client", data }]);
+      await logActivity(editingClient ? `Updated the client card for ${name}.` : `Added ${name} as a client.`);
+      $("dlg-client").close();
+      renderDeskView();
+    } catch (err) { setError("client-error", String(err)); }
+  });
+});
+$("client-delete").addEventListener("click", async () => {
+  const c = editingClient;
+  if (!c || !confirm(`Delete the card for ${c.name}? Their invoices and time stay.`)) return;
+  const { id, ...data } = c;
+  await putRecords([{ id, kind: "client", data: { ...data, deleted: true } }]);
+  await logActivity(`Deleted the client card for ${c.name}.`);
+  $("dlg-client").close();
+  renderDeskView();
+});
+
+// Time: a running timer is a record with no end, so it shows on every device;
+// only the person who started it sees the Stop button.
+function clientOptions(sel, value) {
+  sel.replaceChildren(el("option", { value: "", text: "No client" }), ...clients().map((c) => el("option", { value: c.id, text: c.name })));
+  sel.value = value || "";
+}
+function renderTime() {
+  const all = timeEntries();
+  const done = all.filter((t) => t.end);
+  const unbilled = done.filter((t) => !t.billed);
+  const umin = unbilled.reduce((n, t) => n + entryMinutes(t), 0);
+  const weekAgo = Date.now() - 7 * 864e5;
+  const wmin = done.filter((t) => t.start >= weekAgo).reduce((n, t) => n + entryMinutes(t), 0);
+  $("time-headline").replaceChildren(...(done.length
+    ? [`${hoursFmt(umin)} unbilled`, el("span", { class: "soft", text: `, worth ${money(unbilled.reduce((n, t) => n + entryValue(t), 0))}. ${hoursFmt(wmin)} this week.` })]
+    : ["No time ", el("span", { class: "soft", text: "tracked yet." })]));
+  const run = myTimer();
+  if (document.activeElement !== $("tm-client")) clientOptions($("tm-client"), run?.client ?? $("tm-client").value);
+  if (run && document.activeElement !== $("tm-what")) $("tm-what").value = run.what || "";
+  $("tm-toggle").lastElementChild.textContent = run ? "Stop" : "Start";
+  $("tm-toggle").classList.toggle("running", !!run);
+  tickClock();
+  const counts = { unbilled: unbilled.length, billed: done.length - unbilled.length, all: all.length };
+  const labels = { unbilled: "Unbilled", billed: "Billed", all: "All" };
+  $("time-tabs").replaceChildren(...Object.keys(labels).map((k) => el("button", { type: "button", role: "tab", "aria-selected": String(desk.timeTab === k), onclick: () => { desk.timeTab = k; desk.timeSel.clear(); renderTime(); } }, labels[k], el("span", { class: "n", text: String(counts[k]) }))));
+  const rows = all.filter((t) => desk.timeTab === "all" || (desk.timeTab === "billed" ? t.billed : !t.billed));
+  show("time-empty", all.length === 0);
+  const byDay = new Map();
+  for (const t of rows) { const k = isoOf(new Date(t.start)); if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(t); }
+  const cname = (id) => clients().find((c) => c.id === id)?.name;
+  $("time-list").replaceChildren(...[...byDay.entries()].map(([day, list]) => el("section", { class: "time-day" },
+    el("header", {}, el("strong", { text: day === isoToday() ? "Today" : asDate(day).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }) }), el("span", { class: "fine", text: hoursFmt(list.reduce((n, t) => n + entryMinutes(t), 0)) })),
+    ...list.map((t) => {
+      const running = !t.end;
+      const check = !running && !t.billed ? el("input", { type: "checkbox", "aria-label": "Select", checked: desk.timeSel.has(t.id), onclick: (e) => e.stopPropagation(), onchange: (e) => { e.target.checked ? desk.timeSel.add(t.id) : desk.timeSel.delete(t.id); paintTimeInvoice(); } }) : el("span", { class: "chk-gap" });
+      return el("div", { class: `time-row${running ? " running" : ""}`, role: "button", tabindex: "0", onclick: () => !running && openTimeEntry(t) },
+        check, el("span", { class: "what", text: t.what || "Untitled work" }), el("span", { class: "who fine", text: cname(t.client) || "No client" }),
+        el("span", { class: "fine", text: running ? `running · ${t.who_name || ""}` : t.billed ? "Billed" : t.rate ? `${money(t.rate)}/h` : "No rate" }),
+        el("b", { class: "mono", text: hoursFmt(entryMinutes(t)) }), el("b", { class: "num", text: t.rate ? money(entryValue(t)) : "—" }));
+    }))));
+  paintTimeInvoice();
+}
+function paintTimeInvoice() {
+  const sel = timeEntries().filter((t) => desk.timeSel.has(t.id));
+  const clientsIn = new Set(sel.map((t) => t.client || ""));
+  const b = $("time-invoice");
+  b.disabled = !sel.length || clientsIn.size !== 1 || clientsIn.has("");
+  b.title = !sel.length ? "Select unbilled entries first" : clientsIn.has("") ? "Give these entries a client first" : clientsIn.size > 1 ? "One invoice is for one client" : "";
+  b.lastChild.textContent = sel.length ? `Invoice ${hoursFmt(sel.reduce((n, t) => n + entryMinutes(t), 0))}` : "Invoice selected";
+}
+function tickClock() {
+  const run = desk && myTimer();
+  const secs = run ? Math.max(0, Math.floor((Date.now() - run.start) / 1000)) : 0;
+  $("tm-clock").textContent = `${Math.floor(secs / 3600)}:${pad2(Math.floor(secs / 60) % 60)}:${pad2(secs % 60)}`;
+  paintTimerPill();
+}
+function paintTimerPill() {
+  const run = desk && myTimer();
+  show("timer-pill", !!run && desk.view !== "time");
+  if (run) $("timer-pill").replaceChildren(el("span", { class: "rec" }), `${run.what || "Timer"} · ${$("tm-clock").textContent}`);
+}
+$("timer-pill").addEventListener("click", () => { desk.view = "time"; renderDeskView(); });
+setInterval(() => { if (desk && !$("view-desk").hidden && myTimer()) tickClock(); }, 1000);
+$("timer-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const run = myTimer();
+  const client = $("tm-client").value || null;
+  const c = clients().find((x) => x.id === client);
+  try {
+    if (run) {
+      const end = Date.now();
+      const { id, ...data } = run;
+      const minutes = Math.max(1, Math.round((end - run.start) / 60e3));
+      await putRecords([{ id, kind: "time", data: { ...data, what: $("tm-what").value.trim() || data.what, client: client ?? data.client, rate: data.rate ?? c?.rate ?? null, end, minutes } }]);
+      await logActivity(`Tracked ${hoursFmt(minutes)}${c ? ` for ${c.name}` : ""}: ${$("tm-what").value.trim() || "work"}.`);
+      $("tm-what").value = "";
+    } else {
+      await putRecords([{ id: crypto.randomUUID(), kind: "time", data: { what: $("tm-what").value.trim(), client, rate: c?.rate ?? null, start: Date.now(), end: null, who: profile?.user_id, who_name: profile?.display_name || "" } }]);
+    }
+    renderTime();
+  } catch (err) { alert(String(err)); }
+});
+
+let editingTime = null;
+function openTimeEntry(t) {
+  editingTime = t || null;
+  $("dlg-time-title").textContent = t ? "Time entry" : "Add time";
+  $("te-what").value = t?.what || "";
+  clientOptions($("te-client"), t?.client || $("tm-client").value);
+  $("te-date").value = t ? isoOf(new Date(t.start)) : isoToday();
+  const m = t ? entryMinutes(t) : 0;
+  $("te-hours").value = t ? `${Math.floor(m / 60)}:${pad2(m % 60)}` : "";
+  const c = clients().find((x) => x.id === $("te-client").value);
+  $("te-rate").value = t?.rate != null ? String(t.rate / 100) : c?.rate ? String(c.rate / 100) : "";
+  show("te-billed", !!t?.billed);
+  if (t?.billed) $("te-billed").textContent = `Billed on ${invoices().find((i) => i.id === t.billed)?.number || "an invoice"}. Changing it here doesn't change the invoice.`;
+  show("time-delete", !!t);
+  setError("time-error", "");
+  $("dlg-time").showModal();
+  $("te-what").focus();
+}
+$("te-client").addEventListener("change", () => { const c = clients().find((x) => x.id === $("te-client").value); if (c?.rate && !$("te-rate").value) $("te-rate").value = String(c.rate / 100); });
+$("tm-manual").addEventListener("click", () => openTimeEntry(null));
+$("time-cancel").addEventListener("click", () => $("dlg-time").close());
+function parseHours(v) {
+  const s = String(v).trim();
+  let m;
+  if ((m = /^(\d+):([0-5]?\d)$/.exec(s))) return Number(m[1]) * 60 + Number(m[2]);
+  const n = parseFloat(s.replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 60) : null;
+}
+$("time-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const minutes = parseHours($("te-hours").value);
+  if (!minutes || minutes > 24 * 60) return setError("time-error", "Enter the time like 1:30 or 1.5 (up to 24 hours).");
+  const rateRaw = $("te-rate").value.trim();
+  const rate = rateRaw ? moneyIn(rateRaw) : null;
+  if (rateRaw && rate == null) return setError("time-error", "Enter a rate like 80 or 92.50.");
+  const day = $("te-date").value || isoToday();
+  const start = editingTime && isoOf(new Date(editingTime.start)) === day ? editingTime.start : new Date(`${day}T09:00`).getTime();
+  const { id: _i, ...prev } = editingTime || {}; void _i;
+  const data = { ...prev, what: $("te-what").value.trim(), client: $("te-client").value || null, rate, start, end: start + minutes * 60e3, minutes, who: prev.who || profile?.user_id, who_name: prev.who_name || profile?.display_name || "" };
+  await busy($("time-save"), "Saving…", async () => {
+    try {
+      await putRecords([{ id: editingTime?.id || crypto.randomUUID(), kind: "time", data }]);
+      if (!editingTime) await logActivity(`Added ${hoursFmt(minutes)} of time: ${data.what || "work"}.`);
+      $("dlg-time").close();
+      renderTime();
+    } catch (err) { setError("time-error", String(err)); }
+  });
+});
+$("time-delete").addEventListener("click", async () => {
+  const t = editingTime;
+  if (!t || !confirm("Delete this time entry?")) return;
+  const { id, ...data } = t;
+  await putRecords([{ id, kind: "time", data: { ...data, deleted: true } }]);
+  desk.timeSel.delete(id);
+  $("dlg-time").close();
+  renderTime();
+});
+
+// Selected hours become a draft invoice for their client; the entries are
+// marked billed with that invoice in the same write.
+$("time-invoice").addEventListener("click", async () => {
+  const sel = timeEntries().filter((t) => desk.timeSel.has(t.id) && t.end && !t.billed);
+  const c = clients().find((x) => x.id === sel[0]?.client);
+  if (!sel.length || !c) return;
+  if (sel.some((t) => !t.rate) && !confirm("Some entries have no rate and count as €0. Make the invoice anyway?")) return;
+  const all = invoices();
+  const next = Math.max(1000, ...all.map((i) => parseInt(String(i.number).replace(/\D/g, ""), 10) || 0)) + 1;
+  const id = crypto.randomUUID();
+  const issued = isoToday();
+  const amount = sel.reduce((n, t) => n + entryValue(t), 0);
+  const inv = { number: `INV-${next}`, customer: c.name, client_id: c.id, email: c.email || "", amount, currency: "EUR", issued, terms: 30, due: addDays(issued, 30), status: "draft",
+    lines: sel.map((t) => ({ what: t.what, minutes: entryMinutes(t), rate: t.rate || 0 })) };
+  try {
+    await putRecords([{ id, kind: "invoice", data: inv }, ...sel.map(({ id: tid, ...data }) => ({ id: tid, kind: "time", data: { ...data, billed: id } }))]);
+    await logActivity(`Drafted ${inv.number} for ${c.name} from ${hoursFmt(sel.reduce((n, t) => n + entryMinutes(t), 0))} of time: ${money(amount)}.`);
+    desk.timeSel.clear();
+    desk.view = "invoices";
+    renderDesk(); renderDeskView();
+    openInvoice(invoices().find((i) => i.id === id));
+  } catch (err) { alert(String(err)); }
 });
 
 $("notes-input").addEventListener("input", () => { $("notes-send").disabled = !$("notes-input").value.trim(); });
