@@ -533,6 +533,7 @@ async function showApp() {
   show("omnibox");
   paintMe();
   try { spaces = await invoke("spaces"); } catch { spaces = []; }
+  if (status.session?.server) invoke("workspace_info", { server: status.session.server }).then((w) => { skHosted = !!w.config?.sidekicks_hosted; paintAskHead(); }).catch(() => {});
   renderRail();
   go("home");
   await refreshChannels();
@@ -567,7 +568,7 @@ function renderRail() {
     return b;
   }));
   $("rail-home").classList.toggle("active", view === "home");
-  $("rail-settings").classList.toggle("active", view === "settings");
+  $("rail-me").classList.toggle("active", view === "settings");
 }
 
 function go(which) {
@@ -613,7 +614,6 @@ function openSpace(s) {
   go("space");
 }
 $("rail-home").addEventListener("click", () => go("home"));
-$("rail-settings").addEventListener("click", () => go("settings"));
 // The person's card: name, handle to share, and a way into settings.
 function toggleMe(open) {
   const on = open ?? $("me-pop").hidden;
@@ -642,7 +642,7 @@ function renderSide() {
   $("dm-list").replaceChildren(...dms.map((c) => {
     const unread = c.unread && c.id !== current;
     return el("button", { class: `side-item dm-item${c.id === current ? " active" : ""}${unread ? " unread" : ""}`, "data-id": c.id, onclick: () => openChannel(c.id).then(() => composer.focus()) },
-      avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick }),
+      peerFace(c),
       el("span", { class: "lines" }, el("strong", { text: c.name }), el("small", { text: c.last_text || (c.peer?.handle ? `@${c.peer.handle}` : "") })),
       unread ? el("span", { class: "unread-dot", "aria-label": "unread" }) : null);
   }));
@@ -677,12 +677,17 @@ async function openChannel(id) {
   if (c.desk) return openDesk(c);
   hideMain(); show("view-convo");
   const dm = c.kind === "dm";
-  show("convo-avatar", dm);
-  if (dm) fillAvatar($("convo-avatar"), c.name, c.peer?.color, c.peer?.avatar);
+  const agent = dm && c.peer?.is_agent;
+  show("convo-avatar", dm && !agent);
+  show("convo-sk-face", agent);
+  if (agent) $("convo-sk-face").replaceChildren(sidekickEl(profile?.sidekick || { look: "orb-ocean" }, "msg-face"));
+  else if (dm) fillAvatar($("convo-avatar"), c.name, c.peer?.color, c.peer?.avatar);
   $("convo-name").textContent = dm ? c.name : `# ${c.name}`;
   $("convo-topic").textContent = dm ? (c.peer?.handle ? `@${c.peer.handle}` : "") : c.topic;
   const trust = $("convo-trust");
-  if (dm) { trust.className = "ax-seal sealed"; trust.replaceChildren(icon("lock"), "Only you two"); }
+  // Your sidekick runs on the server, so this conversation isn't only yours (D32).
+  if (agent) { trust.className = "ax-seal server"; trust.replaceChildren(icon("building"), "Runs on the server"); }
+  else if (dm) { trust.className = "ax-seal sealed"; trust.replaceChildren(icon("lock"), "Only you two"); }
   else { trust.className = `ax-seal ${c.trust === "company" ? "server" : "sealed"}`; trust.replaceChildren(icon(c.trust === "company" ? "building" : "lock"), c.trust === "company" ? "Company" : "Sealed"); }
   show("convo-add", !dm && !profile?.is_guest);
   show("convo-members", !dm);
@@ -691,6 +696,7 @@ async function openChannel(id) {
   for (const b of document.querySelectorAll(".side-item[data-id]")) b.classList.toggle("active", b.dataset.id === id);
   const messages = await invoke("open_channel", { channel: id });
   if (!dm) invoke("channel_members", { channel: id }).then((m) => { $("convo-count").textContent = String(m.length); });
+  paintSidekickToggle(dm ? null : c);
   renderMessages(messages, c);
   renderThread();
   refreshChannels();
@@ -721,10 +727,12 @@ function renderMessages(messages, c) {
     if (day !== lastDay) { rows.push(el("div", { class: "day", text: day })); lastDay = day; lastSender = ""; }
     const cont = m.sender === lastSender && m.ts_ms - lastTs < 5 * 60 * 1000 && !threads.has(lastSeqOf(rows));
     const look = m.mine ? { color: profile?.color, avatar: profile?.avatar, sidekick: profile?.sidekick } : c.kind === "dm" ? { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick } : {};
-    const row = el("div", { class: `msg${cont ? " cont" : ""}`, "data-seq": String(m.seq) },
-      avatarEl(m.sender, look),
+    // A sidekick writes with its own face and says whose it is (D31).
+    const face = m.agent ? sidekickEl(m.agent.mine && profile?.sidekick ? profile.sidekick : { name: m.sender, look: `orb-${colorFor(m.agent.owner)}` }, "msg-face") : avatarEl(m.sender, look);
+    const row = el("div", { class: `msg${cont ? " cont" : ""}${m.agent ? " by-agent" : ""}`, "data-seq": String(m.seq) },
+      face,
       el("div", {},
-        cont ? null : el("header", {}, el("strong", { text: m.sender }), el("time", { text: timeFmt.format(m.ts_ms) })),
+        cont ? null : el("header", {}, el("strong", { text: m.sender }), m.agent ? el("span", { class: "agent-tag", text: m.agent.mine ? "your sidekick" : `${m.agent.owner}'s sidekick` }) : null, el("time", { text: timeFmt.format(m.ts_ms) })),
         el("div", { class: "body" }, ...mentionChips(m.text)),
         ...deskCards(m.text),
         threads.has(m.seq) ? threadSummary(c, m.seq, threads.get(m.seq)) : null),
@@ -734,7 +742,7 @@ function renderMessages(messages, c) {
   }
   if (!messages.length) {
     rows.push(c.kind === "dm"
-      ? el("div", { class: "transcript-empty" }, avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick }), el("strong", { text: c.name }),
+      ? el("div", { class: "transcript-empty" }, peerFace(c), el("strong", { text: c.name }),
           el("span", { class: "mono", text: c.peer?.handle ? `@${c.peer.handle}` : "" }), el("p", { text: "This conversation is end-to-end encrypted. Only the two of you can read it." }))
       : el("div", { class: "transcript-empty" }, el("strong", { text: `Welcome to #${c.name}` }), el("p", { text: "No messages since you joined. Earlier ones stay readable only to the people who were here." })));
   }
@@ -913,7 +921,7 @@ function renderTabs() {
       const unseen = replies.filter((r) => !r.mine && r.seq > (threadSeen[key] || 0)).length;
       if (unseen && key !== active) status = el("span", { class: "tab-badge", text: String(unseen) });
     } else if (c.kind === "dm") {
-      lead = avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick, size: "xs" });
+      lead = c.peer?.is_agent ? sidekickEl(profile?.sidekick || { look: "orb-ocean" }, "xs") : avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick, size: "xs" });
       name = c.name;
     } else if (c.desk) {
       lead = el("span", { class: "tab-icon is-desk" }, icon(DESK_ICON[c.desk] || "receipt"));
@@ -1093,7 +1101,7 @@ async function renderPeopleDrawer() {
     $("people-title").textContent = "People you talk to";
     const dms = channels.filter((c) => c.kind === "dm");
     list.replaceChildren(...(dms.length ? dms.map((c) => el("button", { class: "person-row", type: "button", onclick: () => { closeDrawers(); openChannel(c.id); } },
-      avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick }), el("span", { class: "lines" }, el("strong", { text: c.name }), el("small", { text: c.peer?.handle ? `@${c.peer.handle}` : "" })))) : [el("p", { class: "fine", text: "Nobody yet. Message someone by their handle." })]));
+      peerFace(c), el("span", { class: "lines" }, el("strong", { text: c.name }), el("small", { text: c.peer?.handle ? `@${c.peer.handle}` : "" })))) : [el("p", { class: "fine", text: "Nobody yet. Message someone by their handle." })]));
     return;
   }
   const sp = currentSpace;
@@ -1313,6 +1321,46 @@ const KIND_OF_DESK = { collections: "Collections", files: "Files", tasks: "Tasks
 // answers desk questions from their records. It never sends anything anywhere.
 
 const STOP = new Set("the a an and or of to in on for with is are was were be what who when where which how much many my our your me i we you it this that there any all do does did have has from about show find tell please status check update latest new give list".split(" "));
+// ---------- the sidekick on the server (D32) ----------
+// The only sidekick anyone can talk to one to one is their own.
+function peerFace(c, size) {
+  if (c.peer?.is_agent) return sidekickEl(profile?.sidekick || { name: c.name, look: "orb-ocean" }, size === "sm" ? "tool" : "msg-face");
+  return avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick, size });
+}
+let skHosted = null;
+async function paintSidekickToggle(c) {
+  const b = $("convo-sk");
+  const sk = profile?.sidekick;
+  if (!c || !sk || profile?.is_guest || c.desk) return show(b, false);
+  let st;
+  try { st = await invoke("sidekick_state", { channel: c.id }); } catch { return show(b, false); }
+  if (current !== c.id) return;
+  skHosted = st.hosted;
+  paintAskHead();
+  if (!st.hosted) return show(b, false);
+  b.replaceChildren(sidekickEl(sk, "tool"), el("span", { text: st.on ? `${sk.name} reads this` : `Let ${sk.name} read` }));
+  b.setAttribute("aria-pressed", String(st.on));
+  b.classList.toggle("on", st.on);
+  b.classList.toggle("blocked", !!st.blocked && !st.on);
+  b.title = st.blocked && !st.on ? st.blocked : st.on ? `Turn ${sk.name} off here` : `${sk.name} runs on the server: turning it on lets the server read this channel`;
+  b.onclick = async () => {
+    if (st.blocked && !st.on) return alert(st.blocked);
+    const msg = st.on
+      ? `Take ${sk.name} out of #${c.name}? It forgets what it read here.`
+      : `Let ${sk.name} read #${c.name}?\n\n${sk.name} runs on the server, so the server's operator could read this channel from now on. Everyone here will see a note saying so. It only sees messages from now on.`;
+    if (!confirm(msg)) return;
+    await busy(b, st.on ? "Removing…" : "Adding…", async () => {
+      try { await invoke(st.on ? "sidekick_leave" : "sidekick_join", { channel: c.id }); await openChannel(c.id); }
+      catch (err) { alert(String(err)); }
+    });
+  };
+  show(b, true);
+}
+$("ask-server-chat").addEventListener("click", async () => {
+  try { const id = await invoke("sidekick_chat"); openAsk(false); await refreshChannels(); await openChannel(id); }
+  catch (err) { alert(String(err)); }
+});
+
 function paintAskHead() {
   const sk = profile?.sidekick;
   $("ask-mark").replaceChildren(sk ? sidekickEl(sk, "head") : icon("sparkle"));
@@ -1320,6 +1368,8 @@ function paintAskHead() {
   $("ask-name").textContent = sk ? sk.name : "Assistant";
   $("tool-ask").replaceChildren(sk ? sidekickEl(sk, "tool") : icon("sparkle"));
   $("tool-ask").title = sk ? `${sk.name}, your sidekick (Ctrl J)` : "Ask (Ctrl J)";
+  show("ask-server", !!sk && skHosted === true);
+  $("ask-server-chat").textContent = sk ? `Ask ${sk.name} on the server instead` : "Ask on the server instead";
 }
 function openAsk(on = true) {
   if (on && thread) closeThread();
@@ -2146,7 +2196,7 @@ async function renderHomeToday() {
     : [el("button", { class: "today-row empty", type: "button", onclick: () => openAgenda(), text: "Nothing on today. Plan something" })]));
   const chats = channels.filter((c) => c.kind === "dm").sort((a, b) => (b.last_ts || 0) - (a.last_ts || 0)).slice(0, 3);
   $("today-chats").replaceChildren(...(chats.length ? chats.map((c) => el("button", { class: "today-row", type: "button", onclick: () => openChannel(c.id).then(() => composer.focus()) },
-    avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick, size: "sm" }), el("strong", { text: c.name }), el("small", { text: c.unread ? "New" : c.last_ts ? sinceFmt(c.last_ts) : "" })))
+    peerFace(c, "sm"), el("strong", { text: c.name }), el("small", { text: c.unread ? "New" : c.last_ts ? sinceFmt(c.last_ts) : "" })))
     : [el("button", { class: "today-row empty", type: "button", onclick: () => $("new-dm").click(), text: "No chats yet. Message someone" })]));
   $("today-notes").replaceChildren(...(recent.length ? recent.map((p) => el("button", { class: "today-row", type: "button", onclick: () => openNotes(p.id) },
     el("span", { class: "note-emoji", text: p.icon || "📝" }), el("strong", { text: p.title || "Untitled" }), el("small", { text: sinceFmt(p.updated || 0) })))
@@ -2220,8 +2270,8 @@ function renderDrive() {
   $("drive-headline").replaceChildren(`${files.length} ${files.length === 1 ? "file" : "files"}, ${sizeFmt(total)}.`, el("span", { class: "soft", text: mine ? " Only your devices can open them." : " Only people in this space can open them." }));
   // Breadcrumbs.
   const parts = drive.folder.split("/").filter(Boolean);
-  const crumbs = [el("button", { type: "button", text: "Files", onclick: () => { drive.folder = "/"; renderDrive(); } })];
-  parts.forEach((p, k) => { crumbs.push(el("span", { class: "sep", text: "/" }), el("button", { type: "button", text: p, onclick: () => { drive.folder = `/${parts.slice(0, k + 1).join("/")}`; renderDrive(); } })); });
+  const crumbs = [dropTarget(el("button", { type: "button", text: "Files", onclick: () => { drive.folder = "/"; renderDrive(); } }), "/")];
+  parts.forEach((p, k) => { const path = `/${parts.slice(0, k + 1).join("/")}`; crumbs.push(el("span", { class: "sep", text: "/" }), dropTarget(el("button", { type: "button", text: p, onclick: () => { drive.folder = path; renderDrive(); } }), path)); });
   $("drive-crumbs").replaceChildren(...crumbs);
   const q = drive.query.toLowerCase();
   let folders = [], shown = [];
@@ -2235,17 +2285,21 @@ function renderDrive() {
   const rows = [
     ...folders.map((p) => {
       const inside = files.filter((f) => (f.data.folder || "/") === p || (f.data.folder || "").startsWith(`${p}/`)).length;
-      return el("tr", { onclick: () => { drive.folder = p; renderDrive(); } },
+      const fbtns = el("span", { class: "row-btns" },
+        el("button", { class: "icon-btn", type: "button", title: "Rename folder", "aria-label": `Rename ${p.split("/").pop()}`, onclick: (e) => { e.stopPropagation(); renameFolder(p); } }, icon("pen")),
+        el("button", { class: "icon-btn", type: "button", title: "Delete folder", "aria-label": `Delete ${p.split("/").pop()}`, onclick: (e) => { e.stopPropagation(); deleteFolder(p); } }, icon("trash")));
+      return dropTarget(el("tr", { onclick: () => { drive.folder = p; renderDrive(); } },
         el("td", {}, el("span", { class: "fname" }, el("span", { class: "ficon folder" }, icon("folder")), p.split("/").pop())),
-        el("td", { class: "num", text: `${inside} ${inside === 1 ? "file" : "files"}` }), el("td", { class: "c-issued" }), el("td", { class: "c-terms" }), el("td", { class: "c-actions" }));
+        el("td", { class: "num", text: `${inside} ${inside === 1 ? "file" : "files"}` }), el("td", { class: "c-issued" }), el("td", { class: "c-terms" }), el("td", { class: "c-actions" }, fbtns)), p);
     }),
     ...shown.map((f) => {
       const [ic, cls] = fileIcon(f.data.mime);
       const btns = el("span", { class: "row-btns" },
         el("button", { class: "icon-btn", type: "button", title: "Download", "aria-label": `Download ${f.data.name}`, onclick: (e) => { e.stopPropagation(); downloadFile(f); } }, icon("download")),
         el("button", { class: "icon-btn", type: "button", title: "Rename", "aria-label": `Rename ${f.data.name}`, onclick: (e) => { e.stopPropagation(); renameFile(f); } }, icon("pen")),
+        el("button", { class: "icon-btn", type: "button", title: "Move to a folder", "aria-label": `Move ${f.data.name}`, onclick: (e) => { e.stopPropagation(); openMove([f]); } }, icon("folder")),
         el("button", { class: "icon-btn", type: "button", title: "Delete", "aria-label": `Delete ${f.data.name}`, onclick: (e) => { e.stopPropagation(); deleteFile(f); } }, icon("trash")));
-      return el("tr", { onclick: () => previewFile(f) },
+      return el("tr", { onclick: () => previewFile(f), draggable: "true", ondragstart: (e) => { e.dataTransfer.setData("text/x-anarchy-file", f.id); e.dataTransfer.effectAllowed = "move"; } },
         el("td", {}, el("span", { class: "fname" }, el("span", { class: `ficon ${cls}` }, icon(ic)), f.data.name, q && f.data.folder !== "/" ? el("small", { text: f.data.folder }) : null)),
         el("td", { class: "num", text: sizeFmt(f.data.file_key?.size || 0) }),
         el("td", { class: "c-issued", text: f.data.added ? dateFmt.format(f.data.added) : "" }),
@@ -2331,6 +2385,97 @@ $("folder-form").addEventListener("submit", async (e) => {
   drive.folder = path;
   renderDrive();
 });
+
+// Organising: moving files between folders, renaming and deleting folders.
+// A folder is a path; files carry theirs, so a move is one encrypted write.
+function dropTarget(node, path) {
+  node.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("text/x-anarchy-file")) { e.preventDefault(); node.classList.add("drop-on"); } });
+  node.addEventListener("dragleave", () => node.classList.remove("drop-on"));
+  node.addEventListener("drop", (e) => {
+    node.classList.remove("drop-on");
+    const f = driveFiles().find((x) => x.id === e.dataTransfer.getData("text/x-anarchy-file"));
+    if (f) { e.preventDefault(); moveFiles([f], path); }
+  });
+  return node;
+}
+async function moveFiles(files, to) {
+  const moving = files.filter((f) => (f.data.folder || "/") !== to);
+  if (!moving.length) return;
+  await invoke("put_items", { channel: drive.channel, items: moving.map((f) => ({ id: f.id, kind: "file", data: { ...f.data, folder: to } })) });
+  const where = to === "/" ? "the top level" : to;
+  await logTo(drive.channel, moving.length === 1 ? `Moved ${moving[0].data.name} to ${where}.` : `Moved ${moving.length} files to ${where}.`);
+  drive.items = await invoke("desk_items", { channel: drive.channel });
+  renderDrive();
+}
+let moving = [], moveTo = "/";
+function paintMoveList() {
+  const all = ["/", ...driveFolders().sort()];
+  $("move-list").replaceChildren(...all.map((p) => {
+    const depth = p === "/" ? 0 : p.split("/").filter(Boolean).length;
+    return el("button", { type: "button", role: "radio", class: "move-row", "aria-checked": String(p === moveTo), style: `padding-left:${10 + depth * 16}px`, onclick: () => { moveTo = p; paintMoveList(); } },
+      el("span", { class: "ficon folder" }, icon("folder")), p === "/" ? "Files" : p.split("/").pop());
+  }));
+}
+function openMove(files) {
+  moving = files; moveTo = files[0]?.data.folder || "/";
+  $("move-what").textContent = files.length === 1 ? files[0].data.name : `${files.length} files`;
+  setError("move-error", "");
+  paintMoveList();
+  $("dlg-move").showModal();
+}
+$("move-cancel").addEventListener("click", () => $("dlg-move").close());
+$("move-new").addEventListener("click", async () => {
+  const name = prompt(`New folder in ${moveTo === "/" ? "Files" : moveTo}`)?.trim().replace(/\//g, "-");
+  if (!name) return;
+  const path = `${moveTo === "/" ? "" : moveTo}/${name}`;
+  if (!driveFolders().includes(path)) {
+    await invoke("put_items", { channel: drive.channel, items: [{ id: crypto.randomUUID(), kind: "folder", data: { path } }] });
+    drive.items = await invoke("desk_items", { channel: drive.channel });
+  }
+  moveTo = path; paintMoveList();
+});
+$("move-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await busy($("move-save"), "Moving…", async () => {
+    try { await moveFiles(moving, moveTo); $("dlg-move").close(); } catch (err) { setError("move-error", String(err)); }
+  });
+});
+// Everything under `from` (the folder itself, its subfolders and their files).
+function under(path, from) { return path === from || path.startsWith(`${from}/`); }
+async function renameFolder(from) {
+  const old = from.split("/").pop();
+  const name = prompt("Rename folder", old)?.trim().replace(/\//g, "-");
+  if (!name || name === old) return;
+  const to = `${from.slice(0, from.lastIndexOf("/"))}/${name}`;
+  if (driveFolders().includes(to)) return alert("There's already a folder with that name here.");
+  const moved = (p) => to + p.slice(from.length);
+  const items = [
+    ...drive.items.filter((i) => i.kind === "folder" && !i.data.deleted && under(i.data.path, from)).map((i) => ({ id: i.id, kind: "folder", data: { ...i.data, path: moved(i.data.path) } })),
+    ...driveFiles().filter((f) => under(f.data.folder || "/", from)).map((f) => ({ id: f.id, kind: "file", data: { ...f.data, folder: moved(f.data.folder) } })),
+  ];
+  // A folder that only existed because files were in it gets a record of its own.
+  if (!drive.items.some((i) => i.kind === "folder" && !i.data.deleted && i.data.path === from)) items.push({ id: crypto.randomUUID(), kind: "folder", data: { path: to } });
+  await invoke("put_items", { channel: drive.channel, items });
+  await logTo(drive.channel, `Renamed the folder ${old} to ${name}.`);
+  if (under(drive.folder, from)) drive.folder = moved(drive.folder);
+  drive.items = await invoke("desk_items", { channel: drive.channel });
+  renderDrive();
+}
+async function deleteFolder(path) {
+  const parent = path.slice(0, path.lastIndexOf("/")) || "/";
+  const files = driveFiles().filter((f) => under(f.data.folder || "/", path));
+  const name = path.split("/").pop();
+  if (!confirm(files.length ? `Delete the folder ${name}? Its ${files.length} ${files.length === 1 ? "file moves" : "files move"} to ${parent === "/" ? "the top level" : parent}; nothing is deleted.` : `Delete the empty folder ${name}?`)) return;
+  const items = [
+    ...drive.items.filter((i) => i.kind === "folder" && !i.data.deleted && under(i.data.path, path)).map((i) => ({ id: i.id, kind: "folder", data: { ...i.data, deleted: true } })),
+    ...files.map((f) => ({ id: f.id, kind: "file", data: { ...f.data, folder: parent } })),
+  ];
+  if (items.length) await invoke("put_items", { channel: drive.channel, items });
+  await logTo(drive.channel, files.length ? `Deleted the folder ${name}; its files are in ${parent === "/" ? "Files" : parent} now.` : `Deleted the folder ${name}.`);
+  if (under(drive.folder, path)) drive.folder = parent;
+  drive.items = await invoke("desk_items", { channel: drive.channel });
+  renderDrive();
+}
 
 // ---------- space overview ----------
 

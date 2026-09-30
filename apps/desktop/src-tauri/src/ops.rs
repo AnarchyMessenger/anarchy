@@ -536,6 +536,28 @@ pub struct MessageView {
     text: String,
     /// The thread this reply belongs to (the root message's `seq`).
     thread: Option<u64>,
+    /// Set when a sidekick wrote it: whose it is, so nobody takes it for the person.
+    agent: Option<AgentTag>,
+}
+
+#[derive(Serialize)]
+pub struct AgentTag {
+    owner: String,
+    mine: bool,
+}
+
+fn agent_tag(i: &Inner, channel: ChannelId, device: DeviceId) -> Option<AgentTag> {
+    let ms = i.members.get(&channel)?;
+    let owner = ms.iter().find(|m| m.device_id == device)?.agent_of?;
+    let me = i.saved().map(|s| s.session.user_id);
+    Some(AgentTag {
+        owner: ms
+            .iter()
+            .find(|m| m.user_id == owner)
+            .and_then(|m| m.display_name.clone())
+            .unwrap_or_else(|| "someone".into()),
+        mine: Some(owner) == me,
+    })
 }
 
 /// Last read sequence number per channel.
@@ -650,6 +672,7 @@ pub async fn open_channel(i: &mut Inner, channel: ChannelId) -> Result<Vec<Messa
                 ts_ms: m.ts_ms,
                 text,
                 thread: content.thread(),
+                agent: agent_tag(i, channel, m.sender),
             })
         })
         .collect())
@@ -1508,4 +1531,158 @@ pub async fn forget_form_answer(
         .delete_form_submission(channel, &id, sub)
         .await
         .map_err(err)
+}
+
+// ---------- server-side sidekick (D32) ----------
+
+#[derive(Serialize)]
+pub struct SidekickState {
+    /// This server runs sidekicks.
+    hosted: bool,
+    /// Your sidekick can read this channel.
+    on: bool,
+    /// Why it can't be turned on here, if it can't.
+    blocked: Option<String>,
+}
+
+async fn my_sidekick(i: &mut Inner) -> Result<Option<anarchy_proto::SidekickAccount>, String> {
+    i.client()?.sidekick_account().await.map_err(err)
+}
+
+/// Whether your sidekick reads `channel`, and whether it may.
+pub async fn sidekick_state(i: &mut Inner, channel: ChannelId) -> Result<SidekickState, String> {
+    let server = i.client()?.server_url().to_owned();
+    let hosted = oidc::workspace_config(&server)
+        .await
+        .map(|c| c.sidekicks_hosted)
+        .unwrap_or(false);
+    if !hosted {
+        return Ok(SidekickState {
+            hosted,
+            on: false,
+            blocked: Some("This server doesn't run sidekicks.".into()),
+        });
+    }
+    let account = my_sidekick(i).await?;
+    refresh_members(i, channel).await?;
+    let on = account.as_ref().is_some_and(|a| {
+        i.members
+            .get(&channel)
+            .is_some_and(|ms| ms.iter().any(|m| m.user_id == a.user_id))
+    });
+    Ok(SidekickState {
+        hosted,
+        on,
+        blocked: sidekick_blocked(i, channel).await?,
+    })
+}
+
+async fn sidekick_blocked(i: &mut Inner, channel: ChannelId) -> Result<Option<String>, String> {
+    if !i.metas.contains_key(&channel) {
+        refresh_metas(i).await?;
+    }
+    let kind = i.metas.get(&channel).map(|m| m.kind);
+    if matches!(kind, Some(ChannelKind::Dm)) {
+        return Ok(Some(
+            "Conversations with one person stay between the two of you.".into(),
+        ));
+    }
+    if matches!(kind, Some(ChannelKind::Personal)) {
+        return Ok(Some(
+            "Your own agenda, notes and files stay on your devices.".into(),
+        ));
+    }
+    let trust = i.client()?.channel_info(channel).map_err(err)?.map(|(_, _, t)| t);
+    if trust != Some(Trust::Company) {
+        return Ok(Some(
+            "Sealed channels promise the server can't read them, so no sidekick can join.".into(),
+        ));
+    }
+    Ok(None)
+}
+
+/// Lets your sidekick read `channel` from now on, and says so in the channel.
+pub async fn sidekick_join(i: &mut Inner, channel: ChannelId) -> Result<(), String> {
+    if let Some(why) = sidekick_blocked(i, channel).await? {
+        return Err(why);
+    }
+    let account = match my_sidekick(i).await? {
+        Some(a) if !a.devices.is_empty() => a,
+        _ => {
+            let a = i.client()?.enable_sidekick().await.map_err(err)?;
+            if a.devices.is_empty() {
+                return Err("Your sidekick is starting on the server. Try again in a few seconds.".into());
+            }
+            a
+        }
+    };
+    let name = i
+        .profile
+        .as_ref()
+        .and_then(|p| p.sidekick.as_ref())
+        .map_or("My sidekick".to_owned(), |s| s.name.clone());
+    let client = i.client()?;
+    for d in &account.devices {
+        client.add_device(channel, *d).await.map_err(err)?;
+    }
+    let note = format!(
+        "{name}, my sidekick, can read this channel from now on, including what you say here. \
+         It runs on the server, so the server's operator could read it too. It only sees messages from now on."
+    );
+    client
+        .send_content(channel, &Content::text(note))
+        .await
+        .map_err(err)?;
+    refresh_members(i, channel).await
+}
+
+/// Takes your sidekick out of `channel`; it forgets what it read there.
+pub async fn sidekick_leave(i: &mut Inner, channel: ChannelId) -> Result<(), String> {
+    let Some(account) = my_sidekick(i).await? else {
+        return Ok(());
+    };
+    refresh_members(i, channel).await?;
+    let here: Vec<DeviceId> = i
+        .members
+        .get(&channel)
+        .map(|ms| {
+            ms.iter()
+                .filter(|m| m.user_id == account.user_id)
+                .map(|m| m.device_id)
+                .collect()
+        })
+        .unwrap_or_default();
+    if here.is_empty() {
+        return Ok(());
+    }
+    let name = i
+        .profile
+        .as_ref()
+        .and_then(|p| p.sidekick.as_ref())
+        .map_or("My sidekick".to_owned(), |s| s.name.clone());
+    let client = i.client()?;
+    client.remove_devices(channel, &here).await.map_err(err)?;
+    client
+        .send_content(
+            channel,
+            &Content::text(format!("{name} can't read this channel any more.")),
+        )
+        .await
+        .map_err(err)?;
+    refresh_members(i, channel).await
+}
+
+/// Opens your conversation with your sidekick, turning it on first if needed.
+pub async fn sidekick_chat(i: &mut Inner) -> Result<ChannelId, String> {
+    let account = match my_sidekick(i).await? {
+        Some(a) => a,
+        None => i.client()?.enable_sidekick().await.map_err(err)?,
+    };
+    if account.devices.is_empty() {
+        return Err("Your sidekick is starting on the server. Try again in a few seconds.".into());
+    }
+    let (Some(username), Some(tag)) = (account.username.clone(), account.tag) else {
+        return Err("Your sidekick has no handle yet. Try again in a few seconds.".into());
+    };
+    start_dm(i, format_handle(&username, tag)).await
 }

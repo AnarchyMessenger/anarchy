@@ -75,6 +75,10 @@ op!(create_space(name: String, kind: SpaceKind) -> anarchy_proto::SpaceSummary);
 op!(join_space(code: String) -> anarchy_proto::SpaceSummary);
 op!(create_space_invite(space: SpaceId, hours: u64, max_uses: u32) -> ops::InviteView);
 op!(start_dm(handle: String) -> ChannelId);
+op!(sidekick_state(channel: ChannelId) -> ops::SidekickState);
+op!(sidekick_join(channel: ChannelId) -> ());
+op!(sidekick_leave(channel: ChannelId) -> ());
+op!(sidekick_chat() -> ChannelId);
 op!(search(query: String) -> Vec<ops::SearchHit>);
 op!(space_members(space: SpaceId) -> Vec<ops::PeerView>);
 op!(ensure_drive(space: SpaceId) -> ChannelId);
@@ -408,6 +412,10 @@ fn main() {
             join_space,
             create_space_invite,
             start_dm,
+            sidekick_state,
+            sidekick_join,
+            sidekick_leave,
+            sidekick_chat,
             search,
             space_members,
             ensure_drive,

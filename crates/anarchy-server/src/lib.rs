@@ -9,6 +9,7 @@ pub mod auth;
 pub mod email;
 pub mod forms;
 pub mod links;
+pub mod sidekicks;
 
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -47,6 +48,8 @@ pub struct Config {
     pub open_signup: bool,
     /// Sent to clients for providers (Google) that want one from installed apps.
     pub oidc_client_secret: Option<String>,
+    /// The token the sidekick host signs in with. `None`: this server runs no sidekicks.
+    pub sidekick_host_token: Option<String>,
 }
 
 #[derive(Clone)]
@@ -62,6 +65,8 @@ pub struct AppState {
     pub oidc_client_secret: Option<String>,
     /// The organisation's space on a company server; everyone is a member.
     pub default_space: Option<Uuid>,
+    /// SHA-256 of the sidekick host's token, when sidekicks run here.
+    pub sidekick_host_hash: Option<Arc<Vec<u8>>>,
 }
 
 impl AppState {
@@ -93,6 +98,10 @@ impl AppState {
             open_signup: config.open_signup,
             oidc_client_secret: config.oidc_client_secret,
             default_space,
+            sidekick_host_hash: config
+                .sidekick_host_token
+                .filter(|t| t.len() >= 32)
+                .map(|t| Arc::new(<sha2::Sha256 as sha2::Digest>::digest(t.as_bytes()).to_vec())),
         })
     }
 }
@@ -147,6 +156,9 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/auth/email/verify", post(email::verify))
         .route("/v1/auth/anonymous", post(accounts::anonymous))
         .route("/v1/me", get(accounts::me).put(accounts::update_me))
+        .route("/v1/me/sidekick", get(sidekicks::mine).post(sidekicks::enable))
+        .route("/v1/host/agents", get(sidekicks::host_agents))
+        .route("/v1/host/agents/{user}/session", post(sidekicks::host_session))
         .route("/v1/directory", get(accounts::directory))
         .route(
             "/v1/spaces",
@@ -348,6 +360,7 @@ async fn auth_config(State(s): State<AppState>) -> Json<AuthConfig> {
         open_signup: s.open_signup,
         anonymous_enabled: s.open_signup,
         client_secret: s.oidc_client_secret.clone(),
+        sidekicks_hosted: s.sidekick_host_hash.is_some(),
     })
 }
 
@@ -546,7 +559,7 @@ async fn is_member(db: &PgPool, channel: ChannelId, device: DeviceId) -> ApiResu
     .bind(device)
     .fetch_optional(db)
     .await?;
-    Ok(row.is_some())
+    Ok(row.is_some() && sidekicks::owner_present(db, channel, device).await?)
 }
 
 /// Non-members get 404, so the API doesn't reveal which channels exist.
@@ -621,6 +634,13 @@ async fn append(
             "a device can't remove itself; another member must",
         ));
     }
+    if (!req.adds.is_empty() || !req.removes.is_empty()) && sidekicks::is_sidekick_device(&s.db, &dev).await?
+    {
+        return Err(ApiError::forbidden("a sidekick can't add or remove anyone"));
+    }
+    if !sidekicks::owner_present(&s.db, channel, dev.device_id).await? {
+        return Err(ApiError::not_found("no such channel"));
+    }
     let mut tx = s.db.begin().await?;
     // Lock the channel row: appends to one channel are serialised, which is what
     // gives every member the same order and settles concurrent commits.
@@ -692,8 +712,15 @@ async fn append(
         .bind(dev.org_id)
         .fetch_optional(&mut *tx)
         .await?;
+        // A sidekick's devices: only its person adds them, and only where they are (D32).
+        let sidekick_of = match owner {
+            Some((user,)) => sidekicks::owner_of(&mut tx, user).await?,
+            None => None,
+        };
         let allowed = match (owner, space) {
             (None, _) => false,
+            _ if sidekick_of.is_some_and(|o| o != dev.user_id) => false,
+            (Some(_), Some(_)) if sidekick_of.is_some() => true,
             (Some((user,)), Some(space)) => sqlx::query_as::<_, (i32,)>(
                 "SELECT 1 FROM space_members WHERE space_id = $1 AND user_id = $2",
             )
@@ -784,6 +811,9 @@ async fn events(
     let Some((removed_seq,)) = access else {
         return Err(ApiError::not_found("no such channel"));
     };
+    if !sidekicks::owner_present(&s.db, channel, dev.device_id).await? {
+        return Err(ApiError::not_found("no such channel"));
+    }
     let visible_to = removed_seq.unwrap_or(i64::MAX);
     let rows: Vec<(i64, i64, String, Uuid, i64, Vec<u8>)> = sqlx::query_as(
         "SELECT seq, epoch, kind, sender_device, ts_ms, payload FROM channel_events
@@ -835,9 +865,10 @@ async fn members(
         Option<String>,
         Option<i32>,
         bool,
+        Option<Uuid>,
     );
     let rows: Vec<Row> = sqlx::query_as(
-        "SELECT d.id, d.user_id, u.display_name, u.is_guest, u.username, u.tag, u.is_agent FROM channel_members m
+        "SELECT d.id, d.user_id, u.display_name, u.is_guest, u.username, u.tag, u.is_agent, u.agent_of FROM channel_members m
          JOIN devices d ON d.id = m.device_id JOIN users u ON u.id = d.user_id
          WHERE m.channel_id = $1 AND m.removed_seq IS NULL AND d.revoked_at IS NULL
            AND (u.expires_at IS NULL OR u.expires_at > now())
@@ -849,7 +880,7 @@ async fn members(
     Ok(Json(
         rows.into_iter()
             .map(
-                |(device_id, user_id, display_name, is_guest, username, tag, is_agent)| Member {
+                |(device_id, user_id, display_name, is_guest, username, tag, is_agent, agent_of)| Member {
                     device_id,
                     user_id,
                     display_name,
@@ -857,6 +888,7 @@ async fn members(
                     username,
                     tag: tag.map(|t| t as u16),
                     is_agent,
+                    agent_of,
                 },
             )
             .collect(),

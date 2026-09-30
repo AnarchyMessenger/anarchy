@@ -1,0 +1,19 @@
+[package]
+name = "anarchy-sidekick"
+description = "Runs people's sidekicks on the server: a member device per sidekick, in the channels its person added it to"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+anarchy-core.workspace = true
+anarchy-proto.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+anarchy-testkit.workspace = true

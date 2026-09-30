@@ -114,8 +114,10 @@ pub(crate) async fn ensure_account(
             .await?;
     }
     if let Some(space) = s.default_space {
+        // Sidekicks aren't members of spaces: they're in the channels their person put them in.
         sqlx::query(
-            "INSERT INTO space_members (space_id, user_id, role) VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING",
+            "INSERT INTO space_members (space_id, user_id, role)
+             SELECT $1, $2, 'member' FROM users WHERE id = $2 AND agent_of IS NULL ON CONFLICT DO NOTHING",
         )
         .bind(space)
         .bind(user_id)
@@ -342,6 +344,12 @@ pub async fn update_me(
             if !valid_look {
                 return Err(ApiError::bad_request("a sidekick's look is like orb-ocean"));
             }
+            // A server-side sidekick signs with the name its person gave it.
+            sqlx::query("UPDATE users SET display_name = $2 WHERE agent_of = $1")
+                .bind(user.user_id)
+                .bind(name)
+                .execute(&mut *tx)
+                .await?;
             sqlx::query("UPDATE users SET sidekick_name = $2, sidekick_look = $3 WHERE id = $1")
                 .bind(user.user_id)
                 .bind(name)
@@ -503,10 +511,26 @@ pub async fn start_dm(
                     .fetch_one(&s.db)
                     .await?;
             let shared = share_a_space(&s.db, me, peer).await?;
+            // A sidekick talks one to one with its person, nobody else.
+            let (me_owner, peer_owner): (Option<Uuid>, Option<Uuid>) = (
+                sqlx::query_as::<_, (Option<Uuid>,)>("SELECT agent_of FROM users WHERE id = $1")
+                    .bind(me)
+                    .fetch_one(&s.db)
+                    .await?
+                    .0,
+                sqlx::query_as::<_, (Option<Uuid>,)>("SELECT agent_of FROM users WHERE id = $1")
+                    .bind(peer)
+                    .fetch_one(&s.db)
+                    .await?
+                    .0,
+            );
+            let own_sidekick = peer_owner == Some(me) || me_owner == Some(peer);
             // Guests only talk to people they share a space with, both ways.
-            let allowed = (policy == "anyone" || shared)
-                && !(humans_only && me_agent)
-                && ((!me_guest && !peer_guest) || shared);
+            let allowed = own_sidekick
+                || (me_owner.is_none() && peer_owner.is_none())
+                    && (policy == "anyone" || shared)
+                    && !(humans_only && me_agent)
+                    && ((!me_guest && !peer_guest) || shared);
             if !allowed {
                 return Err(refused());
             }

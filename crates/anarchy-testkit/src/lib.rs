@@ -27,6 +27,8 @@ use sqlx::{ConnectOptions, Executor};
 use uuid::Uuid;
 
 pub const AUDIENCE: &str = "anarchy-desktop";
+/// The sidekick host's token on test servers.
+pub const SIDEKICK_HOST_TOKEN: &str = "test-sidekick-host-token-0123456789abcdef";
 
 pub fn now_secs() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
@@ -322,6 +324,7 @@ impl TestServer {
                 session_ttl: Duration::from_secs(3600),
                 open_signup: options.open,
                 oidc_client_secret: None,
+                sidekick_host_token: Some(SIDEKICK_HOST_TOKEN.into()),
             },
         )
         .await

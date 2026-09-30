@@ -78,6 +78,9 @@ pub struct AuthConfig {
     /// Public server: anyone may create an account, and there is no default space.
     #[serde(default)]
     pub open_signup: bool,
+    /// Whether this server runs sidekicks for people (D32).
+    #[serde(default)]
+    pub sidekicks_hosted: bool,
     /// Whether "Continue anonymously" is offered (open servers only).
     #[serde(default)]
     pub anonymous_enabled: bool,
@@ -147,6 +150,28 @@ pub struct Profile {
 pub struct Sidekick {
     pub name: String,
     pub look: String,
+}
+
+/// `GET`/`POST /v1/me/sidekick`: the account a person's server-side sidekick
+/// signs in as, and its devices. Adding one of those devices to a channel lets
+/// the sidekick (and so the server's operator) read it (D32).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SidekickAccount {
+    pub user_id: UserId,
+    pub devices: Vec<DeviceId>,
+    /// Its handle, for starting the conversation with it.
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub tag: Option<u16>,
+}
+
+/// `GET /v1/host/agents`: the sidekicks the host runs, for the sidekick host only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostedAgent {
+    pub user_id: UserId,
+    pub owner: UserId,
+    pub name: String,
 }
 
 /// `PUT /v1/me`: the fields a person can change. Missing fields stay as they are.
@@ -372,6 +397,9 @@ pub struct Member {
     pub tag: Option<u16>,
     #[serde(default)]
     pub is_agent: bool,
+    /// For a sidekick: the person it works for.
+    #[serde(default)]
+    pub agent_of: Option<UserId>,
 }
 
 /// `POST /v1/channels/{channel}/events`. The sender is the authenticated device.

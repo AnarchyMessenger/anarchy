@@ -30,12 +30,13 @@ const mock = (startLocked) => {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const people = {
     u1: { user_id: "u1", display_name: "Maya Chen", username: "maya", tag: 427, color: "ocean", avatar: "🌊" },
+    pip: { user_id: "pip", display_name: "Pip", username: "pip.sidekick", tag: 4410, color: "summer", avatar: null, agent: true },
     u2: { user_id: "u2", display_name: "Tomás Ruiz", username: "tomas", tag: 1881, color: "autumn", avatar: null },
     u3: { user_id: "u3", display_name: "Ines Bauer", username: "ines.b", tag: 42, color: "forest", avatar: null },
     u4: { user_id: "u4", display_name: "Léa Martin", username: "lea", tag: 9031, color: "dusk", avatar: "🪐" },
   };
   const handle = (p) => `${p.username}#${String(p.tag).padStart(4, "0")}`;
-  const peer = (u) => ({ user_id: u, name: people[u].display_name, handle: handle(people[u]), color: people[u].color, avatar: people[u].avatar, is_guest: false, is_agent: false });
+  const peer = (u) => ({ user_id: u, name: people[u].display_name, handle: handle(people[u]), color: people[u].color, avatar: people[u].avatar, is_guest: false, is_agent: !!people[u].agent });
   let spaces = [
     { id: "sp1", name: "Studio Chen", kind: "freelance", role: "owner", members: 4, is_default: false },
     { id: "sp2", name: "Climbing club", kind: "community", role: "member", members: 38, is_default: false },
@@ -58,7 +59,7 @@ const mock = (startLocked) => {
       { sender: "Tomás Ruiz", ts: now - 40 * min, text: "Exported both weights to the drive.", thread: 2 },
       { sender: "Tomás Ruiz", ts: now - 30 * min, text: "Agreed. I'll mock the deck cover with it." },
     ] },
-    { id: "c2", kind: "channel", space: "sp1", name: "invoices", topic: "What's out, what's paid", trust: "sealed", unread: true, messages: [
+    { id: "c2", kind: "channel", space: "sp1", name: "invoices", topic: "What's out, what's paid", trust: "company", unread: true, messages: [
       { sender: "Ines Bauer", ts: now - 10 * min, text: "Acme paid the deposit." },
     ] },
     { id: "c3", kind: "channel", space: "sp2", name: "general", topic: "", trust: "company", unread: false, messages: [] },
@@ -174,6 +175,12 @@ const mock = (startLocked) => {
       answers: { name: "Sofia Marchetti", company: "Casa Lume", email: "sofia@casalume.it", phone: "+39 02 555 0199", need: "A new identity for our lighting shop: logo, signage and a small website. Opening in March." } } },
   );
   const me = () => profile?.display_name || "You";
+  const skOn = new Set();
+  let skChat = false;
+  channels.push({ id: "dpip", kind: "dm", peer: "pip", unread: false, messages: [
+    { sender: "ME", ts: now - 4 * 60e3, text: "anything about the acme invoice?" },
+    { sender: "Pip", agent: { owner: "Maya Chen", mine: true }, ts: now - 4 * 60e3 + 3000, text: "Here's what I found (2):\n• #invoices · Ines Bauer: Acme paid the deposit.\n• #invoices · Maya Chen: Invoice 1042 to Acme goes out Friday." },
+  ] });
   const view = (c) => ({
     id: c.id, kind: c.kind, space: c.space ?? null, desk: c.desk ?? null, peer: c.kind === "dm" ? peer(c.peer) : null,
     name: c.kind === "dm" ? people[c.peer].display_name : c.name, topic: c.topic ?? "", trust: c.trust ?? "sealed",
@@ -201,7 +208,7 @@ const mock = (startLocked) => {
       if (!server.trim()) throw "Enter your server address, for example chat.northwind.org";
       const host = server.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
       if (host === "chat.northwind.org") return { server: `https://${host}`, config: { org_name: "Northwind", issuer: "https://login.northwind.org", client_id: "anarchy", email_enabled: true, guests_enabled: true, open_signup: false, anonymous_enabled: false } };
-      return { server: `https://${host}`, config: { org_name: "Anarchy Cloud", issuer: "https://accounts.google.com", client_id: "anarchy-desktop", email_enabled: true, guests_enabled: false, open_signup: true, anonymous_enabled: true, client_secret: "public" } };
+      return { server: `https://${host}`, config: { org_name: "Anarchy Cloud", issuer: "https://accounts.google.com", client_id: "anarchy-desktop", email_enabled: true, guests_enabled: false, open_signup: true, sidekicks_hosted: true, anonymous_enabled: true, client_secret: "public" } };
     },
     sign_in_sso: ({ server }) => new Promise((ok, fail) => { window.__cancel = () => fail("Sign-in cancelled"); window.__previewFinishSso = () => { signIn(server); ok(); }; }),
     cancel_sign_in: async () => window.__cancel?.(),
@@ -240,12 +247,22 @@ const mock = (startLocked) => {
       if (!found) throw `${h.replace(/^@/, "")} isn't taking messages from you. Check the handle, or share a space with them first.`;
       return channels.find((c) => c.kind === "dm" && c.peer === found.user_id).id;
     },
-    list_channels: async () => channels.map(view),
+    list_channels: async () => channels.filter((c) => c.id !== "dpip" || skChat).map(view),
+    sidekick_state: async ({ channel }) => {
+      const c = channels.find((x) => x.id === channel);
+      return { hosted: true, on: skOn.has(channel), blocked: c.trust === "company" ? null : "Sealed channels promise the server can't read them, so no sidekick can join." };
+    },
+    sidekick_join: async ({ channel }) => {
+      await wait(150); skOn.add(channel);
+      channels.find((x) => x.id === channel).messages.push({ sender: "ME", ts: Date.now(), text: `${profile.sidekick?.name || "My sidekick"}, my sidekick, can read this channel from now on, including what you say here. It runs on the server, so the server's operator could read it too. It only sees messages from now on.` });
+    },
+    sidekick_leave: async ({ channel }) => { skOn.delete(channel); },
+    sidekick_chat: async () => { skChat = true; return "dpip"; },
     open_channel: async ({ channel }) => {
       open = channel;
       const c = channels.find((x) => x.id === channel);
       c.unread = false;
-      return c.messages.map((m, i) => ({ seq: i + 1, sender: m.sender === "ME" ? me() : m.sender, mine: m.sender === "ME", ts_ms: m.ts, text: m.text, thread: m.thread ?? null }));
+      return c.messages.map((m, i) => ({ seq: i + 1, sender: m.sender === "ME" ? me() : m.sender, mine: m.sender === "ME", ts_ms: m.ts, text: m.text, thread: m.thread ?? null, agent: m.agent ?? null }));
     },
     blur: async () => { open = null; },
     send_message: async ({ channel, text, thread }) => { await wait(120); channels.find((x) => x.id === channel).messages.push({ sender: "ME", ts: Date.now(), text, thread: thread ?? null }); },
@@ -267,7 +284,7 @@ const mock = (startLocked) => {
       }
       return { kind: "none", data: "" };
     },
-    put_items: async ({ channel, items: put }) => { const list = channel === "pa" ? agendaItems : channel === "pn" ? noteItems : channel === "kw" ? wikiPages : channel === "kt" ? launchCards : channel === "pt" ? myCards : items; for (const r of put) { const at = list.findIndex((i) => i.id === r.id); const item = { ...r, seq: 99, updated_ms: Date.now() }; if (at >= 0) list[at] = item; else list.unshift(item); } },
+    put_items: async ({ channel, items: put }) => { const list = channel === "f1" ? driveItems : channel === "pa" ? agendaItems : channel === "pn" ? noteItems : channel === "kw" ? wikiPages : channel === "kt" ? launchCards : channel === "pt" ? myCards : items; for (const r of put) { const at = list.findIndex((i) => i.id === r.id); const item = { ...r, seq: 99, updated_ms: Date.now() }; if (at >= 0) list[at] = item; else list.unshift(item); } },
     pay_links: async () => payLinks,
     create_pay_link: async () => { const id = `L${payLinks.length + 1}`; payLinks.push({ id, expires_at_ms: now + 90 * 864e5, revoked: false, views: 0, last_viewed_at_ms: null, claimed_paid_at_ms: null }); return { id, url: `https://chat.studiochen.fr/p/${id}#k3y` }; },
     update_pay_link: async () => {},
@@ -506,6 +523,13 @@ await page.click("#preview-close");
 await page.fill("#drive-search", "pdf");
 await shot("12f-drive-search");
 await page.fill("#drive-search", "");
+await page.click('#drive-rows tr:has-text("moodboard-direction-2.png") button[title="Move to a folder"]');
+await visible("#dlg-move");
+await page.click('#move-list button >> text="Clients"');
+await shot("12h-drive-move");
+await page.click("#move-save");
+await page.waitForTimeout(200);
+await shot("12i-drive-moved");
 await pick("#channel-list", "acme-rebrand");
 await visible("#view-convo");
 await page.fill("#message", "Deck cover looks great, shipping it to Acme today.");
@@ -587,6 +611,15 @@ await page.fill("#ask-input", "acme deck");
 await page.press("#ask-input", "Enter");
 await page.waitForTimeout(300);
 await shot("13l-ask");
+await page.click("#ask-server-chat");
+await page.waitForTimeout(300);
+await shot("13n-sidekick-chat");
+await pick("#channel-list", "invoices");
+await page.waitForTimeout(300);
+page.once("dialog", (d) => d.accept());
+await page.click("#convo-sk");
+await page.waitForTimeout(400);
+await shot("13m-sidekick-on");
 await pick("#channel-list", "acme-rebrand");
 await page.click(".thread-sum");
 await visible("#thread");
@@ -700,7 +733,7 @@ await shot("15-space-invite");
 await page.click("#sp-close");
 
 // Settings.
-await page.click("#rail-settings");
+await page.click("#rail-me"); await page.click("#me-settings");
 await visible('.page[data-page="profile"]');
 await shot("16-settings-profile");
 await folder("Privacy");
@@ -715,7 +748,7 @@ await shot("19-appearance-dark");
 await page.click("#rail-home");
 await pick("#dm-list", "Tomás Ruiz");
 await shot("20-dm-dark");
-await page.click("#rail-settings");
+await page.click("#rail-me"); await page.click("#me-settings");
 await folder("Appearance");
 await page.click('#settings-appearance [data-display="luna"]');
 await page.click('.rail-btn.space[title="Studio Chen"]');

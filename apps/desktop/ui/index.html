@@ -281,13 +281,12 @@
       <div class="rail-spaces" id="rail-spaces"></div>
       <button class="rail-btn add" id="rail-add" title="Create or join a space" aria-label="Create or join a space"><svg class="i"><use href="#i-plus"/></svg></button>
       <div class="rail-spacer"></div>
-      <button class="rail-btn" id="rail-settings" title="Settings" aria-label="Settings"><svg class="i"><use href="#i-settings"/></svg></button>
-      <button class="rail-me" id="rail-me" aria-label="Your profile" aria-haspopup="dialog" aria-expanded="false"></button>
+      <button class="rail-me" id="rail-me" title="You and settings" aria-label="You and settings" aria-haspopup="dialog" aria-expanded="false"></button>
       <div class="me-pop panel" id="me-pop" role="dialog" aria-label="You" hidden>
         <div class="me-top"><span id="me-avatar"></span><div><strong id="me-name"></strong><code class="mono" id="share-handle"></code></div></div>
         <button class="btn-outline sm me-copy" id="share-copy" type="button"><svg class="i"><use href="#i-copy"/></svg><span>Copy handle</span></button>
         <p class="fine" id="share-policy"></p>
-        <div class="me-links"><button class="side-item" type="button" id="me-profile">Edit profile</button><button class="side-item" type="button" id="me-privacy">Who can message me</button><button class="side-item" type="button" id="me-settings">Settings</button></div>
+        <div class="me-links"><button class="side-item" type="button" id="me-profile">Edit profile</button><button class="side-item" type="button" id="me-privacy">Who can message me</button><button class="side-item" type="button" id="me-settings"><svg class="i"><use href="#i-settings"/></svg>All settings</button></div>
       </div>
     </nav>
 
@@ -371,12 +370,13 @@
         <!-- Conversation (DM or channel) -->
         <div class="view convo" id="view-convo" hidden>
           <header class="convo-head">
-            <span class="avatar sm" id="convo-avatar" hidden></span>
+            <span class="avatar sm" id="convo-avatar" hidden></span><span class="convo-sk-face" id="convo-sk-face" hidden></span>
             <h1 id="convo-name"></h1>
             <span class="ax-seal" id="convo-trust"></span>
             <span class="convo-topic" id="convo-topic"></span>
             <span class="spacer"></span>
             <button class="btn-ghost sm" id="convo-members" title="People here"><svg class="i"><use href="#i-users"/></svg><span id="convo-count">1</span></button>
+            <button class="btn-outline sm sk-toggle" id="convo-sk" type="button" aria-pressed="false" hidden></button>
             <button class="btn-outline sm" id="convo-add"><svg class="i"><use href="#i-plus"/></svg>Add people</button>
           </header>
           <div class="transcript" id="transcript" role="log" aria-live="polite"></div>
@@ -695,7 +695,7 @@
           <div class="ask-log" id="ask-log" role="log" aria-live="polite"></div>
           <div class="chips ask-chips"><button class="chip" type="button" id="ask-brief"><svg class="i"><use href="#i-sparkle"/></svg>Today's brief</button></div>
           <form class="ask-composer" id="ask-form"><textarea id="ask-input" rows="2" placeholder="Ask about your day, or @ a desk…" aria-label="Ask"></textarea><button class="send round" id="ask-send" type="submit" aria-label="Ask" disabled><svg class="i"><use href="#i-send"/></svg></button></form>
-          <p class="ask-foot">No AI model is connected yet. Ask looks through what this device can decrypt, and answers desk questions from their records. Nothing is sent anywhere.</p>
+          <p class="ask-foot">No AI model is connected yet. Ask looks through what this device can decrypt, and answers desk questions from their records. Nothing is sent anywhere.<span id="ask-server" hidden> <button class="link" id="ask-server-chat" type="button">Ask on the server instead</button>: it answers even when this computer is off, from the Company channels you turned it on in.</span></p>
         </aside>
       </main>
     </div>
@@ -898,6 +898,16 @@
     <label class="field" for="folder-name">Name<input class="text-input" id="folder-name" maxlength="80" autocomplete="off" placeholder="Contracts"></label>
     <p class="error" id="folder-error" hidden></p>
     <div class="modal-actions"><button class="btn-outline" type="button" id="folder-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="folder-save">Create folder</button></div>
+  </form>
+</dialog>
+
+<dialog class="modal panel" id="dlg-move" aria-labelledby="dlg-move-title">
+  <form id="move-form" novalidate>
+    <h2 id="dlg-move-title">Move to</h2>
+    <p class="fine" id="move-what"></p>
+    <div class="move-list" id="move-list" role="radiogroup" aria-label="Folder"></div>
+    <p class="error" id="move-error" hidden></p>
+    <div class="modal-actions"><button class="btn-outline" type="button" id="move-new">New folder…</button><span class="spacer"></span><button class="btn-outline" type="button" id="move-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="move-save">Move</button></div>
   </form>
 </dialog>
 

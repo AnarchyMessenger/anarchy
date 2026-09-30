@@ -230,6 +230,11 @@ impl Client {
         Ok(())
     }
 
+    /// Forgets a channel this device can no longer read (see [`Device::forget_channel`]).
+    pub fn forget_channel(&mut self, channel: ChannelId) -> Result<(), Error> {
+        self.device.forget_channel(channel)
+    }
+
     pub fn device(&self) -> &Device {
         &self.device
     }
@@ -286,6 +291,46 @@ impl Client {
 
     pub async fn update_me(&self, update: &ProfileUpdate) -> Result<Profile, Error> {
         self.put("/v1/me", update).await
+    }
+
+    /// Your server-side sidekick, if you've turned it on (D32).
+    pub async fn sidekick_account(&self) -> Result<Option<anarchy_proto::SidekickAccount>, Error> {
+        self.get("/v1/me/sidekick", &[]).await
+    }
+
+    /// Turns on your server-side sidekick. It reads no channel until you add it to one.
+    pub async fn enable_sidekick(&self) -> Result<anarchy_proto::SidekickAccount, Error> {
+        Ok(self
+            .post("/v1/me/sidekick", &serde_json::json!({}))
+            .await?
+            .json()
+            .await?)
+    }
+
+    /// For the sidekick host: every sidekick it should run.
+    pub async fn host_agents(
+        base_url: &str,
+        host_token: &str,
+    ) -> Result<Vec<anarchy_proto::HostedAgent>, Error> {
+        let resp = reqwest::Client::new()
+            .get(format!("{}/v1/host/agents", base_url.trim_end_matches('/')))
+            .bearer_auth(host_token)
+            .send()
+            .await?;
+        Ok(check(resp).await?.json().await?)
+    }
+
+    /// For the sidekick host: a session for one sidekick.
+    pub async fn host_session(base_url: &str, host_token: &str, agent: UserId) -> Result<Session, Error> {
+        let resp = reqwest::Client::new()
+            .post(format!(
+                "{}/v1/host/agents/{agent}/session",
+                base_url.trim_end_matches('/')
+            ))
+            .bearer_auth(host_token)
+            .send()
+            .await?;
+        Ok(check(resp).await?.json().await?)
     }
 
     pub async fn spaces(&self) -> Result<Vec<SpaceSummary>, Error> {

@@ -57,6 +57,19 @@ Collections desks can send clients a link to a page on this server (`/p/…`) sh
 
 Intake forms (`/f/…`, served with `/form-assets/form.js`) have the same needs. Their answers are encrypted in the visitor's browser to a key only the desk holds, and wait on the server until a desk member's app picks them up and deletes them; a form holds at most 200 waiting answers and refuses more until then. The same caveat about the served script applies.
 
+### Sidekicks on the server
+
+People can run their sidekick on the server so it answers while their computers are off. It's a separate process, `anarchy-sidekick`, next to the server:
+
+| Variable | Where | What |
+|---|---|---|
+| `ANARCHY_SIDEKICK_HOST_TOKEN` | both | A shared secret of at least 32 characters (`openssl rand -hex 32`). Unset on the server: no sidekicks, and the app doesn't offer them. |
+| `ANARCHY_SERVER_URL` | host | The server's address as the host reaches it, e.g. `http://127.0.0.1:8080`. |
+| `ANARCHY_SIDEKICK_DIR` | host | Where it keeps one encrypted device file per sidekick. Back it up; losing it means each sidekick must be added to its channels again. |
+| `ANARCHY_SIDEKICK_KEY` | host | 64 hex characters that encrypt those files (`openssl rand -hex 32`). Keep it out of the backup of the directory. |
+
+What this means for your users: a sidekick reads the channels its person turned it on in, so **whoever runs this host can read those channels**. The app says so when someone turns it on, posts a note in the channel for everyone there, and never allows it in Sealed channels, one-to-one conversations or personal agendas and notes. The server cuts a sidekick off from a channel the moment its person leaves it. No model is connected yet: a sidekick answers by searching what it can read.
+
 ## What the server stores
 
 Users (issuer, subject, name, email, handle, colour, avatar emoji, what they use Anarchy for, DM privacy setting), spaces and who's in them, hashed session tokens, device public keys, channel membership, **encrypted** message payloads, **encrypted** file chunks, and **encrypted** payment-link pages with when each was opened and whether the client pressed "I've paid". It never stores message plaintext or private keys. The Company Brain, if you run it, has its own database, which does hold plaintext of the channels it was added to. Run it on infrastructure you control.
