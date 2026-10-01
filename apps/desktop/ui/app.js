@@ -72,47 +72,15 @@ function avatarEl(name, { color, avatar, size, sidekick } = {}) {
 // Each person's own agent (D30, D31). Its look is a shape on a colour; it's
 // shown as a badge on its person's avatar, and with its own face on anything
 // it writes, so nobody mistakes it for the person.
-const SK_SHAPES = {
-  orb: "M12 5a7 7 0 1 1 0 14 7 7 0 1 1 0-14zM9.6 10.2a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 1 0 0-2.6zM14.4 10.2a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 1 0 0-2.6z",
-  spark: "M12 3c.9 5.2 2.3 6.6 7.5 7.5C14.3 11.4 12.9 12.8 12 18c-.9-5.2-2.3-6.6-7.5-7.5C9.7 9.6 11.1 8.2 12 3z",
-  bolt: "M13.5 3 5 13.5h6L10 21l9-11h-6.2z",
-  leaf: "M5.5 18.5C5.5 10.5 11 5 19 5c0 8-5.5 13.5-13.5 13.5zm0 0 6.5-6.5",
-  moon: "M19 14.8A7.5 7.5 0 1 1 9.2 5a6 6 0 0 0 9.8 9.8z",
-  star: "M12 4l2.4 5 5.4.6-4 3.7 1.1 5.4L12 16l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z",
-};
 const SK_NAMES = ["Pip", "Nova", "Otto", "Juno", "Rook", "Mika", "Bix", "Lumen"];
-function parseLook(look) { const [shape, color] = String(look || "").split("-"); return { shape: SK_SHAPES[shape] ? shape : "orb", color: COLORS.includes(color) ? color : "ocean" }; }
-function sidekickEl(sk, cls = "") {
-  const { shape, color } = parseLook(sk?.look);
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", SK_SHAPES[shape]); path.setAttribute("fill-rule", "evenodd");
-  svg.append(path);
-  const n = el("span", { class: `sk ${cls}`.trim(), "data-color": color, title: sk?.name ? `${sk.name}, a sidekick` : "Sidekick" });
-  n.append(svg);
+// Drawing and the maker live in sidekick.js (D34). `state` is what it's doing.
+function sidekickEl(sk, cls = "", state = "idle") {
+  const n = el("span", { class: `sk ${cls}`.trim(), title: sk?.name ? `${sk.name}, a sidekick` : "Sidekick" });
+  n.append(skSvg(sk?.look, state));
   return n;
 }
-// Name, shape and colour pickers, used in onboarding and on the profile page.
-function mountSidekickPicker(prefix, get, set) {
-  $(`${prefix}shapes`).replaceChildren(...Object.keys(SK_SHAPES).map((k) => {
-    const b = el("button", { type: "button", role: "radio", "data-shape": k, "aria-label": k, onclick: () => set({ look: `${k}-${parseLook(get().look).color}` }) });
-    b.append(sidekickEl({ look: `${k}-${parseLook(get().look).color}` }));
-    return b;
-  }));
-  $(`${prefix}colors`).replaceChildren(...COLORS.map((c) => el("button", { type: "button", role: "radio", "data-color": c, "aria-label": c, title: c[0].toUpperCase() + c.slice(1), onclick: () => set({ look: `${parseLook(get().look).shape}-${c}` }) })));
-  syncSidekickPicker(prefix, get());
-}
-function syncSidekickPicker(prefix, sk) {
-  const { shape, color } = parseLook(sk.look);
-  for (const b of $(`${prefix}shapes`).children) { b.setAttribute("aria-checked", String(b.dataset.shape === shape)); b.firstElementChild.dataset.color = color; }
-  for (const b of $(`${prefix}colors`).children) b.setAttribute("aria-checked", String(b.dataset.color === color));
-  const prev = $(`${prefix}preview`);
-  if (prev) prev.replaceChildren(sidekickEl(sk, "big"), el("span", { class: "sk-preview-name", text: sk.name || "Your sidekick" }));
-}
-function defaultSidekick(p) {
-  const colors = COLORS.filter((c) => c !== p?.color);
-  return { name: SK_NAMES[Math.floor(Math.random() * SK_NAMES.length)], look: `orb-${colors[Math.floor(Math.random() * colors.length)]}` };
+function defaultSidekick() {
+  return { name: SK_NAMES[Math.floor(Math.random() * SK_NAMES.length)], look: skLook({ ...SK_DEFAULT, ...skRandom() }) };
 }
 function fillAvatar(node, name, color, avatar) {
   node.dataset.color = color || colorFor(name);
@@ -500,14 +468,15 @@ $("s-card").addEventListener("submit", async (e) => {
 function toSidekickStep() {
   draft.sidekick = profile?.sidekick || draft.sidekick || defaultSidekick(draft);
   $("sk-name").value = draft.sidekick.name;
-  const set = (c) => { Object.assign(draft.sidekick, c); syncSidekickPicker("sk-", draft.sidekick); paintArt({ ...profile, ...draft }); };
-  mountSidekickPicker("sk-", () => draft.sidekick, set);
+  mountSidekickMaker($("sk-maker"), () => draft.sidekick, (look) => { draft.sidekick.look = look; });
   paintArt({ ...profile, ...draft });
   setError("sk-error", "");
+  $("auth").classList.add("making");
   authStep("s-sidekick");
 }
-$("sk-name").addEventListener("input", () => { draft.sidekick.name = $("sk-name").value; syncSidekickPicker("sk-", draft.sidekick); paintArt({ ...profile, ...draft }); });
+$("sk-name").addEventListener("input", () => { draft.sidekick.name = $("sk-name").value; });
 async function finishOnboarding(sidekick) {
+  $("auth").classList.remove("making");
   profile = await invoke("update_profile", { update: { onboarded: true, ...(sidekick ? { sidekick } : {}) } });
   status = await invoke("status");
   showApp();
@@ -1494,6 +1463,7 @@ $("ask-server-chat").addEventListener("click", async () => {
 function paintAskHead() {
   const sk = profile?.sidekick;
   $("ask-mark").replaceChildren(sk ? sidekickEl(sk, "head") : icon("sparkle"));
+  $("ask-mark").querySelector("svg.sk-svg")?.classList.add("live");
   $("ask-mark").classList.toggle("has-sk", !!sk);
   $("ask-name").textContent = sk ? sk.name : "Assistant";
   $("tool-ask").replaceChildren(sk ? sidekickEl(sk, "tool") : icon("sparkle"));
@@ -1566,9 +1536,25 @@ $("ask-form").addEventListener("submit", async (e) => {
   log.append(el("div", { class: "ask-msg me" }, ...mentionChips(q)));
   const reply = el("div", { class: "ask-msg bot" }, el("p", { class: "fine", text: "Looking…" }));
   log.append(reply); log.scrollTop = log.scrollHeight;
-  reply.replaceChildren(...(await answer(q)));
+  skMood("thinking");
+  try {
+    const parts = await answer(q);
+    reply.replaceChildren(...parts);
+    skMood(parts.length ? "success" : "idle", parts.length ? 1600 : 0);
+  } catch (err) { reply.replaceChildren(el("p", { class: "error", text: String(err) })); skMood("error", 2400); }
   log.scrollTop = log.scrollHeight;
 });
+// The sidekick's face in the panel shows what it's doing (D34).
+let skMoodTimer = null;
+function skMood(state, back = 0) {
+  const sk = profile?.sidekick;
+  if (!sk) return;
+  const face = sidekickEl(sk, "head live", state);
+  face.querySelector("svg").classList.add("live");
+  $("ask-mark").replaceChildren(face);
+  clearTimeout(skMoodTimer);
+  if (back) skMoodTimer = setTimeout(() => skMood("idle"), back);
+}
 async function answer(q) {
   const out = [];
   const desks = mentionedDesks(q);
@@ -4035,14 +4021,24 @@ function loadProfile() {
   edit.sidekick = profile.sidekick ? { ...profile.sidekick } : null;
   $("ps-name").value = edit.sidekick?.name || "";
   const skDraft = () => edit.sidekick || (edit.sidekick = defaultSidekick(edit));
-  mountSidekickPicker("ps-", skDraft, (c) => { Object.assign(skDraft(), c); if (!$("ps-name").value) $("ps-name").value = skDraft().name; paintProfile(); });
+  show("ps-maker", false);
+  $("ps-design").textContent = edit.sidekick ? "Change its look" : "Design one";
+  $("ps-design").onclick = () => {
+    if ($("ps-maker").hidden) {
+      const sk = skDraft();
+      if (!$("ps-name").value) $("ps-name").value = sk.name;
+      mountSidekickMaker($("ps-maker"), skDraft, (look) => { skDraft().look = look; paintProfile(); });
+    }
+    show("ps-maker", $("ps-maker").hidden);
+    $("ps-design").textContent = $("ps-maker").hidden ? "Change its look" : "Done designing";
+  };
   paintProfile();
   show("p-saved", false); setError("p-error", "");
 }
 function paintProfile() {
   edit.display_name = $("p-name").value; edit.username = $("p-user").value.toLowerCase();
   syncPickers($("p-avatar"), $("p-color"), edit);
-  if (edit.sidekick) { edit.sidekick.name = $("ps-name").value; syncSidekickPicker("ps-", edit.sidekick); }
+  if (edit.sidekick) edit.sidekick.name = $("ps-name").value;
   paintCard("p-", { ...edit, sidekick: edit.sidekick?.name?.trim() ? edit.sidekick : null });
 }
 $("p-name").addEventListener("input", paintProfile);

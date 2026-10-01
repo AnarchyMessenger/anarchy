@@ -117,6 +117,25 @@ async fn every_account_gets_a_handle_and_can_change_its_username() {
         Some(("Pip", "spark-summer"))
     );
     assert_eq!(status(maya.update_me(&sk("Pip", "<svg>")).await), 400);
+    let me = maya
+        .update_me(&sk("Pip", "s2.case.stern.b07150.110.90.-4.a"))
+        .await
+        .unwrap();
+    assert_eq!(me.sidekick.unwrap().look, "s2.case.stern.b07150.110.90.-4.a");
+    assert_eq!(
+        status(
+            maya.update_me(&sk("Pip", "s2.case.stern.B07150.110.90.-4.a"))
+                .await
+        ),
+        400
+    );
+    assert_eq!(
+        status(
+            maya.update_me(&sk("Pip", "s2.case.stern.b07150.400.90.0.a"))
+                .await
+        ),
+        400
+    );
     assert_eq!(
         status(maya.update_me(&sk(&"x".repeat(25), "orb-ocean")).await),
         400

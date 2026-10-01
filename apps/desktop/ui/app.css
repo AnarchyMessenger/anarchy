@@ -1112,15 +1112,15 @@ svg.i.flip { transform: scaleX(-1); }
 .spaceset-page .page-sub { margin: 0 0 22px; }
 
 /* ---------- sidekicks (D31) ---------- */
-.sk { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%; background: radial-gradient(circle at 30% 25%, var(--fa), var(--fb) 55%, var(--fc)); box-shadow: inset 0 1px 0 rgb(255 255 255 / .45), 0 1px 2px rgb(0 0 0 / .18); }
-.sk svg { width: 62%; height: 62%; fill: rgb(26 24 20 / .82); }
+.sk { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; }
+.sk svg { width: 100%; height: 100%; overflow: visible; }
 .sk.big { width: 56px; height: 56px; }
 .sk.head { width: 28px; height: 28px; }
 .sk.tool { width: 24px; height: 24px; }
 .avatar { position: relative; }
-.sk.badge { position: absolute; right: -5px; bottom: -5px; width: 52%; height: 52%; min-width: 12px; min-height: 12px; box-shadow: 0 0 0 2px var(--surface), 0 1px 2px rgb(0 0 0 / .2); }
+.sk.badge { position: absolute; right: -6px; bottom: -6px; width: 60%; height: 60%; min-width: 13px; min-height: 13px; filter: drop-shadow(1.2px 0 0 var(--surface)) drop-shadow(-1.2px 0 0 var(--surface)) drop-shadow(0 1.2px 0 var(--surface)) drop-shadow(0 -1.2px 0 var(--surface)); }
 .id-avatar { position: relative; }
-.id-avatar .sk.badge { width: 26px; height: 26px; right: -8px; bottom: -8px; box-shadow: 0 0 0 3px rgb(255 255 255 / .85); }
+.id-avatar .sk.badge { width: 30px; height: 30px; right: -10px; bottom: -10px; }
 .ask-mark.has-sk { background: transparent; }
 .sk-shapes { display: flex; flex-wrap: wrap; gap: 8px; }
 .sk-shapes button { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); cursor: pointer; }
@@ -1189,3 +1189,84 @@ svg.i.flip { transform: scaleX(-1); }
 .fold-menu-item svg.i { width: 15px; height: 15px; color: var(--ink-muted); }
 .fold-menu-item:hover { background: var(--surface-hover); }
 .fold-menu-item.on { background: var(--surface-selected); font-weight: 600; }
+
+/* ---------- sidekick states and the maker (D34) ---------- */
+.sk-svg .sk-body, .sk-svg .sk-eyes { transform-box: fill-box; transform-origin: 50% 60%; }
+.sk-svg .sk-eyes { transform-origin: 50% 50%; }
+.sk-z { font: 700 16px/1 var(--font-sans, system-ui); opacity: 0; }
+.sk-svg.live .sk-body { animation: sk-float 4s ease-in-out infinite; }
+.sk-svg.live .sk-eyes { animation: sk-blink 5s infinite; }
+.sk-svg.live[data-state="listening"] .sk-body { animation: sk-lean 2.4s ease-in-out infinite; }
+.sk-svg.live[data-state="thinking"] .sk-body { animation: sk-float 2.6s ease-in-out infinite; }
+.sk-svg.live[data-state="thinking"] .sk-dots circle { animation: sk-dot 1.1s ease-in-out infinite; }
+.sk-svg.live[data-state="writing"] .sk-body { animation: sk-scribble .5s ease-in-out infinite; }
+.sk-svg.live[data-state="success"] .sk-body { animation: sk-hop .9s cubic-bezier(.3, 1.6, .5, 1) infinite; }
+.sk-svg.live[data-state="alert"] .sk-body { animation: sk-shake 1.6s ease-in-out infinite; }
+.sk-svg.live[data-state="error"] .sk-body { animation: sk-no 1.8s ease-in-out infinite; }
+.sk-svg.live[data-state="asleep"] .sk-body { animation: sk-breathe 3.6s ease-in-out infinite; }
+.sk-svg.live[data-state="asleep"] .sk-z { animation: sk-z 3s ease-out infinite; }
+.sk-svg.live[data-state="asleep"] .sk-eyes, .sk-svg.live[data-state="success"] .sk-eyes, .sk-svg.live[data-state="error"] .sk-eyes { animation: none; }
+@keyframes sk-float { 50% { transform: translateY(-3px); } }
+@keyframes sk-blink { 0%, 93%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+@keyframes sk-lean { 50% { transform: rotate(-6deg) translateX(-2px); } }
+@keyframes sk-dot { 50% { transform: translateY(-3px); opacity: .4; } }
+@keyframes sk-scribble { 25% { transform: translateX(-1px) rotate(-1deg); } 75% { transform: translateX(1px) rotate(1deg); } }
+@keyframes sk-hop { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-10px) scale(1.03, .97); } }
+@keyframes sk-shake { 0%, 40%, 100% { transform: rotate(0); } 8% { transform: rotate(-9deg); } 16% { transform: rotate(8deg); } 24% { transform: rotate(-5deg); } 32% { transform: rotate(3deg); } }
+@keyframes sk-no { 0%, 50%, 100% { transform: translateX(0); } 10%, 30% { transform: translateX(-4px); } 20%, 40% { transform: translateX(4px); } }
+@keyframes sk-breathe { 50% { transform: scale(1.03, .97); } }
+@keyframes sk-z { 0% { opacity: 0; transform: translate(0, 4px) scale(.7); } 30% { opacity: 1; } 100% { opacity: 0; transform: translate(8px, -12px) scale(1.2); } }
+@media (prefers-reduced-motion: reduce) { .sk-svg.live *, .sk-svg.live .sk-body { animation: none !important; } .sk-z { opacity: 1; } }
+
+.auth.making { grid-template-columns: 1fr; }
+.auth.making .auth-art { display: none; }
+.auth.making #s-sidekick { max-width: 1000px; }
+.sk-maker { margin: 6px 0 10px; }
+.skm { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; background-image: radial-gradient(color-mix(in srgb, var(--ink) 14%, transparent) 1px, transparent 1px); background-size: 16px 16px; border: 1px solid var(--border); border-radius: 18px; padding: 18px; }
+.skm-stage { display: grid; justify-items: center; gap: 10px; min-width: 0; }
+.skm-orbit { position: relative; width: min(100%, 380px); aspect-ratio: 1; }
+.skm-ring { position: absolute; inset: 0; }
+.skm-face { position: absolute; width: 38px; height: 38px; padding: 0; transform: translate(-50%, -50%); border: 0; border-radius: 50%; background: transparent; cursor: pointer; transition: transform .12s ease; }
+.skm-face:hover { transform: translate(-50%, -50%) scale(1.15); }
+.skm-face[aria-checked="true"] { background: var(--surface); box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px color-mix(in srgb, var(--ink) 30%, transparent), var(--shadow-2); transform: translate(-50%, -50%) scale(1.2); }
+.skm-face svg { width: 100%; height: 100%; }
+.skm-hero { position: absolute; inset: 26%; display: grid; place-items: center; filter: drop-shadow(0 10px 18px rgb(26 24 20 / .16)); }
+.skm-hero svg { width: 100%; height: 100%; overflow: visible; }
+.skm-shapes { display: flex; align-items: end; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.skm-shape { width: 48px; height: 48px; padding: 6px; border: 0; border-radius: 14px; background: transparent; cursor: pointer; opacity: .55; filter: blur(.3px); transition: opacity .12s, transform .12s; }
+.skm-shape:hover { opacity: 1; filter: none; }
+.skm-shape[aria-checked="true"] { width: 64px; height: 64px; opacity: 1; filter: none; background: var(--surface); box-shadow: 0 0 0 1px var(--border), var(--shadow-2); }
+.skm-shape svg { width: 100%; height: 100%; }
+.skm-shape-name { margin: -2px 0 0; font-size: 12px; font-weight: 600; color: var(--ink-muted); }
+.skm-bar { display: flex; align-items: center; gap: 10px; max-width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-2); flex-wrap: wrap; justify-content: center; }
+.skm-color-wrap { position: relative; flex: none; }
+.skm-color { width: 44px; height: 44px; border: 0; border-radius: 50%; padding: 0; cursor: pointer; background: radial-gradient(circle, var(--c) 0 62%, transparent 63%), conic-gradient(#f15a4a, #ffcc4d, #86dca0, #52c2ca, #3d8bff, #a970ff, #ff7eb6, #f15a4a); }
+.skm-color-pop { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 5; display: grid; grid-template-columns: repeat(6, 26px); gap: 6px; padding: 10px; border-radius: 14px; box-shadow: var(--shadow-3); }
+.skm-swatch { width: 26px; height: 26px; border: 0; border-radius: 50%; cursor: pointer; }
+.skm-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ink); }
+.skm-custom-row { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-muted); }
+.skm-custom { width: 28px; height: 28px; padding: 0; border: 0; background: none; cursor: pointer; }
+.skm-states { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; }
+.skm-state { display: grid; justify-items: center; gap: 2px; min-width: 56px; padding: 6px 4px 5px; border: 0; border-radius: 12px; background: transparent; color: var(--ink-muted); font: inherit; font-size: 11px; font-weight: 560; cursor: pointer; }
+.skm-state:hover { background: var(--surface-hover); }
+.skm-state[aria-checked="true"] { background: var(--surface-sunken); color: var(--ink); font-weight: 650; box-shadow: inset 0 0 0 1px var(--border); }
+.skm-state-face { width: 26px; height: 26px; }
+.skm-state-face svg { width: 100%; height: 100%; }
+.skm-surprise { margin-top: 2px; }
+.skm-panel { min-width: 0; display: grid; gap: 4px; padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-2); }
+.skm-head { margin: 8px 0 2px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); }
+.skm-head:first-child { margin-top: 0; }
+.skm-row { display: grid; grid-template-columns: 74px minmax(0, 1fr) 40px; align-items: center; gap: 8px; min-height: 38px; font-size: 13px; border-bottom: 1px solid var(--border); }
+.skm-row:has(.skm-seg) { grid-template-columns: 40px minmax(0, 1fr); }
+.skm-row input[type=range] { width: 100%; accent-color: var(--ink); }
+.skm-val { font-size: 11.5px; color: var(--ink-faint); text-align: right; font-variant-numeric: tabular-nums; }
+.skm-seg { display: inline-flex; justify-self: end; gap: 2px; padding: 3px; border-radius: 10px; background: var(--surface-sunken); }
+.skm-seg button { padding: 4px 9px; border: 0; border-radius: 8px; background: transparent; color: var(--ink-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.skm-seg button[aria-checked="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgb(26 24 20 / .12); }
+.skm-sizes { display: flex; align-items: end; gap: 14px; padding: 6px 2px 10px; border-bottom: 1px solid var(--border); }
+.skm-presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.skm-preset { aspect-ratio: 1; padding: 6px; border: 0; border-radius: 12px; background: transparent; cursor: pointer; }
+.skm-preset:hover { background: var(--surface-hover); }
+.skm-preset svg { width: 100%; height: 100%; }
+.ps-design { justify-self: start; }
+@media (max-width: 860px) { .skm { grid-template-columns: 1fr; } }

@@ -336,13 +336,10 @@ pub async fn update_me(
             if name.chars().count() > 24 || name.chars().any(char::is_control) {
                 return Err(ApiError::bad_request("a sidekick's name is 1 to 24 characters"));
             }
-            let valid_look = look.split_once('-').is_some_and(|(shape, colour)| {
-                [shape, colour]
-                    .iter()
-                    .all(|p| (2..=12).contains(&p.len()) && p.chars().all(|c| c.is_ascii_lowercase()))
-            });
-            if !valid_look {
-                return Err(ApiError::bad_request("a sidekick's look is like orb-ocean"));
+            if !valid_look(look) {
+                return Err(ApiError::bad_request(
+                    "a sidekick's look is like s2.orb.calm.52c2ca.100.100.0.a",
+                ));
             }
             // A server-side sidekick signs with the name its person gave it.
             sqlx::query("UPDATE users SET display_name = $2 WHERE agent_of = $1")
@@ -893,6 +890,29 @@ pub async fn directory(
             })
             .collect(),
     ))
+}
+
+/// A sidekick's look (D34): `s2.<shape>.<face>.<rrggbb>.<eye size>.<spacing>.<tilt>.<ink>`,
+/// or the older `<shape>-<colour>`. Others' apps draw it, so it stays plain data.
+fn valid_look(look: &str) -> bool {
+    let word = |p: &str| (2..=12).contains(&p.len()) && p.chars().all(|c| c.is_ascii_lowercase());
+    let num = |p: &str, lo: i32, hi: i32| p.parse::<i32>().is_ok_and(|n| (lo..=hi).contains(&n));
+    if let Some(rest) = look.strip_prefix("s2.") {
+        let parts: Vec<&str> = rest.split('.').collect();
+        return parts.len() == 7
+            && word(parts[0])
+            && word(parts[1])
+            && parts[2].len() == 6
+            && parts[2]
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+            && num(parts[3], 60, 160)
+            && num(parts[4], 60, 160)
+            && num(parts[5], -20, 20)
+            && matches!(parts[6], "a" | "b" | "w");
+    }
+    look.split_once('-')
+        .is_some_and(|(shape, colour)| word(shape) && word(colour))
 }
 
 #[cfg(test)]

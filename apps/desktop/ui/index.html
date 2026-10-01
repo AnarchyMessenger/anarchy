@@ -243,8 +243,7 @@
           <p class="sub">Your own agent. It works for you, sees only what you can see, and says so whenever it writes. It sits on your picture so people know it's yours.</p>
           <label class="field" for="sk-name">Name
             <input class="text-input" id="sk-name" maxlength="24" autocomplete="off"></label>
-          <div class="field"><span>Look</span><div class="sk-shapes" id="sk-shapes" role="radiogroup" aria-label="Look"></div></div>
-          <div class="field"><span>Colour</span><div class="color-picker" id="sk-colors" role="radiogroup" aria-label="Colour"></div></div>
+          <div class="sk-maker" id="sk-maker"></div>
           <p class="note-plain fine">No AI model is connected yet. Until one is, your sidekick searches what this device can decrypt and answers from your desks. When a model is connected, you choose what it may read; Sealed conversations stay off-limits.</p>
           <button class="btn-ink" id="sk-save" type="submit">Done</button>
           <p class="error" id="sk-error" role="alert" hidden></p>
@@ -582,8 +581,8 @@
                 <div class="field"><span>Colour</span><div class="color-picker" id="p-color" role="radiogroup" aria-label="Colour"></div></div>
                 <div class="field sk-field"><span>Sidekick <span class="optional">· your agent, shown on your picture</span></span>
                   <input class="text-input" id="ps-name" maxlength="24" placeholder="No sidekick" aria-label="Sidekick's name">
-                  <div class="sk-shapes" id="ps-shapes" role="radiogroup" aria-label="Sidekick's look"></div>
-                  <div class="color-picker" id="ps-colors" role="radiogroup" aria-label="Sidekick's colour"></div>
+                  <button class="btn-outline sm ps-design" id="ps-design" type="button">Design one</button>
+                  <div class="sk-maker" id="ps-maker" hidden></div>
                   <small class="fine">Clear the name to remove it.</small></div>
                 <div class="row-actions"><button class="btn-ink inline" id="p-save" type="submit">Save</button><span class="saved" id="p-saved" hidden>Saved</span></div>
                 <p class="error" id="p-error" hidden></p>
@@ -981,6 +980,7 @@
   </div>
 </template>
 
+<script src="sidekick.js"></script>
 <script src="app.js"></script>
 <div class="fold-menu panel" id="fold-menu" role="menu" hidden></div>
 </body>
