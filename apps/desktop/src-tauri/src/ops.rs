@@ -854,7 +854,8 @@ pub async fn desk_items(i: &mut Inner, channel: ChannelId) -> Result<Vec<DeskIte
 /// This person's own desk of `kind` (`agenda`, `notes`), made the first time.
 /// Only their devices are in it: nobody else, the server included, can read it.
 pub async fn ensure_personal(i: &mut Inner, kind: String) -> Result<ChannelId, String> {
-    if !matches!(kind.as_str(), "agenda" | "notes" | "files" | "tasks") {
+    // `prefs` holds how you organise things (sidebar folders), synced between your devices.
+    if !matches!(kind.as_str(), "agenda" | "notes" | "files" | "tasks" | "prefs") {
         return Err("Unknown personal desk".into());
     }
     let _ = refresh_metas(i).await;
@@ -869,6 +870,7 @@ pub async fn ensure_personal(i: &mut Inner, kind: String) -> Result<ChannelId, S
         "agenda" => "Agenda",
         "notes" => "Notes",
         "files" => "My files",
+        "prefs" => "Preferences",
         _ => "Tasks",
     };
     let id = i.client()?.create_personal_desk(name, &kind).await.map_err(err)?;

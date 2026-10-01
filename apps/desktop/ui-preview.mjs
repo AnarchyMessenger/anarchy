@@ -176,6 +176,7 @@ const mock = (startLocked) => {
   );
   const me = () => profile?.display_name || "You";
   const skOn = new Set();
+  const prefsItems = [];
   let skChat = false;
   channels.push({ id: "dpip", kind: "dm", peer: "pip", unread: false, messages: [
     { sender: "ME", ts: now - 4 * 60e3, text: "anything about the acme invoice?" },
@@ -268,8 +269,8 @@ const mock = (startLocked) => {
     send_message: async ({ channel, text, thread }) => { await wait(120); channels.find((x) => x.id === channel).messages.push({ sender: "ME", ts: Date.now(), text, thread: thread ?? null }); },
     create_channel: async ({ space, name, topic, trust }) => { const id = `c${channels.length + 1}`; channels.push({ id, kind: "channel", space, name: name.trim().toLowerCase().replace(/\s+/g, "-"), topic, trust, unread: false, messages: [] }); return id; },
     create_desk: async ({ space, name }) => { const id = `k${channels.length + 1}`; channels.push({ id, kind: "channel", space, desk: "collections", name, trust: "company", unread: false, messages: [] }); return id; },
-    desk_items: async ({ channel }) => (channel === "k1" ? items : channel === "f1" ? driveItems : channel === "pa" ? agendaItems : channel === "pn" ? noteItems : channel === "kt" ? launchCards : channel === "pt" ? myCards : channel === "pf" ? myFiles : channel === "kw" ? wikiPages : []),
-    ensure_personal: async ({ kind }) => ({ agenda: "pa", notes: "pn", files: "pf", tasks: "pt" })[kind],
+    desk_items: async ({ channel }) => (channel === "pp" ? prefsItems : channel === "k1" ? items : channel === "f1" ? driveItems : channel === "pa" ? agendaItems : channel === "pn" ? noteItems : channel === "kt" ? launchCards : channel === "pt" ? myCards : channel === "pf" ? myFiles : channel === "kw" ? wikiPages : []),
+    ensure_personal: async ({ kind }) => ({ agenda: "pa", notes: "pn", files: "pf", tasks: "pt", prefs: "pp" })[kind],
     save_text_file: async () => { await wait(80); },
     ensure_drive: async () => "f1",
     pick_and_upload: async ({ folder }) => { driveItems.push(file(`x${driveItems.length + 10}`, "Q4 plan.pdf", folder, 540_000, "application/pdf", me(), 0)); return ["Q4 plan.pdf"]; },
@@ -284,7 +285,7 @@ const mock = (startLocked) => {
       }
       return { kind: "none", data: "" };
     },
-    put_items: async ({ channel, items: put }) => { const list = channel === "f1" ? driveItems : channel === "pa" ? agendaItems : channel === "pn" ? noteItems : channel === "kw" ? wikiPages : channel === "kt" ? launchCards : channel === "pt" ? myCards : items; for (const r of put) { const at = list.findIndex((i) => i.id === r.id); const item = { ...r, seq: 99, updated_ms: Date.now() }; if (at >= 0) list[at] = item; else list.unshift(item); } },
+    put_items: async ({ channel, items: put }) => { const list = channel === "pp" ? prefsItems : channel === "f1" ? driveItems : channel === "pa" ? agendaItems : channel === "pn" ? noteItems : channel === "kw" ? wikiPages : channel === "kt" ? launchCards : channel === "pt" ? myCards : items; for (const r of put) { const at = list.findIndex((i) => i.id === r.id); const item = { ...r, seq: 99, updated_ms: Date.now() }; if (at >= 0) list[at] = item; else list.unshift(item); } },
     pay_links: async () => payLinks,
     create_pay_link: async () => { const id = `L${payLinks.length + 1}`; payLinks.push({ id, expires_at_ms: now + 90 * 864e5, revoked: false, views: 0, last_viewed_at_ms: null, claimed_paid_at_ms: null }); return { id, url: `https://chat.studiochen.fr/p/${id}#k3y` }; },
     update_pay_link: async () => {},
@@ -620,6 +621,29 @@ page.once("dialog", (d) => d.accept());
 await page.click("#convo-sk");
 await page.waitForTimeout(400);
 await shot("13m-sidekick-on");
+page.once("dialog", (d) => d.accept("Clients"));
+await page.click("#new-channel-folder");
+await page.hover('#channel-list .side-item >> text="acme-rebrand"');
+await page.click('#channel-list .side-item:has-text("acme-rebrand") .fold-move');
+await page.click('#fold-menu .fold-menu-item >> text="Clients"');
+await page.waitForTimeout(200);
+await shot("13o-channel-folders");
+await page.click('#channel-list .fold-toggle >> text="Clients"');
+await page.waitForTimeout(150);
+await shot("13p-channel-folder-closed");
+await page.click('#channel-list .fold-toggle >> text="Clients"');
+await page.click('.section >> text=/^Desks$/');
+await page.waitForTimeout(150);
+if (await page.isHidden("#view-desks")) await page.click('.section >> text=/^Desks$/');
+await visible("#view-desks");
+page.once("dialog", (d) => d.accept("Money"));
+await page.click("#desks-folder");
+await page.waitForTimeout(200);
+await page.hover('#desks-grid .ov-desk >> text="Collections"');
+await page.click('#desks-grid .ov-desk:has-text("Collections") .fold-move');
+await page.click('#fold-menu .fold-menu-item >> text="Money"');
+await page.waitForTimeout(400);
+await shot("13q-desk-folders");
 await pick("#channel-list", "acme-rebrand");
 await page.click(".thread-sum");
 await visible("#thread");

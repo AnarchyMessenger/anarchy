@@ -533,6 +533,7 @@ async function showApp() {
   show("omnibox");
   paintMe();
   try { spaces = await invoke("spaces"); } catch { spaces = []; }
+  loadOrg();
   if (status.session?.server) invoke("workspace_info", { server: status.session.server }).then((w) => { skHosted = !!w.config?.sidekicks_hosted; paintAskHead(); }).catch(() => {});
   renderRail();
   go("home");
@@ -650,12 +651,24 @@ function renderSide() {
   if (view === "space" && currentSpace) {
     const desks = channels.filter((c) => c.kind === "channel" && c.space === currentSpace.id && c.desk && c.desk !== "files");
     const list = channels.filter((c) => c.kind === "channel" && c.space === currentSpace.id && !c.desk);
-    $("channel-list").replaceChildren(...list.map((c) => {
+    const row = (c) => {
       const unread = c.unread && c.id !== current;
-      return el("button", { class: `side-item${c.id === current ? " active" : ""}${unread ? " unread" : ""}`, "data-id": c.id, onclick: () => openChannel(c.id).then(() => composer.focus()) },
-        el("span", { class: "hash", text: "#" }), el("span", { class: "name", text: c.name }), unread ? el("span", { class: "unread-dot" }) : null);
-    }));
+      return foldDraggable(el("button", { class: `side-item${c.id === current ? " active" : ""}${unread ? " unread" : ""}`, "data-id": c.id, onclick: () => openChannel(c.id).then(() => composer.focus()) },
+        el("span", { class: "hash", text: "#" }), el("span", { class: "name", text: c.name }), unread ? el("span", { class: "unread-dot" }) : null,
+        el("span", { class: "fold-move", role: "button", tabindex: "0", title: "Move to a folder", "aria-label": `Move #${c.name} to a folder`, onclick: (e) => { e.stopPropagation(); openFoldMenu(e.currentTarget, "channels", c.id); } }, icon("folder"))), c.id);
+    };
+    const { folders, loose } = foldGroups("channels", list);
+    $("channel-list").replaceChildren(
+      ...folders.map((f) => {
+        const kids = f.items.map((id) => list.find((c) => c.id === id)).filter(Boolean);
+        const unread = kids.some((c) => c.unread && c.id !== current);
+        // A closed folder still shows the conversation you're in.
+        const shown = f.open ? kids : kids.filter((c) => c.id === current);
+        return el("div", { class: `fold${f.open ? " open" : ""}` }, foldHead("channels", f, kids.length, unread), el("div", { class: "fold-body" }, ...shown.map(row)));
+      }),
+      ...loose.map(row));
     show("no-channels", list.length === 0);
+    foldDropTarget($("channels-group"), "channels", null);
   }
 }
 
@@ -1033,9 +1046,126 @@ async function showDesks() {
     el("span", { class: "big" }, await deskSummary(d)),
     deskNeeds.get(d.id) ? el("span", { class: "flags" }, el("span", { class: "flag-pill warn", text: `${deskNeeds.get(d.id)} need you` })) : el("span", { class: "flags" }, el("span", { class: "flag-pill good", text: "Nothing waiting" })))));
   if (currentSpace !== sp) return;
-  $("desks-grid").replaceChildren(...cards, el("button", { class: "ov-desk add", type: "button", onclick: openNewDesk }, el("span", { class: "top" }, icon("plus"), "Set up a desk"), el("span", { class: "fine", text: "Front desk, help desk, dispatch and more are on the way." })));
+  desks.forEach((d, k) => {
+    foldDraggable(cards[k], d.id);
+    cards[k].querySelector(".top").append(el("span", { class: "fold-move", role: "button", tabindex: "0", title: "Move to a folder", "aria-label": `Move ${d.name} to a folder`, onclick: (e) => { e.stopPropagation(); openFoldMenu(e.currentTarget, "desks", d.id); } }, icon("folder")));
+  });
+  const byId = new Map(desks.map((d, k) => [d.id, cards[k]]));
+  const { folders, loose } = foldGroups("desks", desks);
+  const add = el("button", { class: "ov-desk add", type: "button", onclick: openNewDesk }, el("span", { class: "top" }, icon("plus"), "Set up a desk"), el("span", { class: "fine", text: "Front desk, help desk, dispatch and more are on the way." }));
+  $("desks-grid").replaceChildren(
+    ...folders.map((f) => {
+      const kids = f.items.filter((id) => byId.has(id));
+      const need = kids.reduce((n, id) => n + (deskNeeds.get(id) || 0), 0);
+      return el("section", { class: `desk-fold fold${f.open ? " open" : ""}` }, foldHead("desks", f, kids.length, need > 0),
+        f.open ? el("div", { class: "desks-grid inner" }, ...(kids.length ? kids.map((id) => byId.get(id)) : [el("p", { class: "fine fold-empty", text: "Drag a desk here, or use its folder button." })])) : null);
+    }),
+    folders.length ? foldDropTarget(el("h3", { class: "fold-loose", text: "Not in a folder" }), "desks", null) : null,
+    el("div", { class: "desks-grid inner" }, ...loose.map((d) => byId.get(d.id)), add));
 }
 $("desks-new").addEventListener("click", () => openNewDesk());
+$("desks-folder").addEventListener("click", () => newFold("desks"));
+$("new-channel-folder").addEventListener("click", () => newFold("channels"));
+
+// ---------- folders in the channel and desk lists (D33) ----------
+// Yours alone: how you organise a space doesn't change anyone else's list.
+// Kept in a personal record, so it syncs between your devices and the server
+// can't read the folder names; a copy in local storage covers start-up.
+let org = readStore("anarchy.org", { v: 1, spaces: {} });
+let prefsChannel = null;
+async function loadOrg() {
+  try {
+    prefsChannel = await invoke("ensure_personal", { kind: "prefs" });
+    const rec = (await invoke("desk_items", { channel: prefsChannel })).find((i) => i.id === "sidebar");
+    if (rec?.data?.v === 1) { org = rec.data; writeStore("anarchy.org", org); renderSide(); if (!$("view-desks").hidden) showDesks(); }
+  } catch (e) { console.warn("folders stay on this device for now", e); }
+}
+let orgSave = null;
+function saveOrg() {
+  writeStore("anarchy.org", org);
+  clearTimeout(orgSave);
+  orgSave = setTimeout(async () => {
+    try {
+      if (!prefsChannel) prefsChannel = await invoke("ensure_personal", { kind: "prefs" });
+      await invoke("put_items", { channel: prefsChannel, items: [{ id: "sidebar", kind: "settings", data: org }] });
+    } catch (e) { console.warn(e); }
+  }, 400);
+}
+function foldsOf(kind) {
+  const sp = currentSpace?.id || "home";
+  org.spaces[sp] ??= { channels: [], desks: [] };
+  return org.spaces[sp][kind];
+}
+// Folders in order with only the ids still around; the rest is loose, as before.
+function foldGroups(kind, list) {
+  const ids = new Set(list.map((c) => c.id));
+  const folders = foldsOf(kind);
+  const placed = new Set();
+  for (const f of folders) { f.items = f.items.filter((id) => ids.has(id) && !placed.has(id)); f.items.forEach((id) => placed.add(id)); }
+  return { folders, loose: list.filter((c) => !placed.has(c.id)) };
+}
+function moveInto(kind, id, folderId) {
+  for (const f of foldsOf(kind)) f.items = f.items.filter((x) => x !== id);
+  const f = foldsOf(kind).find((x) => x.id === folderId);
+  if (f) { f.items.push(id); f.open = true; }
+  saveOrg(); repaintFolds(kind);
+}
+function repaintFolds(kind) { if (kind === "channels") renderSide(); else showDesks(); }
+function newFold(kind, then) {
+  const name = prompt(kind === "channels" ? "Name the folder, like Clients or Internal" : "Name the folder, like Money or Clients")?.trim();
+  if (!name) return null;
+  const f = { id: crypto.randomUUID().slice(0, 8), name: name.slice(0, 40), open: true, items: [] };
+  foldsOf(kind).push(f);
+  if (then) then(f); else { saveOrg(); repaintFolds(kind); }
+  return f;
+}
+function foldHead(kind, f, n, alert) {
+  const head = el("div", { class: "fold-head" },
+    el("button", { class: "fold-toggle", type: "button", "aria-expanded": String(f.open), onclick: () => { f.open = !f.open; saveOrg(); repaintFolds(kind); } },
+      el("span", { class: "chev" }, icon("chevron")), el("span", { class: "fold-name", text: f.name }),
+      !f.open && n ? el("span", { class: "fold-n", text: String(n) }) : null,
+      !f.open && alert ? el("span", { class: "unread-dot", "aria-label": kind === "channels" ? "unread inside" : "needs you" }) : null),
+    el("span", { class: "fold-acts" },
+      el("button", { class: "icon-btn sm", type: "button", title: "Rename folder", "aria-label": `Rename ${f.name}`, onclick: () => { const v = prompt("Rename folder", f.name)?.trim(); if (v) { f.name = v.slice(0, 40); saveOrg(); repaintFolds(kind); } } }, icon("pen")),
+      el("button", { class: "icon-btn sm", type: "button", title: "Delete folder", "aria-label": `Delete ${f.name}`, onclick: () => {
+        if (f.items.length && !confirm(`Delete the folder ${f.name}? What's in it stays, outside any folder.`)) return;
+        const list = foldsOf(kind); list.splice(list.indexOf(f), 1); saveOrg(); repaintFolds(kind);
+      } }, icon("trash"))));
+  return foldDropTarget(head, kind, f.id);
+}
+function foldDraggable(node, id) {
+  node.draggable = true;
+  node.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/x-anarchy-item", id); e.dataTransfer.effectAllowed = "move"; });
+  return node;
+}
+function foldDropTarget(node, kind, folderId) {
+  if (node.dataset.dropFold) return node;
+  node.dataset.dropFold = "1";
+  node.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("text/x-anarchy-item")) { e.preventDefault(); node.classList.add("drop-on"); } });
+  node.addEventListener("dragleave", () => node.classList.remove("drop-on"));
+  node.addEventListener("drop", (e) => {
+    node.classList.remove("drop-on");
+    const id = e.dataTransfer.getData("text/x-anarchy-item");
+    if (id) { e.preventDefault(); moveInto(kind, id, folderId); }
+  });
+  return node;
+}
+function openFoldMenu(anchor, kind, id) {
+  const menu = $("fold-menu");
+  const inFold = foldsOf(kind).find((f) => f.items.includes(id))?.id ?? null;
+  const item = (label, folderId, ic) => el("button", { class: `fold-menu-item${folderId === inFold ? " on" : ""}`, type: "button", role: "menuitemradio", "aria-checked": String(folderId === inFold), onclick: () => { show(menu, false); moveInto(kind, id, folderId); } }, icon(ic), label);
+  menu.replaceChildren(
+    el("p", { class: "fold-menu-title", text: "Move to" }),
+    ...foldsOf(kind).map((f) => item(f.name, f.id, "folder")),
+    item("No folder", null, "list"),
+    el("button", { class: "fold-menu-item", type: "button", onclick: () => { show(menu, false); newFold(kind, (f) => moveInto(kind, id, f.id)); } }, icon("folder-plus"), "New folder…"));
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = `${Math.round(Math.min(r.left, innerWidth - 220))}px`;
+  menu.style.top = `${Math.round(Math.min(r.bottom + 4, innerHeight - 260))}px`;
+  show(menu, true);
+}
+document.addEventListener("click", (e) => { const m = $("fold-menu"); if (!m.hidden && !m.contains(e.target) && !e.target.closest(".fold-move")) show(m, false); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") show("fold-menu", false); });
 
 // ---------- drawers: chats and people pop over from the left ----------
 

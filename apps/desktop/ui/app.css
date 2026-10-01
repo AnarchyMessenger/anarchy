@@ -1152,3 +1152,40 @@ svg.i.flip { transform: scaleX(-1); }
 .move-row .ficon { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; border: 0; background: var(--sections-bg); color: var(--ink); }
 .move-row .ficon svg.i { width: 13px; height: 13px; }
 #dlg-move .modal-actions .spacer { flex: 1; }
+
+/* ---------- folders in the channel and desk lists (D33) ---------- */
+.side-group-btns { display: inline-flex; gap: 2px; }
+.side-group.drop-on { background: var(--surface-selected); border-radius: 8px; }
+.fold { display: grid; }
+.fold-head { display: flex; align-items: center; border-radius: var(--radius-sm); }
+.fold-head.drop-on { background: var(--surface-selected); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 20%, transparent); }
+.fold-toggle { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; min-height: 28px; padding: 0 6px; border: 0; background: transparent; color: var(--ink-muted); font: inherit; font-size: 12.5px; font-weight: 640; cursor: pointer; text-align: left; border-radius: var(--radius-sm); }
+.fold-toggle:hover { color: var(--ink); background: var(--surface-hover); }
+.fold-toggle .chev { display: grid; place-items: center; width: 14px; transition: transform .12s ease; }
+.fold-toggle .chev svg.i { width: 12px; height: 12px; stroke-width: 2.4; }
+.fold.open > .fold-head .chev { transform: rotate(90deg); }
+.fold-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fold-n { font-size: 11px; font-weight: 600; color: var(--ink-faint); }
+.fold-toggle .unread-dot { margin: 0 2px 0 0; }
+.fold-acts { display: none; gap: 0; padding-right: 2px; }
+.fold-head:hover .fold-acts, .fold-head:focus-within .fold-acts { display: inline-flex; }
+.fold-body { display: grid; padding-left: 12px; margin-left: 9px; border-left: 1px solid var(--border); }
+.fold-move { display: none; place-items: center; width: 22px; height: 22px; margin-left: auto; border-radius: 6px; color: var(--ink-faint); }
+.fold-move svg.i { width: 13px; height: 13px; }
+.fold-move:hover { background: var(--surface); color: var(--ink); }
+.side-item:hover .fold-move, .side-item:focus-within .fold-move { display: grid; }
+.side-item .unread-dot + .fold-move { margin-left: 4px; }
+.ov-desk .top .fold-move { display: grid; opacity: 0; }
+.ov-desk:hover .top .fold-move { opacity: 1; }
+#desks-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.desks-grid.inner { margin-top: 6px; }
+.desk-fold .fold-toggle { font-size: 14px; color: var(--ink); min-height: 34px; }
+.fold-loose { margin: 12px 0 0; padding: 6px 8px; font-size: 14px; font-weight: 640; color: var(--ink-muted); border-radius: 8px; }
+.fold-loose.drop-on { background: var(--surface-selected); }
+.fold-empty { padding: 14px; border: 1px dashed var(--border); border-radius: 12px; }
+.fold-menu { position: fixed; z-index: 60; display: grid; min-width: 200px; max-height: 260px; overflow-y: auto; padding: 6px; border-radius: 12px; box-shadow: var(--shadow-2); }
+.fold-menu-title { margin: 2px 8px 4px; font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint); }
+.fold-menu-item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.fold-menu-item svg.i { width: 15px; height: 15px; color: var(--ink-muted); }
+.fold-menu-item:hover { background: var(--surface-hover); }
+.fold-menu-item.on { background: var(--surface-selected); font-weight: 600; }
