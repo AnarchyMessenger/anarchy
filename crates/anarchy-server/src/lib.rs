@@ -157,6 +157,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/auth/anonymous", post(accounts::anonymous))
         .route("/v1/me", get(accounts::me).put(accounts::update_me))
         .route("/v1/me/sidekick", get(sidekicks::mine).post(sidekicks::enable))
+        .route("/v1/me/heartbeat", post(accounts::heartbeat))
         .route("/v1/host/agents", get(sidekicks::host_agents))
         .route("/v1/host/agents/{user}/session", post(sidekicks::host_session))
         .route("/v1/directory", get(accounts::directory))
@@ -866,31 +867,45 @@ async fn members(
         Option<i32>,
         bool,
         Option<Uuid>,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
     );
-    let rows: Vec<Row> = sqlx::query_as(
-        "SELECT d.id, d.user_id, u.display_name, u.is_guest, u.username, u.tag, u.is_agent, u.agent_of FROM channel_members m
+    let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT d.id, d.user_id, u.display_name, u.is_guest, u.username, u.tag, u.is_agent, u.agent_of,
+                u.color, u.avatar, {}, {}, {} FROM channel_members m
          JOIN devices d ON d.id = m.device_id JOIN users u ON u.id = d.user_id
          WHERE m.channel_id = $1 AND m.removed_seq IS NULL AND d.revoked_at IS NULL
            AND (u.expires_at IS NULL OR u.expires_at > now())
          ORDER BY m.added_seq, d.id",
-    )
+        accounts::SIDEKICK_NAME_SQL,
+        accounts::SIDEKICK_LOOK_SQL,
+        accounts::PRESENCE_SQL
+    )))
     .bind(channel)
     .fetch_all(&s.db)
     .await?;
     Ok(Json(
         rows.into_iter()
-            .map(
-                |(device_id, user_id, display_name, is_guest, username, tag, is_agent, agent_of)| Member {
-                    device_id,
-                    user_id,
-                    display_name,
-                    is_guest,
-                    username,
-                    tag: tag.map(|t| t as u16),
-                    is_agent,
-                    agent_of,
-                },
-            )
+            .map(|r| Member {
+                device_id: r.0,
+                user_id: r.1,
+                display_name: r.2,
+                is_guest: r.3,
+                username: r.4,
+                tag: r.5.map(|t| t as u16),
+                is_agent: r.6,
+                agent_of: r.7,
+                color: Some(r.8),
+                avatar: r.9,
+                sidekick: r
+                    .10
+                    .zip(r.11)
+                    .map(|(name, look)| anarchy_proto::Sidekick { name, look }),
+                presence: r.12.as_deref().and_then(anarchy_proto::Presence::parse),
+            })
             .collect(),
     ))
 }

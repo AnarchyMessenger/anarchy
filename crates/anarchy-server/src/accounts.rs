@@ -7,7 +7,7 @@
 
 use anarchy_proto::{
     AnonymousSignup, ChannelKind, ChannelMeta, CreateSpace, DirectoryEntry, DmPolicy, DmStarted, Invite,
-    JoinSpace, Profile, ProfileUpdate, Session, SpaceKind, SpaceSummary, StartDm, Usage,
+    JoinSpace, PresenceChoice, Profile, ProfileUpdate, Session, SpaceKind, SpaceSummary, StartDm, Usage,
 };
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -212,6 +212,7 @@ type ProfileRow = (
     bool,
     Option<String>,
     Option<String>,
+    String,
 );
 
 fn sidekick_of(name: Option<String>, look: Option<String>) -> Option<anarchy_proto::Sidekick> {
@@ -222,7 +223,7 @@ fn sidekick_of(name: Option<String>, look: Option<String>) -> Option<anarchy_pro
 async fn load_profile(db: &sqlx::PgPool, user: Uuid) -> ApiResult<Profile> {
     let r: ProfileRow = sqlx::query_as(
         "SELECT id, display_name, username, tag, color, avatar, usage, dm_policy, dm_humans_only,
-                email, is_guest, oidc_issuer, onboarded, sidekick_name, sidekick_look
+                email, is_guest, oidc_issuer, onboarded, sidekick_name, sidekick_look, presence
          FROM users WHERE id = $1",
     )
     .bind(user)
@@ -247,6 +248,12 @@ async fn load_profile(db: &sqlx::PgPool, user: Uuid) -> ApiResult<Profile> {
         is_anonymous: r.11 == "anarchy:anonymous",
         onboarded: r.12,
         sidekick: sidekick_of(r.13, r.14),
+        presence: match r.15.as_str() {
+            "busy" => PresenceChoice::Busy,
+            "away" => PresenceChoice::Away,
+            "invisible" => PresenceChoice::Invisible,
+            _ => PresenceChoice::Auto,
+        },
     })
 }
 
@@ -355,6 +362,19 @@ pub async fn update_me(
                 .await?;
         }
     }
+    if let Some(p) = req.presence {
+        let v = match p {
+            PresenceChoice::Auto => "auto",
+            PresenceChoice::Busy => "busy",
+            PresenceChoice::Away => "away",
+            PresenceChoice::Invisible => "invisible",
+        };
+        sqlx::query("UPDATE users SET presence = $2 WHERE id = $1")
+            .bind(user.user_id)
+            .bind(v)
+            .execute(&mut *tx)
+            .await?;
+    }
     if let Some(usage) = req.usage {
         sqlx::query("UPDATE users SET usage = $2 WHERE id = $1")
             .bind(user.user_id)
@@ -407,11 +427,31 @@ pub(crate) type EntryRow = (
     bool,
     Option<String>,
     Option<String>,
+    Option<String>,
 );
 
-pub(crate) const ENTRY_COLUMNS: &str = "u.id, u.display_name, u.email, u.is_guest,
-    coalesce(array_agg(d.id ORDER BY d.created_at) FILTER (WHERE d.id IS NOT NULL), '{}'),
-    u.username, u.tag, u.color, u.avatar, u.is_agent, u.sidekick_name, u.sidekick_look";
+/// What others see of someone's presence (D35). Busy and away last only while
+/// their app checks in; three minutes without a heartbeat reads as away, thirty
+/// as offline. Agents have none.
+pub(crate) const PRESENCE_SQL: &str = "CASE WHEN u.is_agent THEN NULL
+    WHEN u.presence = 'invisible' OR u.last_seen IS NULL OR u.last_seen < now() - interval '30 minutes' THEN 'offline'
+    WHEN u.presence IN ('busy', 'away') THEN u.presence
+    WHEN u.last_seen > now() - interval '3 minutes' THEN 'online'
+    ELSE 'away' END";
+
+/// A sidekick account is drawn with the design its person chose.
+pub(crate) const SIDEKICK_NAME_SQL: &str =
+    "coalesce(u.sidekick_name, (SELECT o.sidekick_name FROM users o WHERE o.id = u.agent_of))";
+pub(crate) const SIDEKICK_LOOK_SQL: &str =
+    "coalesce(u.sidekick_look, (SELECT o.sidekick_look FROM users o WHERE o.id = u.agent_of))";
+
+pub(crate) fn entry_columns() -> String {
+    format!(
+        "u.id, u.display_name, u.email, u.is_guest,
+         coalesce(array_agg(d.id ORDER BY d.created_at) FILTER (WHERE d.id IS NOT NULL), '{{}}'),
+         u.username, u.tag, u.color, u.avatar, u.is_agent, {SIDEKICK_NAME_SQL}, {SIDEKICK_LOOK_SQL}, {PRESENCE_SQL}"
+    )
+}
 
 pub(crate) fn entry(r: EntryRow) -> DirectoryEntry {
     DirectoryEntry {
@@ -426,14 +466,16 @@ pub(crate) fn entry(r: EntryRow) -> DirectoryEntry {
         avatar: r.8,
         is_agent: r.9,
         sidekick: sidekick_of(r.10, r.11),
+        presence: r.12.as_deref().and_then(anarchy_proto::Presence::parse),
     }
 }
 
 async fn entry_for(db: &sqlx::PgPool, user: Uuid, show_email: bool) -> ApiResult<DirectoryEntry> {
     let row: EntryRow = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {ENTRY_COLUMNS} FROM users u
+        "SELECT {} FROM users u
          LEFT JOIN devices d ON d.user_id = u.id AND d.revoked_at IS NULL
-         WHERE u.id = $1 GROUP BY u.id"
+         WHERE u.id = $1 GROUP BY u.id",
+        entry_columns()
     )))
     .bind(user)
     .fetch_one(db)
@@ -867,12 +909,13 @@ pub async fn directory(
         require_space_member(&s.db, space, user.user_id).await?;
     }
     let rows: Vec<EntryRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {ENTRY_COLUMNS} FROM users u
+        "SELECT {} FROM users u
          LEFT JOIN devices d ON d.user_id = u.id AND d.revoked_at IS NULL
          WHERE (u.expires_at IS NULL OR u.expires_at > now())
            AND u.id IN (SELECT y.user_id FROM space_members x JOIN space_members y ON x.space_id = y.space_id
                         WHERE x.user_id = $1 AND ($2::uuid IS NULL OR x.space_id = $2))
-         GROUP BY u.id ORDER BY lower(coalesce(u.display_name, u.username, u.id::text))"
+         GROUP BY u.id ORDER BY lower(coalesce(u.display_name, u.username, u.id::text))",
+        entry_columns()
     )))
     .bind(user.user_id)
     .bind(q.space)
@@ -913,6 +956,16 @@ fn valid_look(look: &str) -> bool {
     }
     look.split_once('-')
         .is_some_and(|(shape, colour)| word(shape) && word(colour))
+}
+
+/// `POST /v1/me/heartbeat`: the app is open and someone is using it (D35).
+/// Apps call it about once a minute and stop while the person is idle.
+pub async fn heartbeat(State(s): State<AppState>, user: AuthUser) -> ApiResult<axum::http::StatusCode> {
+    sqlx::query("UPDATE users SET last_seen = now() WHERE id = $1")
+        .bind(user.user_id)
+        .execute(&s.db)
+        .await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]

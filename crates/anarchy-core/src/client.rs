@@ -293,6 +293,12 @@ impl Client {
         self.put("/v1/me", update).await
     }
 
+    /// Tells the server the app is open and in use, for presence (D35).
+    pub async fn heartbeat(&self) -> Result<(), Error> {
+        self.post("/v1/me/heartbeat", &serde_json::json!({})).await?;
+        Ok(())
+    }
+
     /// Your server-side sidekick, if you've turned it on (D32).
     pub async fn sidekick_account(&self) -> Result<Option<anarchy_proto::SidekickAccount>, Error> {
         self.get("/v1/me/sidekick", &[]).await

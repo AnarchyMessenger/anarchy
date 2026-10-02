@@ -329,3 +329,65 @@ async fn company_servers_put_everyone_in_the_organisations_space() {
     assert_eq!(spaces[0].name, "Northwind");
     assert_eq!(spaces[0].kind, SpaceKind::Company);
 }
+
+#[tokio::test]
+async fn presence_follows_the_choice_and_the_heartbeat() {
+    use anarchy_proto::{Presence, PresenceChoice};
+    let server = open_server().await;
+    let mut maya = email_user(&server, "maya@example.com").await;
+    let bob = email_user(&server, "bob@example.com").await;
+    let space = maya.create_space("Studio", SpaceKind::Freelance).await.unwrap();
+    let code = maya
+        .create_space_invite(space.id, Duration::from_secs(3600), 5)
+        .await
+        .unwrap();
+    bob.join_space(&code.code).await.unwrap();
+    let seen = |who: &Client| {
+        let who = who.user_id();
+        let bob = &bob;
+        async move {
+            bob.directory_in(space.id)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|e| e.user_id == who)
+                .unwrap()
+                .presence
+        }
+    };
+    assert_eq!(seen(&maya).await, Some(Presence::Offline), "never checked in");
+    maya.heartbeat().await.unwrap();
+    assert_eq!(seen(&maya).await, Some(Presence::Online));
+    for (choice, shown) in [
+        (PresenceChoice::Busy, Presence::Busy),
+        (PresenceChoice::Away, Presence::Away),
+        (PresenceChoice::Invisible, Presence::Offline),
+        (PresenceChoice::Auto, Presence::Online),
+    ] {
+        let me = maya
+            .update_me(&ProfileUpdate {
+                presence: Some(choice),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(me.presence, choice);
+        assert_eq!(seen(&maya).await, Some(shown), "{choice:?}");
+    }
+    // Quiet for a while: away, then offline, whatever was chosen.
+    let quiet = |mins: i32| {
+        sqlx::query("UPDATE users SET last_seen = now() - make_interval(mins => $2) WHERE id = $1")
+            .bind(maya.user_id())
+            .bind(mins)
+            .execute(&server.db)
+    };
+    quiet(10).await.unwrap();
+    assert_eq!(seen(&maya).await, Some(Presence::Away));
+    quiet(45).await.unwrap();
+    assert_eq!(seen(&maya).await, Some(Presence::Offline));
+    let channel = maya.create_channel_in(Some(space.id)).await.unwrap();
+    maya.heartbeat().await.unwrap();
+    let me = maya.members(channel).await.unwrap().remove(0);
+    assert_eq!(me.presence, Some(Presence::Online));
+    assert!(me.color.is_some());
+}

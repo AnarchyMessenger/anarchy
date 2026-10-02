@@ -31,12 +31,14 @@ const mock = (startLocked) => {
   const people = {
     u1: { user_id: "u1", display_name: "Maya Chen", username: "maya", tag: 427, color: "ocean", avatar: "🌊" },
     pip: { user_id: "pip", display_name: "Pip", username: "pip.sidekick", tag: 4410, color: "summer", avatar: null, agent: true },
-    u2: { user_id: "u2", display_name: "Tomás Ruiz", username: "tomas", tag: 1881, color: "autumn", avatar: null },
+    u2: { user_id: "u2", display_name: "Tomás Ruiz", username: "tomas", tag: 1881, color: "autumn", avatar: null, sidekick: { name: "Juno", look: "s2.drop.grumpy.f15a4a.100.100.0.a" } },
     u3: { user_id: "u3", display_name: "Ines Bauer", username: "ines.b", tag: 42, color: "forest", avatar: null },
     u4: { user_id: "u4", display_name: "Léa Martin", username: "lea", tag: 9031, color: "dusk", avatar: "🪐" },
   };
   const handle = (p) => `${p.username}#${String(p.tag).padStart(4, "0")}`;
-  const peer = (u) => ({ user_id: u, name: people[u].display_name, handle: handle(people[u]), color: people[u].color, avatar: people[u].avatar, is_guest: false, is_agent: !!people[u].agent });
+  const peer = (u) => ({ user_id: u, name: people[u].display_name, handle: handle(people[u]), color: people[u].color, avatar: people[u].avatar, is_guest: false, is_agent: !!people[u].agent, presence: people[u].agent ? null : (PRES[u] || "offline") });
+  const PRES = { u2: "online", u3: "busy", u4: "away" };
+  const lookOf = (name) => { const p = Object.values(people).find((x) => x.display_name === name); return p ? { color: p.color, avatar: p.avatar, sidekick: p.sidekick || null } : null; };
   let spaces = [
     { id: "sp1", name: "Studio Chen", kind: "freelance", role: "owner", members: 4, is_default: false },
     { id: "sp2", name: "Climbing club", kind: "community", role: "member", members: 38, is_default: false },
@@ -60,6 +62,7 @@ const mock = (startLocked) => {
       { sender: "Tomás Ruiz", ts: now - 30 * min, text: "Agreed. I'll mock the deck cover with it." },
     ] },
     { id: "c2", kind: "channel", space: "sp1", name: "invoices", topic: "What's out, what's paid", trust: "company", unread: true, messages: [
+      { sender: "Juno", agent: { owner: "Tomás Ruiz", mine: false, look: "s2.drop.grumpy.f15a4a.100.100.0.a" }, ts: now - 50 * min, text: "Tomás asked me to watch this channel: Acme's deposit landed this morning." },
       { sender: "Ines Bauer", ts: now - 10 * min, text: "Acme paid the deposit." },
     ] },
     { id: "c3", kind: "channel", space: "sp2", name: "general", topic: "", trust: "company", unread: false, messages: [] },
@@ -84,7 +87,14 @@ const mock = (startLocked) => {
     ev("e6", -2, "Dentist", "08:30", "09:00", "ink"), ev("e7", 6, "Ava's birthday", "", "", "plum"), ev("e8", 9, "Quarterly review", "11:30", "12:30", "ember"), ev("e9", -6, "Portfolio shoot", "13:00", "17:00", "ocean"),
   ];
   const page = (id, title, icon, blocks, ago) => ({ id, kind: "page", data: { title, icon, blocks, updated: now - ago * 60_000 }, seq: 1, updated_ms: now });
-  const card = (id, title, column, order, extra = {}) => ({ id, kind: "card", data: { title, column, order, color: "ink", ...extra }, seq: 1, updated_ms: now });
+  // A deterministic history per card: added some days ago, then moved along.
+  const histFor = (id, column) => {
+    const seed = [...id].reduce((h, c) => h * 31 + c.charCodeAt(0), 7);
+    const added = now - (6 + (seed % 24)) * 864e5;
+    const path = column === "todo" ? ["todo"] : column === "doing" ? ["todo", "doing"] : ["todo", "doing", "done"];
+    return { added, hist: path.map((c, k) => [c, added + k * (2 + (seed % 5)) * 864e5]) };
+  };
+  const card = (id, title, column, order, extra = {}) => ({ id, kind: "card", data: { title, column, order, color: "ink", ...histFor(id, column), ...extra }, seq: 1, updated_ms: now });
   const launchCards = [
     card("t1", "Final logo files to Acme", "todo", 1, { due: dayIso(2), who: "Ines Bauer", color: "ember" }),
     card("t2", "Write launch post", "todo", 2, { who: "Maya Chen" }),
@@ -92,6 +102,8 @@ const mock = (startLocked) => {
     card("t4", "Brand guidelines PDF", "doing", 2, { due: dayIso(5), who: "Ines Bauer" }),
     card("t5", "Kickoff with Acme", "done", 1, { who: "Maya Chen", color: "spring" }),
     card("t6", "Moodboard, three directions", "done", 2, { who: "Ines Bauer" }),
+    ...["Type pairing", "Signage mockups", "Business cards", "Letterhead", "Social templates", "Icon set", "Photo shoot brief", "Colour audit", "Packaging dieline", "Web hero"].map((t, k) =>
+      card(`tx${k}`, t, k % 3 === 0 ? "todo" : k % 3 === 1 ? "doing" : "done", 10 + k)),
   ];
   const myCards = [card("m1", "Renew passport", "todo", 1, { due: dayIso(9), color: "plum" }), card("m2", "Send the Q3 VAT return", "doing", 1, { due: dayIso(3), color: "ember" }), card("m3", "Book the dentist", "done", 1)];
   const myFiles = [];
@@ -257,13 +269,14 @@ const mock = (startLocked) => {
       await wait(150); skOn.add(channel);
       channels.find((x) => x.id === channel).messages.push({ sender: "ME", ts: Date.now(), text: `${profile.sidekick?.name || "My sidekick"}, my sidekick, can read this channel from now on, including what you say here. It runs on the server, so the server's operator could read it too. It only sees messages from now on.` });
     },
+    heartbeat: async () => {},
     sidekick_leave: async ({ channel }) => { skOn.delete(channel); },
     sidekick_chat: async () => { skChat = true; return "dpip"; },
     open_channel: async ({ channel }) => {
       open = channel;
       const c = channels.find((x) => x.id === channel);
       c.unread = false;
-      return c.messages.map((m, i) => ({ seq: i + 1, sender: m.sender === "ME" ? me() : m.sender, mine: m.sender === "ME", ts_ms: m.ts, text: m.text, thread: m.thread ?? null, agent: m.agent ?? null }));
+      return c.messages.map((m, i) => ({ seq: i + 1, sender: m.sender === "ME" ? me() : m.sender, mine: m.sender === "ME", ts_ms: m.ts, text: m.text, thread: m.thread ?? null, agent: m.agent ?? null, look: m.sender === "ME" ? null : lookOf(m.sender) }));
     },
     blur: async () => { open = null; },
     send_message: async ({ channel, text, thread }) => { await wait(120); channels.find((x) => x.id === channel).messages.push({ sender: "ME", ts: Date.now(), text, thread: thread ?? null }); },
@@ -428,7 +441,7 @@ await shot("08b-agenda-month");
 await page.click('.agenda-mode button[data-mode="week"]');
 await shot("08c-agenda-week");
 await page.click('.agenda-mode button[data-mode="month"]');
-await page.click(".cal-cell.today", { position: { x: 60, y: 100 } });
+{ const box = await page.locator(".cal-cell.today").boundingBox(); await page.mouse.click(box.x + box.width - 8, box.y + box.height - 6); }
 await visible("#quick-event");
 await page.fill("#qe-title", "Call with Northwind");
 await shot("08d-quick-add");
@@ -465,7 +478,7 @@ await shot("08g-notes-typed");
 await folder("Files");
 await visible("#view-drive");
 await shot("08i-my-files");
-await folder("Tasks");
+await folder("My tasks");
 await visible("#view-board");
 await page.waitForTimeout(200);
 await shot("08j-my-tasks");
@@ -475,7 +488,7 @@ await page.click("#ask-brief");
 await page.waitForTimeout(300);
 await shot("08h-todays-brief-docked");
 await page.click("#ask-close");
-await folder("Overview");
+await folder("Home");
 await page.fill("#start-dm", "tomas#1881");
 await page.press("#start-dm", "Enter");
 await visible("#view-convo");
@@ -537,6 +550,15 @@ await shot("12h-drive-move");
 await page.click("#move-save");
 await page.waitForTimeout(200);
 await shot("12i-drive-moved");
+await page.hover('#drive-rows tr:has-text("rate card")');
+await page.click('#drive-rows tr:has-text("rate card") .star');
+await page.click('#drive-rows tr:has-text("Kickoff notes.md") button[title="Move to Trash"]');
+await page.waitForTimeout(200);
+await shot("12j-drive-browser");
+await page.click('#drive-pills .pill-tab:has-text("Trash")');
+await shot("12k-drive-trash");
+await page.click('#drive-rows tr:has-text("Kickoff notes.md") button:has-text("Restore")');
+await page.click('#drive-pills .pill-tab:has-text("All")');
 await pick("#channel-list", "acme-rebrand");
 await visible("#view-convo");
 await page.fill("#message", "Deck cover looks great, shipping it to Acme today.");
@@ -650,6 +672,14 @@ await page.click('#desks-grid .ov-desk:has-text("Collections") .fold-move');
 await page.click('#fold-menu .fold-menu-item >> text="Money"');
 await page.waitForTimeout(400);
 await shot("13q-desk-folders");
+await page.click('.section >> text=/^Inbox$/');
+await visible("#view-inbox");
+await shot("13r-inbox");
+await page.click("#rail-me");
+await shot("13s-presence");
+await page.click('#me-presence [data-p="busy"]');
+await page.keyboard.press("Escape");
+await page.click("body", { position: { x: 700, y: 400 } });
 await pick("#channel-list", "acme-rebrand");
 await page.click(".thread-sum");
 await visible("#thread");

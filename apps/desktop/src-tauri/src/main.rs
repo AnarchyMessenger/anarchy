@@ -79,6 +79,7 @@ op!(sidekick_state(channel: ChannelId) -> ops::SidekickState);
 op!(sidekick_join(channel: ChannelId) -> ());
 op!(sidekick_leave(channel: ChannelId) -> ());
 op!(sidekick_chat() -> ChannelId);
+op!(heartbeat() -> ());
 op!(search(query: String) -> Vec<ops::SearchHit>);
 op!(space_members(space: SpaceId) -> Vec<ops::PeerView>);
 op!(ensure_drive(space: SpaceId) -> ChannelId);
@@ -416,6 +417,7 @@ fn main() {
             sidekick_join,
             sidekick_leave,
             sidekick_chat,
+            heartbeat,
             search,
             space_members,
             ensure_drive,

@@ -60,13 +60,16 @@ function colorFor(key) {
   for (const c of String(key)) h = (h * 31 + c.codePointAt(0)) >>> 0;
   return COLORS[h % COLORS.length];
 }
-function avatarEl(name, { color, avatar, size, sidekick } = {}) {
+function avatarEl(name, { color, avatar, size, sidekick, presence } = {}) {
   const a = el("span", { class: `avatar${size ? ` ${size}` : ""}${avatar ? " emoji" : ""}`, "data-color": color || colorFor(name) });
   a.textContent = avatar || initials(name);
   // The person's sidekick rides on their picture, never replaces it.
   if (sidekick && size !== "xs") a.append(sidekickEl(sidekick, "badge"));
+  // Presence sits top-right, clear of the sidekick (D35).
+  if (presence && size !== "xs") a.append(el("span", { class: `presence-dot p-${presence}`, title: PRESENCE_LABEL[presence], "aria-label": PRESENCE_LABEL[presence] }));
   return a;
 }
+const PRESENCE_LABEL = { online: "Online", busy: "Busy, notifications held", away: "Away", offline: "Offline" };
 
 // ---------- sidekicks ----------
 // Each person's own agent (D30, D31). Its look is a shape on a colour; it's
@@ -501,6 +504,7 @@ async function showApp() {
   show("starting", false); show("lock", false); show("auth", false); show("app");
   show("omnibox");
   paintMe();
+  beat();
   try { spaces = await invoke("spaces"); } catch { spaces = []; }
   loadOrg();
   if (status.session?.server) invoke("workspace_info", { server: status.session.server }).then((w) => { skHosted = !!w.config?.sidekicks_hosted; paintAskHead(); }).catch(() => {});
@@ -519,11 +523,32 @@ async function showApp() {
   invoke("mount_info").then((m) => { mount = m; }).catch(() => {});
 }
 
+// ---------- presence (D35) ----------
+// You choose Online (automatic), Busy, Away or Invisible. While automatic, the
+// app checks in once a minute when you've used it in the last five minutes, so
+// leaving the computer turns you away on its own. Busy holds notifications.
+let lastInput = Date.now();
+for (const ev of ["pointerdown", "keydown", "pointermove", "wheel"]) addEventListener(ev, () => { const was = idle(); lastInput = Date.now(); if (was) { beat(); paintMe(); } }, { passive: true });
+function idle() { return Date.now() - lastInput > 5 * 60e3 || document.hidden; }
+function myPresence() {
+  const c = profile?.presence || "auto";
+  return c === "busy" ? "busy" : c === "away" ? "away" : c === "invisible" ? "offline" : idle() ? "away" : "online";
+}
+async function beat() { if (!idle() && status?.session) { try { await invoke("heartbeat"); } catch { /* offline: fine */ } } }
+setInterval(() => { beat(); if (profile) paintMe(); }, 60e3);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) beat(); });
+async function setPresence(choice) {
+  try { profile = await invoke("update_profile", { update: { presence: choice } }); paintMe(); }
+  catch (err) { alert(String(err)); }
+}
+for (const b of document.querySelectorAll("#me-presence [data-p]")) b.addEventListener("click", () => setPresence(b.dataset.p));
+
 function paintMe() {
   const p = profile || { display_name: status.session?.display_name || "You" };
   const name = p.display_name || "You";
   paintAskHead();
-  $("rail-me").replaceChildren(avatarEl(name, { color: p.color, avatar: p.avatar, sidekick: p.sidekick }));
+  $("rail-me").replaceChildren(avatarEl(name, { color: p.color, avatar: p.avatar, sidekick: p.sidekick, presence: myPresence() }));
+  for (const b of document.querySelectorAll("#me-presence [data-p]")) b.setAttribute("aria-checked", String(b.dataset.p === (p.presence || "auto")));
   $("share-handle").textContent = handleOf(p) ? `@${handleOf(p)}` : "";
   $("me-name").textContent = name;
   $("me-avatar").replaceChildren(avatarEl(name, { color: p.color, avatar: p.avatar, sidekick: p.sidekick }));
@@ -567,6 +592,7 @@ function belongsHere(c) {
 function hideMain() {
   for (const v of ["view-start", "view-convo", "view-space-empty", "view-desk", "view-drive", "view-settings", "view-agenda", "view-notes", "view-board", "view-spaceset"]) show(v, false);
   show("view-desks", false);
+  show("view-inbox", false);
 }
 function showStart() {
   hideMain();
@@ -708,9 +734,9 @@ function renderMessages(messages, c) {
     }
     if (day !== lastDay) { rows.push(el("div", { class: "day", text: day })); lastDay = day; lastSender = ""; }
     const cont = m.sender === lastSender && m.ts_ms - lastTs < 5 * 60 * 1000 && !threads.has(lastSeqOf(rows));
-    const look = m.mine ? { color: profile?.color, avatar: profile?.avatar, sidekick: profile?.sidekick } : c.kind === "dm" ? { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick } : {};
+    const look = m.mine ? { color: profile?.color, avatar: profile?.avatar, sidekick: profile?.sidekick } : c.kind === "dm" ? { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick } : (m.look || {});
     // A sidekick writes with its own face and says whose it is (D31).
-    const face = m.agent ? sidekickEl(m.agent.mine && profile?.sidekick ? profile.sidekick : { name: m.sender, look: `orb-${colorFor(m.agent.owner)}` }, "msg-face") : avatarEl(m.sender, look);
+    const face = m.agent ? sidekickEl(m.agent.mine && profile?.sidekick ? profile.sidekick : { name: m.sender, look: m.agent.look || `orb-${colorFor(m.agent.owner)}` }, "msg-face") : avatarEl(m.sender, look);
     const row = el("div", { class: `msg${cont ? " cont" : ""}${m.agent ? " by-agent" : ""}`, "data-seq": String(m.seq) },
       face,
       el("div", {},
@@ -944,6 +970,7 @@ function sectionNow() {
   const cur = channels.find((c) => c.id === current);
   if (!cur && chatsHint && (view === "home" || view === "space")) return "chats";
   if (!$("view-desks").hidden) return "desks";
+  if (!$("view-inbox").hidden) return "inbox";
   if (!$("view-spaceset").hidden) return "spaceset";
   if (!$("view-agenda").hidden) return "agenda";
   if (!$("view-notes").hidden) return note?.file ? "files" : notesState.shared ? "desks" : "notes";
@@ -962,8 +989,8 @@ function renderFolders() {
     const now = sectionNow();
     const unread = channels.some((c) => c.unread && c.id !== current && belongsHere(c));
     folders = view === "home"
-      ? [{ key: "overview", label: "Overview", icon: "home" }, { key: "chats", label: "Chats", icon: "chat", dot: unread }, { key: "agenda", label: "Agenda", icon: "calendar" }, { key: "notes", label: "Notes", icon: "note" }, { key: "files", label: "Files", icon: "folder" }, { key: "tasks", label: "Tasks", icon: "board" }]
-      : [{ key: "overview", label: "Overview", icon: "home" }, { key: "chats", label: "Channels", icon: "chat", dot: unread }, { key: "files", label: "Files", icon: "folder" }, { key: "desks", label: "Desks", icon: "receipt", n: [...deskNeeds.entries()].filter(([id]) => channels.find((c) => c.id === id)?.space === currentSpace?.id).reduce((a, [, n]) => a + n, 0) }];
+      ? [{ key: "overview", label: "Home", icon: "home" }, inboxFolder(), { key: "tasks", label: "My tasks", icon: "board" }, { key: "chats", label: "Chats", icon: "chat", dot: unread }, { key: "agenda", label: "Agenda", icon: "calendar" }, { key: "notes", label: "Notes", icon: "note" }, { key: "files", label: "Files", icon: "folder" }]
+      : [{ key: "overview", label: "Overview", icon: "home" }, inboxFolder(), { key: "tasks", label: "My tasks", icon: "board" }, { key: "chats", label: "Channels", icon: "chat", dot: unread }, { key: "files", label: "Files", icon: "folder" }, { key: "desks", label: "Desks", icon: "receipt", n: [...deskNeeds.entries()].filter(([id]) => channels.find((c) => c.id === id)?.space === currentSpace?.id).reduce((a, [, n]) => a + n, 0) }];
     folders = folders.map((f) => ({ ...f, active: f.key === now, go: () => openSection(f.key) }));
   }
   const item = (f) => el("button", { class: `section${f.active ? " active" : ""}`, type: "button", role: "tab", "aria-selected": String(!!f.active), title: f.label, onclick: f.go },
@@ -991,6 +1018,7 @@ async function openSection(key) {
   if (key === "notes") return openNotes();
   if (key === "files") return view === "home" ? openPersonal("files") : openDriveOf(currentSpace);
   if (key === "tasks") return openPersonal("tasks");
+  if (key === "inbox") return openInbox();
   if (key === "desks") {
     const already = sectionNow() === "desks";
     const last = lastOpen((c) => here(c) && c.desk && c.desk !== "files");
@@ -1133,7 +1161,7 @@ function openFoldMenu(anchor, kind, id) {
   menu.style.top = `${Math.round(Math.min(r.bottom + 4, innerHeight - 260))}px`;
   show(menu, true);
 }
-document.addEventListener("click", (e) => { const m = $("fold-menu"); if (!m.hidden && !m.contains(e.target) && !e.target.closest(".fold-move")) show(m, false); });
+document.addEventListener("click", (e) => { const m = $("fold-menu"); if (!m.hidden && !m.contains(e.target) && !e.target.closest(".fold-move, #drive-sort")) show(m, false); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") show("fold-menu", false); });
 
 // ---------- drawers: chats and people pop over from the left ----------
@@ -1212,7 +1240,7 @@ async function renderPeopleDrawer() {
   const mine = handleOf(profile);
   list.replaceChildren(...members.map((m) => {
     const me = m.handle && m.handle === mine;
-    return el("div", { class: "person-row" }, avatarEl(m.name, { color: m.color, avatar: m.avatar, sidekick: m.sidekick }),
+    return el("div", { class: "person-row" }, (m.is_agent ? sidekickEl(m.sidekick, "msg-face") : avatarEl(m.name, { color: m.color, avatar: m.avatar, sidekick: m.sidekick, presence: m.presence })),
       el("span", { class: "lines" }, el("strong", {}, m.name, me ? el("span", { class: "fine", text: " · you" }) : null, m.is_agent ? el("span", { class: "flag-pill warn", text: "AI" }) : null), el("small", { text: m.handle ? `@${m.handle}` : m.is_guest ? "Guest" : "" })),
       !me && m.handle ? el("button", { class: "btn-outline sm", type: "button", text: "Message", onclick: async (e) => { closeDrawers(); await startDm(m.handle, "people-dm-error", e.currentTarget); } }) : null);
   }));
@@ -1424,7 +1452,7 @@ const STOP = new Set("the a an and or of to in on for with is are was were be wh
 // The only sidekick anyone can talk to one to one is their own.
 function peerFace(c, size) {
   if (c.peer?.is_agent) return sidekickEl(profile?.sidekick || { name: c.name, look: "orb-ocean" }, size === "sm" ? "tool" : "msg-face");
-  return avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick, size });
+  return avatarEl(c.name, { color: c.peer?.color, avatar: c.peer?.avatar, sidekick: c.peer?.sidekick, presence: c.peer?.presence, size });
 }
 let skHosted = null;
 async function paintSidekickToggle(c) {
@@ -2143,7 +2171,7 @@ async function putCards(recs) {
 }
 async function addCard(colId, title) {
   const last = boardCards().filter((c) => c.column === colId).reduce((m, c) => Math.max(m, c.order ?? 0), 0);
-  await putCards([{ id: crypto.randomUUID(), kind: "card", data: { title, column: colId, order: last + 1, color: "ink", added: Date.now() } }]);
+  await putCards([{ id: crypto.randomUUID(), kind: "card", data: { title, column: colId, order: last + 1, color: "ink", added: Date.now(), hist: [[colId, Date.now()]] } }]);
 }
 // Drops a card in a column, between the cards above and below the pointer.
 async function moveCard(id, colId, y, list) {
@@ -2158,7 +2186,9 @@ async function moveCard(id, colId, y, list) {
   else { const idx = others.indexOf(below); order = idx === 0 ? orderOf(below) - 1 : (orderOf(others[idx - 1]) + orderOf(below)) / 2; }
   const { id: _, ...data } = card;
   const moved = data.column !== colId;
-  await putCards([{ id, kind: "card", data: { ...data, column: colId, order } }]);
+  // Each column change is kept (D35), so the pipeline on Home has real history.
+  const hist = moved ? [...(data.hist || []), [colId, Date.now()]].slice(-40) : data.hist;
+  await putCards([{ id, kind: "card", data: { ...data, column: colId, order, ...(hist ? { hist } : {}) } }]);
   if (moved && !board.personal) {
     const col = boardColumns(board.items).find((c) => c.id === colId);
     try { await invoke("send_message", { channel: board.channel, text: `Moved \u201c${card.title}\u201d to ${col?.name || colId}.` }); } catch { /* the move is saved either way */ }
@@ -2203,6 +2233,7 @@ $("card-form").addEventListener("submit", async (e) => {
   const colId = $("cd-col").value;
   const base = editingCard ? (({ id, ...d }) => d)(editingCard) : { added: Date.now(), order: boardCards().filter((c) => c.column === colId).reduce((m, c) => Math.max(m, c.order ?? 0), 0) + 1 };
   const data = { ...base, title, column: colId, due: $("cd-due").value || null, who: $("cd-who").value.trim() || null, notes: $("cd-notes").value.trim(), color: cardColor };
+  if (base.column !== colId) data.hist = [...(base.hist || []), [colId, Date.now()]].slice(-40);
   try { await putCards([{ id: editingCard?.id || crypto.randomUUID(), kind: "card", data }]); $("dlg-card").close(); } catch (err) { setError("card-error", String(err)); }
 });
 $("card-delete").addEventListener("click", async () => {
@@ -2295,40 +2326,148 @@ function renderDay(iso, grid) {
 }
 
 // Home: what's on today, next to your spaces.
+// ---------- Home (D35, after Ottas) ----------
+// A greeting with what's going on, the task pipeline across every board you
+// can read, and a Today list. Everything is worked out on this device.
+const PIPE_STAGES = [["todo", "To do"], ["doing", "In progress"], ["done", "Done"]];
+let pipeCards = [], todayTab = "all";
+// Which stage a column is: the first is to do, the last (or one marked done)
+// is done, anything between is in progress.
+function stageOf(cols, colId) {
+  const k = cols.findIndex((c) => c.id === colId);
+  if (k < 0) return "todo";
+  if (cols[k].done) return "done";
+  return k === 0 ? "todo" : "doing";
+}
+async function loadPipeline() {
+  const out = [];
+  for (const d of channels.filter((c) => c.desk === "tasks")) {
+    const items = await invoke("desk_items", { channel: d.id }).catch(() => []);
+    const cols = boardColumns(items);
+    for (const i of items) {
+      if (i.kind !== "card" || i.data.deleted) continue;
+      // Cards from before history was kept count in their current column since they were added.
+      const hist = (i.data.hist?.length ? i.data.hist : [[i.data.column, i.data.added || i.updated_ms]]).map(([c, t]) => [stageOf(cols, c), t]);
+      out.push({ id: i.id, stage: stageOf(cols, i.data.column), hist, added: i.data.added || hist[0][1], due: i.data.due, title: i.data.title, desk: d });
+    }
+  }
+  pipeCards = out;
+}
+// Count per stage at the end of each of the last `days` days.
+function pipeSeries(days = 30) {
+  const end = new Date(); end.setHours(23, 59, 59, 999);
+  const series = Object.fromEntries(PIPE_STAGES.map(([k]) => [k, []]));
+  for (let d = days - 1; d >= 0; d--) {
+    const t = end.getTime() - d * 864e5;
+    const n = { todo: 0, doing: 0, done: 0 };
+    for (const c of pipeCards) {
+      if (c.added > t) continue;
+      let st = null;
+      for (const [stage, at] of c.hist) if (at <= t) st = stage;
+      n[st || c.hist[0][0]]++;
+    }
+    for (const [k] of PIPE_STAGES) series[k].push({ t, v: n[k] });
+  }
+  return series;
+}
+function renderPipeline() {
+  const series = pipeSeries();
+  const W = 260, H = 96, P = 4;
+  const fmt = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
+  const panels = PIPE_STAGES.map(([k, label], s) => {
+    const pts = series[k];
+    const now = pts.at(-1).v, weekAgo = pts.at(-8)?.v ?? pts[0].v;
+    const diff = now - weekAgo;
+    const max = Math.max(4, ...Object.values(series).flat().map((p) => p.v));
+    const x = (i) => P + (i / (pts.length - 1)) * (W - 2 * P);
+    const y = (v) => H - P - (v / max) * (H - 2 * P - 6);
+    const line = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(p.v).toFixed(1)}`).join("");
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("class", "pipe-chart"); svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML = `<line class="pipe-base" x1="${P}" x2="${W - P}" y1="${H - P}" y2="${H - P}"/><path class="pipe-area" d="${line}L${x(pts.length - 1)} ${H - P}L${x(0)} ${H - P}Z"/><path class="pipe-line" d="${line}"/><circle class="pipe-end" r="4" cx="${x(pts.length - 1)}" cy="${y(now)}"/><line class="pipe-cross" y1="${P}" y2="${H - P}" x1="-10" x2="-10"/><circle class="pipe-dot" r="4" cx="-10" cy="-10"/>`;
+    const tip = el("div", { class: "pipe-tip", hidden: "" });
+    const panel = el("div", { class: "pipe-panel", style: `--series:var(--series-${s + 1})` },
+      el("p", { class: "pipe-label" }, el("span", { class: "pipe-key" }), label),
+      el("strong", { class: "pipe-n", text: String(now) }),
+      el("p", { class: "pipe-diff" }, el("span", { class: `chip ${diff > 0 ? "up" : diff < 0 ? "down" : ""}`, text: diff === 0 ? "No change" : `${diff > 0 ? "+" : "\u2212"}${Math.abs(diff)}` }), " vs a week ago"),
+      el("div", { class: "pipe-plot" }, svg, tip));
+    // Crosshair and readout: nearest day to the pointer.
+    const plot = panel.querySelector(".pipe-plot");
+    plot.addEventListener("pointermove", (e) => {
+      const r = svg.getBoundingClientRect();
+      const i = Math.max(0, Math.min(pts.length - 1, Math.round(((e.clientX - r.left) / r.width * W - P) / (W - 2 * P) * (pts.length - 1))));
+      svg.querySelector(".pipe-cross").setAttribute("x1", x(i)); svg.querySelector(".pipe-cross").setAttribute("x2", x(i));
+      const dot = svg.querySelector(".pipe-dot"); dot.setAttribute("cx", x(i)); dot.setAttribute("cy", y(pts[i].v));
+      tip.textContent = `${fmt.format(pts[i].t)} · ${pts[i].v} ${pts[i].v === 1 ? "card" : "cards"}`;
+      tip.style.left = `${(x(i) / W) * 100}%`;
+      show(tip, true);
+    });
+    plot.addEventListener("pointerleave", () => { show(tip, false); svg.querySelector(".pipe-cross").setAttribute("x1", -10); svg.querySelector(".pipe-cross").setAttribute("x2", -10); svg.querySelector(".pipe-dot").setAttribute("cx", -10); });
+    return panel;
+  });
+  $("pipe-grid").replaceChildren(...panels);
+  // The same numbers as a table, for screen readers.
+  $("pipe-table").replaceChildren(el("caption", { text: "Cards per stage, last 30 days" }),
+    el("tr", {}, el("th", { text: "Day" }), ...PIPE_STAGES.map(([, l]) => el("th", { text: l }))),
+    ...series.todo.map((p, i) => el("tr", {}, el("td", { text: fmt.format(p.t) }), ...PIPE_STAGES.map(([k]) => el("td", { text: String(series[k][i].v) })))));
+  show($("pipe-grid").closest(".pipe"), pipeCards.length > 0);
+}
+function todayItems() {
+  const today = isoToday();
+  const out = [];
+  for (const c of pipeCards) {
+    if (c.stage === "done" || !c.due || c.due > today) continue;
+    out.push({ kind: "task", late: c.due < today, icon: "board", title: c.title, sub: `${c.desk.kind === "personal" ? "My tasks" : c.desk.name} · ${c.due < today ? `was due ${shortDay(c.due)}` : "due today"}`, at: c.due, go: () => openChannel(c.desk.id) });
+  }
+  for (const e of dayEvents(today).filter((e) => !e.due)) out.push({ kind: "agenda", icon: "calendar", title: e.title, sub: e.all_day ? "All day" : `${e.start}${e.end ? `–${e.end}` : ""}${e.where ? ` · ${e.where}` : ""}`, at: e.start || "", go: () => openAgenda().then(() => openEvent(e)) });
+  for (const c of channels) if (c.unread && c.kind !== "personal") out.push({ kind: "msg", icon: c.kind === "dm" ? "chat" : "thread", title: c.kind === "dm" ? c.name : `#${c.name}`, sub: c.last_text || "New messages", at: "", go: () => goTo(c.id) });
+  return out.sort((a, b) => (b.late ? 1 : 0) - (a.late ? 1 : 0));
+}
+function renderTodayList() {
+  const items = todayItems();
+  const tabs = [["all", "All"], ["task", "Tasks"], ["msg", "Unread"], ["agenda", "Agenda"]];
+  const n = (k) => (k === "all" ? items : items.filter((i) => i.kind === k)).length;
+  $("today-pills").replaceChildren(...tabs.map(([k, label]) => el("button", { class: `pill-tab${todayTab === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(todayTab === k), onclick: () => { todayTab = k; renderTodayList(); } }, label, el("span", { class: "n", text: String(n(k)) }))));
+  const shown = todayTab === "all" ? items : items.filter((i) => i.kind === todayTab);
+  $("today-list").replaceChildren(...(shown.length ? shown.map((i) => el("button", { class: `inbox-row${i.late ? " late" : ""}`, type: "button", onclick: i.go },
+    el("span", { class: "inbox-icon" }, icon(i.icon)), el("span", { class: "lines" }, el("strong", { text: i.title }), el("small", { text: i.sub })),
+    el("span", { class: "inbox-kind", text: i.late ? "Late" : { task: "Due", msg: "Unread", agenda: "Agenda" }[i.kind] }), el("time", { text: i.kind === "agenda" ? (i.at || "") : "" }), el("span")))
+    : [el("div", { class: "inbox-empty" }, icon("check"), el("strong", { text: "Nothing for today" }), el("p", { class: "fine", text: "Tasks due today, unread conversations and today's agenda show up here." }))]));
+}
 async function renderHomeToday() {
-  const box = $("home-today");
-  if (!box) return;
-  let evs = [], recent = [];
   try {
     agenda.channel = await personalDesk("agenda");
     agenda.items = await invoke("desk_items", { channel: agenda.channel });
-    evs = dayEvents(isoToday()).filter((e) => !e.due);
-    notesState.channel = await personalDesk("notes");
-    notesState.items = await invoke("desk_items", { channel: notesState.channel });
-    recent = pages().slice(0, 3);
-  } catch { /* offline: leave it empty */ }
-  $("today-events").replaceChildren(...(evs.length ? evs.map((e) => el("button", { class: "today-row", type: "button", onclick: () => { openAgenda().then(() => openEvent(e)); } },
-    el("span", { class: `ev-dot c-${e.color || "ink"}` }), el("strong", { text: e.title }), el("small", { text: e.all_day ? "All day" : `${e.start}${e.end ? `–${e.end}` : ""}` })))
-    : [el("button", { class: "today-row empty", type: "button", onclick: () => openAgenda(), text: "Nothing on today. Plan something" })]));
-  const chats = channels.filter((c) => c.kind === "dm").sort((a, b) => (b.last_ts || 0) - (a.last_ts || 0)).slice(0, 3);
-  $("today-chats").replaceChildren(...(chats.length ? chats.map((c) => el("button", { class: "today-row", type: "button", onclick: () => openChannel(c.id).then(() => composer.focus()) },
-    peerFace(c, "sm"), el("strong", { text: c.name }), el("small", { text: c.unread ? "New" : c.last_ts ? sinceFmt(c.last_ts) : "" })))
-    : [el("button", { class: "today-row empty", type: "button", onclick: () => $("new-dm").click(), text: "No chats yet. Message someone" })]));
-  $("today-notes").replaceChildren(...(recent.length ? recent.map((p) => el("button", { class: "today-row", type: "button", onclick: () => openNotes(p.id) },
-    el("span", { class: "note-emoji", text: p.icon || "📝" }), el("strong", { text: p.title || "Untitled" }), el("small", { text: sinceFmt(p.updated || 0) })))
-    : [el("button", { class: "today-row empty", type: "button", onclick: () => $("note-new").click(), text: "No pages yet. Start one" })]));
+    await loadPipeline();
+  } catch { /* offline: show what's there */ }
+  renderPipeline();
+  renderTodayList();
+  renderHomeHeadline();
 }
-
-// Home: spaces overview
 
 function renderHomeHeadline() {
   const hour = new Date().getHours();
   const hello = hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const first = (profile?.display_name || "").split(" ")[0];
-  const unread = channels.filter((c) => c.kind === "dm" && c.unread).length;
-  const bits = [unread ? `${unread} unread ${unread === 1 ? "conversation" : "conversations"}` : "nothing unread", spaces.length ? `${spaces.length} ${spaces.length === 1 ? "space" : "spaces"}` : null].filter(Boolean);
-  $("home-headline").replaceChildren(`${hello}${first ? `, ${first}` : ""}.`, el("span", { class: "soft", text: ` ${bits.join(", ")[0].toUpperCase()}${bits.join(", ").slice(1)}.` }));
+  $("home-headline").textContent = `${hello}${first ? `, ${first}` : ""}`;
+  const today = isoToday();
+  const doing = pipeCards.filter((c) => c.stage === "doing").length;
+  const late = pipeCards.filter((c) => c.stage !== "done" && c.due && c.due < today).length;
+  const unread = channels.filter((c) => c.unread && c.kind !== "personal").length;
+  const next = dayEvents(today).filter((e) => !e.due && e.start && e.start >= new Date().toTimeString().slice(0, 5)).sort((a, b) => a.start.localeCompare(b.start))[0];
+  const bits = [
+    doing ? el("span", { text: `${doing} in progress` }) : null,
+    el("span", { text: unread ? `${unread} unread` : "nothing unread" }),
+    late ? el("span", { class: "late", text: `${late} overdue` }) : null,
+    next ? el("span", { text: `${next.title} at ${next.start}` }) : null,
+  ].filter(Boolean);
+  $("home-summary").replaceChildren(...bits.flatMap((b, k) => (k ? [el("span", { class: "dot-sep", text: " · " }), b] : [b])));
 }
+$("home-new-task").addEventListener("click", async () => {
+  await openPersonal("tasks");
+  $("board-new")?.click();
+});
 
 function renderHomeSpaces() {
   renderHomeHeadline();
@@ -2377,56 +2516,103 @@ async function openDrive(c) {
   if (!drive || drive.channel !== c.id) { drive = { channel: c.id, folder: "/", query: "", items: [] }; $("drive-search").value = ""; }
   drive.items = await invoke("desk_items", { channel: c.id });
   renderDrive();
+  loadDriveLooks().then(() => { if (drive?.channel === c.id) renderDrive(); });
 }
+// Files, laid out like a document browser (D35): tabs with counts, a filter, a
+// sort, and a table with who added each file. Favourites are yours (kept with
+// your folders); Trash holds deleted files until someone restores them.
+const DRIVE_TABS = [["all", "All"], ["fav", "Favorites"], ["mine", "Created by me"], ["trash", "Trash"]];
+const DRIVE_SORTS = [["added", "Last added"], ["name", "Name"], ["size", "Size"]];
+function favs() { org.fav ??= {}; return org.fav; }
+function isMine(f) { return f.data.by_user ? f.data.by_user === status.session?.user_id : f.data.by === (profile?.display_name || ""); }
 function renderDrive() {
-  const files = driveFiles();
-  const total = files.reduce((n, f) => n + (f.data.file_key?.size || 0), 0);
+  drive.tab ??= "all"; drive.sort ??= "added";
+  const live = driveFiles();
+  const trash = drive.items.filter((i) => i.kind === "file" && i.data.deleted);
+  const total = live.reduce((n, f) => n + (f.data.file_key?.size || 0), 0);
   const mine = channels.find((c) => c.id === drive.channel)?.kind === "personal";
-  $("drive-kind").textContent = mine ? "Your files" : `${currentSpace?.name || ""} · Files`;
-  $("drive-headline").replaceChildren(`${files.length} ${files.length === 1 ? "file" : "files"}, ${sizeFmt(total)}.`, el("span", { class: "soft", text: mine ? " Only your devices can open them." : " Only people in this space can open them." }));
-  // Breadcrumbs.
+  $("drive-kind").textContent = mine ? "My files" : "Files";
+  $("drive-headline").replaceChildren(`${live.length} ${live.length === 1 ? "file" : "files"}, ${sizeFmt(total)}${mine ? "" : ` in ${currentSpace?.name || "this space"}`}. `, el("span", { class: "soft", text: mine ? "Only your devices can open them." : "Only people in this space can open them." }));
+  const sets = { all: live, fav: live.filter((f) => favs()[f.id]), mine: live.filter(isMine), trash };
+  $("drive-pills").replaceChildren(...DRIVE_TABS.map(([k, label]) => el("button", { class: `pill-tab${drive.tab === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(drive.tab === k), onclick: () => { drive.tab = k; renderDrive(); } }, label, el("span", { class: "n", text: String(sets[k].length) }))));
+  $("drive-sort-label").textContent = DRIVE_SORTS.find(([k]) => k === drive.sort)[1];
+  $("drive-when").textContent = drive.tab === "trash" ? "Deleted" : "Added";
+  // Folders and breadcrumbs belong to "All"; the other tabs list files wherever they are.
+  const browsing = drive.tab === "all" && !drive.query;
   const parts = drive.folder.split("/").filter(Boolean);
-  const crumbs = [dropTarget(el("button", { type: "button", text: "Files", onclick: () => { drive.folder = "/"; renderDrive(); } }), "/")];
+  show("drive-crumbs", browsing);
+  const crumbs = [dropTarget(el("button", { type: "button", text: mine ? "My files" : "Files", onclick: () => { drive.folder = "/"; renderDrive(); } }), "/")];
   parts.forEach((p, k) => { const path = `/${parts.slice(0, k + 1).join("/")}`; crumbs.push(el("span", { class: "sep", text: "/" }), dropTarget(el("button", { type: "button", text: p, onclick: () => { drive.folder = path; renderDrive(); } }), path)); });
   $("drive-crumbs").replaceChildren(...crumbs);
   const q = drive.query.toLowerCase();
-  let folders = [], shown = [];
-  if (q) shown = files.filter((f) => `${f.data.name} ${f.data.folder}`.toLowerCase().includes(q));
-  else {
-    const depth = parts.length + 1;
-    folders = driveFolders().filter((p) => p.split("/").filter(Boolean).length === depth && p.startsWith(drive.folder === "/" ? "/" : `${drive.folder}/`)).sort();
-    shown = files.filter((f) => (f.data.folder || "/") === drive.folder);
-  }
-  shown.sort((a, b) => (b.data.added || 0) - (a.data.added || 0));
+  let shown = sets[drive.tab];
+  if (q) shown = shown.filter((f) => `${f.data.name} ${f.data.folder} ${f.data.by || ""}`.toLowerCase().includes(q));
+  else if (browsing) shown = shown.filter((f) => (f.data.folder || "/") === drive.folder);
+  const by = { added: (a, b) => (b.data.deleted_at || b.data.added || 0) - (a.data.deleted_at || a.data.added || 0), name: (a, b) => a.data.name.localeCompare(b.data.name), size: (a, b) => (b.data.file_key?.size || 0) - (a.data.file_key?.size || 0) }[drive.sort];
+  shown = [...shown].sort(by);
+  const folders = browsing ? driveFolders().filter((p) => p.split("/").filter(Boolean).length === parts.length + 1 && p.startsWith(drive.folder === "/" ? "/" : `${drive.folder}/`)).sort() : [];
+  const owner = (name) => el("span", { class: "owner" }, name ? avatarEl(name, { size: "sm", ...(driveLooks.get(name) || {}) }) : null, el("span", { text: !name ? "" : name === profile?.display_name ? "You" : name }));
+  const kindOf = (f) => { const ext = (f.data.name.split(".").pop() || "").toUpperCase(); return f.data.mime?.startsWith("image/") ? "Image" : ext && ext.length <= 4 && f.data.name.includes(".") ? ext : "File"; };
   const rows = [
     ...folders.map((p) => {
-      const inside = files.filter((f) => (f.data.folder || "/") === p || (f.data.folder || "").startsWith(`${p}/`)).length;
+      const inside = live.filter((f) => under(f.data.folder || "/", p)).length;
       const fbtns = el("span", { class: "row-btns" },
         el("button", { class: "icon-btn", type: "button", title: "Rename folder", "aria-label": `Rename ${p.split("/").pop()}`, onclick: (e) => { e.stopPropagation(); renameFolder(p); } }, icon("pen")),
         el("button", { class: "icon-btn", type: "button", title: "Delete folder", "aria-label": `Delete ${p.split("/").pop()}`, onclick: (e) => { e.stopPropagation(); deleteFolder(p); } }, icon("trash")));
-      return dropTarget(el("tr", { onclick: () => { drive.folder = p; renderDrive(); } },
-        el("td", {}, el("span", { class: "fname" }, el("span", { class: "ficon folder" }, icon("folder")), p.split("/").pop())),
-        el("td", { class: "num", text: `${inside} ${inside === 1 ? "file" : "files"}` }), el("td", { class: "c-issued" }), el("td", { class: "c-terms" }), el("td", { class: "c-actions" }, fbtns)), p);
+      return dropTarget(el("tr", { class: "folder-row", onclick: () => { drive.folder = p; renderDrive(); } },
+        el("td", { class: "c-fav" }),
+        el("td", {}, el("span", { class: "fname" }, el("span", { class: "ficon folder" }, icon("folder")), el("span", { class: "fname-lines" }, el("strong", { text: p.split("/").pop() }), el("small", { text: `Folder · ${inside} ${inside === 1 ? "file" : "files"}` })))),
+        el("td", { class: "c-owner" }), el("td", { class: "c-issued" }), el("td", { class: "c-actions" }, fbtns)), p);
     }),
     ...shown.map((f) => {
       const [ic, cls] = fileIcon(f.data.mime);
-      const btns = el("span", { class: "row-btns" },
-        el("button", { class: "icon-btn", type: "button", title: "Download", "aria-label": `Download ${f.data.name}`, onclick: (e) => { e.stopPropagation(); downloadFile(f); } }, icon("download")),
-        el("button", { class: "icon-btn", type: "button", title: "Rename", "aria-label": `Rename ${f.data.name}`, onclick: (e) => { e.stopPropagation(); renameFile(f); } }, icon("pen")),
-        el("button", { class: "icon-btn", type: "button", title: "Move to a folder", "aria-label": `Move ${f.data.name}`, onclick: (e) => { e.stopPropagation(); openMove([f]); } }, icon("folder")),
-        el("button", { class: "icon-btn", type: "button", title: "Delete", "aria-label": `Delete ${f.data.name}`, onclick: (e) => { e.stopPropagation(); deleteFile(f); } }, icon("trash")));
-      return el("tr", { onclick: () => previewFile(f), draggable: "true", ondragstart: (e) => { e.dataTransfer.setData("text/x-anarchy-file", f.id); e.dataTransfer.effectAllowed = "move"; } },
-        el("td", {}, el("span", { class: "fname" }, el("span", { class: `ficon ${cls}` }, icon(ic)), f.data.name, q && f.data.folder !== "/" ? el("small", { text: f.data.folder }) : null)),
-        el("td", { class: "num", text: sizeFmt(f.data.file_key?.size || 0) }),
-        el("td", { class: "c-issued", text: f.data.added ? dateFmt.format(f.data.added) : "" }),
-        el("td", { class: "c-terms", text: f.data.by || "" }),
+      const deleted = !!f.data.deleted;
+      const fav = !!favs()[f.id];
+      const btns = deleted
+        ? el("span", { class: "row-btns show" }, el("button", { class: "btn-outline sm", type: "button", onclick: (e) => { e.stopPropagation(); restoreFile(f); } }, icon("undo"), "Restore"))
+        : el("span", { class: "row-btns" },
+          el("button", { class: "icon-btn", type: "button", title: "Download", "aria-label": `Download ${f.data.name}`, onclick: (e) => { e.stopPropagation(); downloadFile(f); } }, icon("download")),
+          el("button", { class: "icon-btn", type: "button", title: "Rename", "aria-label": `Rename ${f.data.name}`, onclick: (e) => { e.stopPropagation(); renameFile(f); } }, icon("pen")),
+          el("button", { class: "icon-btn", type: "button", title: "Move to a folder", "aria-label": `Move ${f.data.name}`, onclick: (e) => { e.stopPropagation(); openMove([f]); } }, icon("folder")),
+          el("button", { class: "icon-btn", type: "button", title: "Move to Trash", "aria-label": `Delete ${f.data.name}`, onclick: (e) => { e.stopPropagation(); deleteFile(f); } }, icon("trash")));
+      const where = !browsing && (f.data.folder || "/") !== "/" ? ` · ${f.data.folder}` : "";
+      return el("tr", { class: deleted ? "deleted" : "", onclick: () => (deleted ? null : previewFile(f)), draggable: deleted ? "false" : "true", ondragstart: (e) => { e.dataTransfer.setData("text/x-anarchy-file", f.id); e.dataTransfer.effectAllowed = "move"; } },
+        el("td", { class: "c-fav" }, deleted ? null : el("button", { class: `star${fav ? " on" : ""}`, type: "button", title: fav ? "Remove from favorites" : "Add to favorites", "aria-pressed": String(fav), "aria-label": `Favorite ${f.data.name}`, onclick: (e) => { e.stopPropagation(); if (fav) delete favs()[f.id]; else favs()[f.id] = Date.now(); saveOrg(); renderDrive(); } }, icon("star"))),
+        el("td", {}, el("span", { class: "fname" }, el("span", { class: `ficon ${cls}` }, icon(ic)), el("span", { class: "fname-lines" }, el("strong", { text: f.data.name }), el("small", { text: `${kindOf(f)} · ${sizeFmt(f.data.file_key?.size || 0)}${where}` })))),
+        el("td", { class: "c-owner" }, owner(f.data.by)),
+        el("td", { class: "c-issued", text: (deleted ? f.data.deleted_at : f.data.added) ? dateFmt.format(deleted ? f.data.deleted_at : f.data.added) : "" }),
         el("td", { class: "c-actions" }, btns));
     }),
   ];
   $("drive-rows").replaceChildren(...rows);
   show("drive-table", rows.length > 0);
   show("drive-empty", rows.length === 0);
-  $("drive-empty-title").textContent = q ? "No files match" : drive.folder === "/" ? "Nothing here yet" : "This folder is empty";
+  $("drive-empty-title").textContent = q ? "No files match" : { fav: "No favorites yet", mine: "Nothing you added", trash: "Trash is empty" }[drive.tab] || (drive.folder === "/" ? "Nothing here yet" : "This folder is empty");
+  $("drive-empty-sub").textContent = { fav: "Star a file to keep it here. Favorites are yours alone.", mine: "Files you upload show up here.", trash: "Deleted files wait here until someone restores them." }[drive.tab] || "Upload files or drop them here. Everyone in this space can open them; the server only ever holds encrypted pieces.";
+}
+let driveLooks = new Map();
+async function loadDriveLooks() {
+  try { driveLooks = new Map((await invoke("channel_members", { channel: drive.channel })).map((m) => [m.name, { color: m.color, avatar: m.avatar }])); } catch { /* names only */ }
+}
+async function restoreFile(f) {
+  const { deleted, deleted_at, ...data } = f.data;
+  await invoke("put_items", { channel: drive.channel, items: [{ id: f.id, kind: "file", data }] });
+  await logTo(drive.channel, `Restored ${f.data.name} from Trash.`);
+  drive.items = await invoke("desk_items", { channel: drive.channel });
+  renderDrive();
+}
+$("drive-sort").addEventListener("click", (e) => {
+  e.stopPropagation();
+  openMenu($("drive-sort"), "Sort by", DRIVE_SORTS.map(([k, label]) => ({ label, on: drive.sort === k, go: () => { drive.sort = k; renderDrive(); } })));
+});
+// A small menu at a button; used for sorting and the like.
+function openMenu(anchor, title, items) {
+  const menu = $("fold-menu");
+  menu.replaceChildren(el("p", { class: "fold-menu-title", text: title }), ...items.map((it) => el("button", { class: `fold-menu-item${it.on ? " on" : ""}`, type: "button", role: "menuitemradio", "aria-checked": String(!!it.on), onclick: () => { show(menu, false); it.go(); } }, icon(it.on ? "check" : "list"), it.label)));
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = `${Math.round(Math.min(r.left, innerWidth - 220))}px`;
+  menu.style.top = `${Math.round(Math.min(r.bottom + 4, innerHeight - 200))}px`;
+  show(menu, true);
 }
 async function logTo(channel, text) { try { await invoke("send_message", { channel, text }); } catch (e) { console.warn(e); } }
 async function afterUpload(names) {
@@ -2464,9 +2650,8 @@ async function renameFile(f) {
   renderDrive();
 }
 async function deleteFile(f) {
-  if (!confirm(`Delete ${f.data.name} for everyone in this space?`)) return;
-  await invoke("put_items", { channel: drive.channel, items: [{ id: f.id, kind: "file", data: { ...f.data, deleted: true } }] });
-  await logTo(drive.channel, `Deleted ${f.data.name}.`);
+  await invoke("put_items", { channel: drive.channel, items: [{ id: f.id, kind: "file", data: { ...f.data, deleted: true, deleted_at: Date.now() } }] });
+  await logTo(drive.channel, `Moved ${f.data.name} to Trash.`);
   drive.items = await invoke("desk_items", { channel: drive.channel });
   renderDrive();
 }
@@ -3844,26 +4029,32 @@ async function openTodo(t) {
 // Notifications: reminders that are due, then activity (new messages, what desks need).
 let reminded = readStore("anarchy.reminded", {});
 let notifRead = readStore("anarchy.notifRead", {});
+function mentionsMe(text) {
+  const t = String(text || "").toLowerCase();
+  const names = [profile?.username, profile?.display_name?.split(" ")[0]].filter(Boolean).map((n) => `@${n.toLowerCase()}`);
+  return names.some((n) => t.includes(n));
+}
 function notifItems() {
   const now = new Date(), today = isoOf(now), soon = new Date(now.getTime() + 24 * 3600e3);
   const out = [];
   for (const e of events()) {
-    if (e.all_day || !e.start) { if (e.date === today) out.push({ key: `ev:${e.id}:${e.date}`, icon: "calendar", title: e.title, sub: "Today", at: `${e.date}T00:00`, go: () => openAgenda() }); continue; }
+    if (e.all_day || !e.start) { if (e.date === today) out.push({ key: `ev:${e.id}:${e.date}`, kind: "event", icon: "calendar", title: e.title, sub: "Today", at: `${e.date}T00:00`, go: () => openAgenda() }); continue; }
     const at = new Date(`${e.date}T${e.start}`);
-    if (at >= new Date(now.getTime() - 3600e3) && at <= soon) out.push({ key: `ev:${e.id}:${e.date}:${e.start}`, icon: "calendar", title: e.title, sub: `${at.toDateString() === now.toDateString() ? "Today" : "Tomorrow"} at ${e.start}${e.where ? ` · ${e.where}` : ""}`, at: `${e.date}T${e.start}`, start: at, go: () => openAgenda() });
+    if (at >= new Date(now.getTime() - 3600e3) && at <= soon) out.push({ key: `ev:${e.id}:${e.date}:${e.start}`, kind: "event", icon: "calendar", title: e.title, sub: `${at.toDateString() === now.toDateString() ? "Today" : "Tomorrow"} at ${e.start}${e.where ? ` · ${e.where}` : ""}`, at: `${e.date}T${e.start}`, start: at, go: () => openAgenda() });
   }
   for (const d of agenda.dues) {
     if (d.date > today) continue;
     const late = d.date < today;
-    out.push({ key: `due:${d.channel}:${d.title}:${d.date}`, icon: d.task ? "board" : "receipt", late, title: d.title, sub: late ? `Was due ${shortDay(d.date)}` : "Due today", at: `${d.date}T09:00`, go: () => openChannel(d.channel) });
+    out.push({ key: `due:${d.channel}:${d.title}:${d.date}`, kind: "due", channel: d.channel, icon: d.task ? "board" : "receipt", late, title: d.title, sub: late ? `Was due ${shortDay(d.date)}` : "Due today", at: `${d.date}T09:00`, go: () => openChannel(d.channel) });
   }
   for (const c of channels) {
     if (!c.unread || c.id === current || c.kind === "personal") continue;
-    out.push({ key: `msg:${c.id}:${c.last_ts || 0}`, icon: c.kind === "dm" ? "chat" : "thread", title: c.kind === "dm" ? c.name : `#${c.name}`, sub: c.last_text || "New messages", at: new Date(c.last_ts || Date.now()).toISOString(), go: () => goTo(c.id) });
+    const mention = mentionsMe(c.last_text);
+    out.push({ key: `msg:${c.id}:${c.last_ts || 0}`, kind: mention ? "mention" : "msg", channel: c.id, icon: mention ? "at" : c.kind === "dm" ? "chat" : "thread", title: c.kind === "dm" ? c.name : `#${c.name}`, sub: c.last_text || "New messages", at: new Date(c.last_ts || Date.now()).toISOString(), go: () => goTo(c.id) });
   }
   for (const [id, n] of deskNeeds) {
     const c = channels.find((x) => x.id === id);
-    if (c && n) out.push({ key: `desk:${id}:${n}:${today}`, icon: "receipt", late: true, title: c.name, sub: `${n} ${n === 1 ? "thing needs" : "things need"} you`, at: `${today}T09:00`, go: () => openChannel(id) });
+    if (c && n) out.push({ key: `desk:${id}:${n}:${today}`, kind: "desk", channel: id, icon: "receipt", late: true, title: c.name, sub: `${n} ${n === 1 ? "thing needs" : "things need"} you`, at: `${today}T09:00`, go: () => openChannel(id) });
   }
   return out.sort((a, b) => (b.late ? 1 : 0) - (a.late ? 1 : 0) || b.at.localeCompare(a.at));
 }
@@ -3880,8 +4071,46 @@ function markRead(keys) {
   for (const [k, t] of Object.entries(notifRead)) if (Date.now() - t > 30 * 864e5) delete notifRead[k];
   writeStore("anarchy.notifRead", notifRead);
   renderNotifs();
+  renderInbox();
 }
 $("notifs-read").addEventListener("click", () => markRead(notifItems().map((n) => n.key)));
+
+// ---------- inbox (D35) ----------
+// The bell's list as a page: everything that needs you, filtered by kind. In
+// a space it shows that space's conversations and desks; Home shows it all.
+let inboxTab = "all";
+const INBOX_TABS = [["all", "All"], ["mention", "Mentions"], ["msg", "Unread"], ["due", "Due"], ["desk", "Desks"], ["event", "Agenda"]];
+function inboxItems() {
+  const sp = view === "space" ? currentSpace?.id : null;
+  return notifItems().filter((n) => !sp || (n.channel && channels.find((c) => c.id === n.channel)?.space === sp));
+}
+function inboxFolder() {
+  const n = inboxItems().filter((x) => !notifRead[x.key]).length;
+  return { key: "inbox", label: "Inbox", icon: "bell", n };
+}
+async function openInbox() {
+  current = null; invoke("blur");
+  hideMain(); show("view-inbox");
+  renderFolders(); renderTabs();
+  renderInbox();
+}
+function renderInbox() {
+  if ($("view-inbox").hidden) return;
+  const items = inboxItems();
+  const count = (k) => (k === "all" ? items : items.filter((n) => n.kind === k)).length;
+  $("inbox-pills").replaceChildren(...INBOX_TABS.filter(([k]) => k === "all" || count(k)).map(([k, label]) =>
+    el("button", { class: `pill-tab${inboxTab === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(inboxTab === k), onclick: () => { inboxTab = k; renderInbox(); } }, label, el("span", { class: "n", text: String(count(k)) }))));
+  const shown = inboxTab === "all" ? items : items.filter((n) => n.kind === inboxTab);
+  const unread = items.filter((n) => !notifRead[n.key]).length;
+  $("inbox-sub").textContent = unread ? `${unread} unread${view === "space" ? ` in ${currentSpace?.name}` : ""}. What needs you, newest first.` : "You're all caught up.";
+  $("inbox-list").replaceChildren(...(shown.length ? shown.map((n) => el("button", { class: `inbox-row${notifRead[n.key] ? "" : " unread"}${n.late ? " late" : ""}`, type: "button", onclick: () => { markRead([n.key]); n.go(); } },
+    el("span", { class: "inbox-icon" }, icon(n.icon)),
+    el("span", { class: "lines" }, el("strong", { text: n.title }), el("small", { text: n.sub })),
+    el("span", { class: "inbox-kind", text: { mention: "Mention", msg: "Unread", due: n.late ? "Late" : "Due", desk: "Desk", event: "Agenda" }[n.kind] || "" }),
+    el("time", { text: sinceFmt(Date.parse(n.at)) }),
+    notifRead[n.key] ? null : el("span", { class: "unread-dot", "aria-label": "unread" }))) : [el("div", { class: "inbox-empty" }, icon("check"), el("strong", { text: "Nothing here" }), el("p", { class: "fine", text: "Mentions, unread conversations, things due and what desks need show up here." }))]));
+}
+$("inbox-read").addEventListener("click", () => { markRead(inboxItems().map((n) => n.key)); renderFolders(); });
 
 // Desktop reminders: 15 minutes before a timed event, and from 9:00 on the day
 // something falls due (once a day while it stays late). Each fires once.

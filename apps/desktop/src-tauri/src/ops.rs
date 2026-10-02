@@ -468,6 +468,7 @@ pub struct PeerView {
     is_guest: bool,
     is_agent: bool,
     sidekick: Option<anarchy_proto::Sidekick>,
+    presence: Option<anarchy_proto::Presence>,
 }
 
 fn peer_view(p: &DirectoryEntry) -> PeerView {
@@ -484,6 +485,7 @@ fn peer_view(p: &DirectoryEntry) -> PeerView {
         is_guest: p.is_guest,
         is_agent: p.is_agent,
         sidekick: p.sidekick.clone(),
+        presence: p.presence,
     }
 }
 
@@ -538,17 +540,38 @@ pub struct MessageView {
     thread: Option<u64>,
     /// Set when a sidekick wrote it: whose it is, so nobody takes it for the person.
     agent: Option<AgentTag>,
+    /// How the sender looks: colour, picture, sidekick (D35).
+    look: Option<SenderLook>,
 }
 
 #[derive(Serialize)]
 pub struct AgentTag {
     owner: String,
     mine: bool,
+    /// The design its person chose.
+    look: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SenderLook {
+    color: Option<String>,
+    avatar: Option<String>,
+    sidekick: Option<anarchy_proto::Sidekick>,
+}
+
+fn sender_look(i: &Inner, channel: ChannelId, device: DeviceId) -> Option<SenderLook> {
+    let m = i.members.get(&channel)?.iter().find(|m| m.device_id == device)?;
+    Some(SenderLook {
+        color: m.color.clone(),
+        avatar: m.avatar.clone(),
+        sidekick: m.sidekick.clone(),
+    })
 }
 
 fn agent_tag(i: &Inner, channel: ChannelId, device: DeviceId) -> Option<AgentTag> {
     let ms = i.members.get(&channel)?;
-    let owner = ms.iter().find(|m| m.device_id == device)?.agent_of?;
+    let agent = ms.iter().find(|m| m.device_id == device)?;
+    let owner = agent.agent_of?;
     let me = i.saved().map(|s| s.session.user_id);
     Some(AgentTag {
         owner: ms
@@ -557,6 +580,7 @@ fn agent_tag(i: &Inner, channel: ChannelId, device: DeviceId) -> Option<AgentTag
             .and_then(|m| m.display_name.clone())
             .unwrap_or_else(|| "someone".into()),
         mine: Some(owner) == me,
+        look: agent.sidekick.as_ref().map(|s| s.look.clone()),
     })
 }
 
@@ -673,6 +697,7 @@ pub async fn open_channel(i: &mut Inner, channel: ChannelId) -> Result<Vec<Messa
                 text,
                 thread: content.thread(),
                 agent: agent_tag(i, channel, m.sender),
+                look: sender_look(i, channel, m.sender),
             })
         })
         .collect())
@@ -985,6 +1010,8 @@ pub async fn store_file(
     data["folder"] = serde_json::json!(folder);
     data["mime"] = serde_json::json!(mime_for(name));
     data["by"] = serde_json::json!(by);
+    // Who added it, by account, so "Created by me" survives a rename.
+    data["by_user"] = serde_json::json!(i.saved().map(|s| s.session.user_id));
     data["added"] = serde_json::json!(crate::engine::now_ms());
     let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     put_items(
@@ -1166,7 +1193,12 @@ pub async fn sync_all(i: &mut Inner) -> Result<SyncReport, String> {
     for channel in joined {
         refresh_members(i, channel).await?;
     }
-    if prefs.desktop {
+    // Busy is do-not-disturb: nothing pops up until it's off (D35).
+    let busy = i
+        .profile
+        .as_ref()
+        .is_some_and(|p| p.presence == anarchy_proto::PresenceChoice::Busy);
+    if prefs.desktop && !busy {
         for (channel, sender, text) in to_notify {
             if i.focused == Some(channel) {
                 continue;
@@ -1211,6 +1243,11 @@ pub async fn sync_all(i: &mut Inner) -> Result<SyncReport, String> {
 pub struct Person {
     user_id: UserId,
     name: String,
+    presence: Option<anarchy_proto::Presence>,
+    color: Option<String>,
+    avatar: Option<String>,
+    sidekick: Option<anarchy_proto::Sidekick>,
+    is_agent: bool,
     handle: Option<String>,
     email: Option<String>,
     is_guest: bool,
@@ -1252,6 +1289,11 @@ pub async fn people(i: &mut Inner, channel: Option<ChannelId>) -> Result<Vec<Per
             user_id: p.user_id,
             email: p.email,
             is_guest: p.is_guest,
+            presence: p.presence,
+            color: p.color,
+            avatar: p.avatar,
+            sidekick: p.sidekick,
+            is_agent: p.is_agent,
         })
         .collect())
 }
@@ -1262,6 +1304,11 @@ pub struct MemberView {
     name: String,
     is_guest: bool,
     me: bool,
+    is_agent: bool,
+    presence: Option<anarchy_proto::Presence>,
+    color: Option<String>,
+    avatar: Option<String>,
+    sidekick: Option<anarchy_proto::Sidekick>,
 }
 
 pub async fn channel_members(i: &mut Inner, channel: ChannelId) -> Result<Vec<MemberView>, String> {
@@ -1279,6 +1326,11 @@ pub async fn channel_members(i: &mut Inner, channel: ChannelId) -> Result<Vec<Me
             name: m.display_name.unwrap_or_else(|| "Someone".into()),
             is_guest: m.is_guest,
             me: Some(m.user_id) == me,
+            is_agent: m.is_agent,
+            presence: m.presence,
+            color: m.color,
+            avatar: m.avatar,
+            sidekick: m.sidekick,
         });
     }
     Ok(out)
@@ -1687,4 +1739,10 @@ pub async fn sidekick_chat(i: &mut Inner) -> Result<ChannelId, String> {
         return Err("Your sidekick has no handle yet. Try again in a few seconds.".into());
     };
     start_dm(i, format_handle(&username, tag)).await
+}
+
+/// The app is open and someone is using it (D35). The UI calls this about
+/// once a minute and stops while the person is idle.
+pub async fn heartbeat(i: &mut Inner) -> Result<(), String> {
+    i.client()?.heartbeat().await.map_err(err)
 }

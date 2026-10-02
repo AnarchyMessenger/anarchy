@@ -102,6 +102,12 @@ async fn a_sidekick_reads_only_what_its_person_shares_and_answers_only_them() {
         .find(|m| m.agent_of == Some(maya.user_id()))
         .unwrap();
     assert!(pip.is_agent);
+    // Everyone sees Pip drawn the way Maya designed it.
+    assert_eq!(
+        pip.sidekick.as_ref().map(|s| s.look.as_str()),
+        Some("spark-summer")
+    );
+    assert_eq!(pip.presence, None, "agents have no presence");
     let (handle, tag) = (pip.username.clone().unwrap(), pip.tag.unwrap());
     assert!(bob.start_dm(&handle, tag).await.is_err());
     let (dm, ..) = maya.start_dm(&handle, tag).await.unwrap();

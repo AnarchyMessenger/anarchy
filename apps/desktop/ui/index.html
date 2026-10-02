@@ -21,7 +21,7 @@
   <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3"/></symbol>
   <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></symbol>
   <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z"/></symbol>
-  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol><symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol><symbol id="i-folder-plus" viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5zM12 11v5M9.5 13.5h5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol><symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol><symbol id="i-star" viewBox="0 0 24 24"><path d="m12 4 2.4 5 5.4.6-4 3.7 1.1 5.4L12 16l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z" stroke-linejoin="round"/></symbol><symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol><symbol id="i-folder-plus" viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5zM12 11v5M9.5 13.5h5"/></symbol>
   <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M3 20a6 6 0 0 1 12 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3 6"/></symbol>
   <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 20 4l-6 16-3-7z"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></symbol>
@@ -285,6 +285,12 @@
         <div class="me-top"><span id="me-avatar"></span><div><strong id="me-name"></strong><code class="mono" id="share-handle"></code></div></div>
         <button class="btn-outline sm me-copy" id="share-copy" type="button"><svg class="i"><use href="#i-copy"/></svg><span>Copy handle</span></button>
         <p class="fine" id="share-policy"></p>
+        <div class="me-presence" id="me-presence" role="radiogroup" aria-label="Show me as">
+          <button type="button" role="radio" data-p="auto"><span class="presence-dot p-online"></span>Online</button>
+          <button type="button" role="radio" data-p="busy"><span class="presence-dot p-busy"></span>Busy<small>Holds notifications</small></button>
+          <button type="button" role="radio" data-p="away"><span class="presence-dot p-away"></span>Away</button>
+          <button type="button" role="radio" data-p="invisible"><span class="presence-dot p-offline"></span>Invisible<small>Shown as offline</small></button>
+        </div>
         <div class="me-links"><button class="side-item" type="button" id="me-profile">Edit profile</button><button class="side-item" type="button" id="me-privacy">Who can message me</button><button class="side-item" type="button" id="me-settings"><svg class="i"><use href="#i-settings"/></svg>All settings</button></div>
       </div>
     </nav>
@@ -343,9 +349,17 @@
         <!-- Home start panel -->
         <div class="view start" id="view-start">
           <div class="start-inner ov-inner">
-            <div class="ov-hero">
-              <div><p class="hero-kind">Home</p><h1 class="hero-line" id="home-headline">Start somewhere.</h1></div>
-            </div>
+            <header class="pagehead home-head"><div><h1 id="home-headline">Good morning.</h1><p class="sub" id="home-summary"></p></div>
+              <div class="row-actions"><button class="btn-ink inline" id="home-new-task" type="button"><svg class="i"><use href="#i-plus"/></svg><span>New task</span></button></div></header>
+            <section class="pipe" aria-labelledby="pipe-title">
+              <div class="pipe-head"><h2 id="pipe-title">Task pipeline</h2><span class="fine" id="pipe-range">Last 30 days · every board you're on</span></div>
+              <div class="pipe-grid" id="pipe-grid"></div>
+              <table class="sr-only" id="pipe-table"></table>
+            </section>
+            <section class="today" aria-labelledby="today-title">
+              <div class="today-head"><h2 id="today-title">Today</h2><div class="pills" id="today-pills" role="tablist" aria-label="Show"></div></div>
+              <div class="inbox-list" id="today-list"></div>
+            </section>
             <div class="start-grid">
               <form class="start-card" id="start-dm-form" novalidate>
                 <svg class="i"><use href="#i-at"/></svg>
@@ -356,11 +370,6 @@
               </form>
               <button class="start-card" id="start-create" type="button"><svg class="i"><use href="#i-plus"/></svg><strong>Create a space</strong><small id="start-create-sub">Channels, people and later desks, for one purpose.</small></button>
               <button class="start-card" id="start-join" type="button"><svg class="i"><use href="#i-ticket"/></svg><strong>Join with a code</strong><small>Someone sent you an invite code.</small></button>
-            </div>
-            <div class="home-today" id="home-today">
-              <section class="today-card"><p class="block-label"><svg class="i"><use href="#i-calendar"/></svg>Today</p><div id="today-events"></div></section>
-              <section class="today-card"><p class="block-label"><svg class="i"><use href="#i-chat"/></svg>Recent chats</p><div id="today-chats"></div></section>
-              <section class="today-card"><p class="block-label"><svg class="i"><use href="#i-note"/></svg>Recent pages</p><div id="today-notes"></div></section>
             </div>
             <div class="home-spaces" id="home-spaces-wrap" hidden><p class="block-label">Your spaces</p><div class="space-grid" id="home-spaces"></div></div>
           </div>
@@ -459,6 +468,14 @@
           <div class="slash-pop panel" id="slash-pop" role="listbox" aria-label="Turn into" hidden></div>
         </div>
 
+        <!-- Inbox: what needs you, in one list (D35) -->
+        <div class="view page-view" id="view-inbox" hidden>
+          <header class="pagehead"><div><h1>Inbox</h1><p class="sub" id="inbox-sub">What needs you, newest first.</p></div>
+            <div class="row-actions"><button class="btn-outline pill" id="inbox-read" type="button"><svg class="i"><use href="#i-check"/></svg><span>Mark all read</span></button></div></header>
+          <div class="pagebar"><div class="pills" id="inbox-pills" role="tablist" aria-label="Show"></div></div>
+          <div class="inbox-list" id="inbox-list"></div>
+        </div>
+
         <div class="view overview" id="view-desks" hidden>
           <div class="ov-inner">
             <div class="ov-hero"><div><p class="hero-kind" id="desks-kind">Desks</p><h1 class="hero-line" id="desks-headline"></h1></div><div class="row-actions"><button class="btn-ink inline" id="desks-new" type="button"><svg class="i"><use href="#i-plus"/></svg><span>Set up a desk</span></button><button class="btn-outline pill" id="desks-folder" type="button"><svg class="i"><use href="#i-folder-plus"/></svg><span>New folder</span></button></div></div>
@@ -466,19 +483,19 @@
           </div>
         </div>
 
-        <div class="view drive" id="view-drive" hidden>
-          <div class="ov-inner">
-            <div class="ov-hero">
-              <div><p class="hero-kind" id="drive-kind">Files</p><h1 class="hero-line" id="drive-headline"></h1></div>
-              <div class="row-actions"><button class="btn-ink inline" id="drive-upload" type="button"><svg class="i"><use href="#i-upload"/></svg>Upload</button><button class="btn-outline pill" id="drive-folder" type="button"><svg class="i"><use href="#i-folder"/></svg>New folder</button><button class="btn-outline pill" id="drive-mount" type="button"><svg class="i"><use href="#i-external"/></svg><span>Open in <span class="os-files">file manager</span></span></button><span class="fine">Drop files anywhere here. They're encrypted on this computer before they leave it.</span></div>
-            </div>
-            <div class="desk-tools"><nav class="crumbs" id="drive-crumbs" aria-label="Folder"></nav><span class="spacer"></span><label class="search pill"><svg class="i"><use href="#i-search"/></svg><input id="drive-search" placeholder="Search files in this space" aria-label="Search files"></label></div>
-            <table class="grid files" id="drive-table">
-              <thead><tr><th>Name</th><th class="num">Size</th><th class="c-issued">Added</th><th class="c-terms">By</th><th class="c-actions"></th></tr></thead>
-              <tbody id="drive-rows"></tbody>
-            </table>
-            <div class="desk-empty" id="drive-empty" hidden><svg class="i"><use href="#i-folder"/></svg><strong id="drive-empty-title">Nothing here yet</strong><p class="fine" id="drive-empty-sub">Upload files or drop them here. Everyone in this space can open them; the server only ever holds encrypted pieces.</p></div>
-          </div>
+        <div class="view drive page-view" id="view-drive" hidden>
+          <header class="pagehead"><div><h1 id="drive-kind">Files</h1><p class="sub" id="drive-headline"></p></div>
+            <div class="row-actions"><button class="btn-outline pill" id="drive-mount" type="button"><svg class="i"><use href="#i-external"/></svg><span>Open in <span class="os-files">file manager</span></span></button><button class="btn-outline pill" id="drive-folder" type="button"><svg class="i"><use href="#i-folder-plus"/></svg>New folder</button><button class="btn-ink inline" id="drive-upload" type="button"><svg class="i"><use href="#i-upload"/></svg>Upload</button></div></header>
+          <div class="pagebar"><div class="pills" id="drive-pills" role="tablist" aria-label="Show"></div><span class="spacer"></span>
+            <label class="search pill"><svg class="i"><use href="#i-search"/></svg><input id="drive-search" placeholder="Filter files" aria-label="Filter files"></label>
+            <button class="sort-btn" id="drive-sort" type="button" aria-haspopup="menu">Sort: <strong id="drive-sort-label">Last added</strong><svg class="i"><use href="#i-chevron"/></svg></button></div>
+          <nav class="crumbs" id="drive-crumbs" aria-label="Folder"></nav>
+          <table class="grid files" id="drive-table">
+            <thead><tr><th class="c-fav"></th><th>Name</th><th class="c-owner">Owner</th><th class="c-issued" id="drive-when">Added</th><th class="c-actions"></th></tr></thead>
+            <tbody id="drive-rows"></tbody>
+          </table>
+          <div class="desk-empty" id="drive-empty" hidden><svg class="i"><use href="#i-folder"/></svg><strong id="drive-empty-title">Nothing here yet</strong><p class="fine" id="drive-empty-sub">Upload files or drop them here. Everyone in this space can open them; the server only ever holds encrypted pieces.</p></div>
+          <p class="fine drive-foot">Drop files anywhere here. They're encrypted on this computer before they leave it.</p>
           <div class="drop-veil" id="drop-veil" hidden><svg class="i"><use href="#i-upload"/></svg><strong>Drop to encrypt and upload</strong><span id="drop-target"></span></div>
         </div>
 

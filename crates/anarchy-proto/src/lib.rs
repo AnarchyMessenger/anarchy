@@ -143,9 +143,47 @@ pub struct Profile {
     /// The person's sidekick: their own agent, shown as a badge on their avatar.
     #[serde(default)]
     pub sidekick: Option<Sidekick>,
+    /// What the person chose to show others (D35).
+    #[serde(default)]
+    pub presence: PresenceChoice,
 }
 
-/// A person's sidekick as others see it. `look` is `<shape>-<colour>`, e.g. `orb-ocean`.
+/// What someone chose to show (D35). `Auto` follows whether their app is open.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PresenceChoice {
+    #[default]
+    Auto,
+    /// Do not disturb: shown as busy, and their apps hold notifications.
+    Busy,
+    Away,
+    /// Shown as offline.
+    Invisible,
+}
+
+/// What others see: worked out from the choice and when their app last checked in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Presence {
+    Online,
+    Busy,
+    Away,
+    Offline,
+}
+
+impl Presence {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "online" => Some(Self::Online),
+            "busy" => Some(Self::Busy),
+            "away" => Some(Self::Away),
+            "offline" => Some(Self::Offline),
+            _ => None,
+        }
+    }
+}
+
+/// A person's sidekick as others see it. `look` is `s2.<shape>.<face>.<rrggbb>.<size>.<gap>.<tilt>.<ink>` (D34), or the older `<shape>-<colour>`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Sidekick {
     pub name: String,
@@ -189,6 +227,8 @@ pub struct ProfileUpdate {
     /// A name of `""` removes the sidekick.
     #[serde(default)]
     pub sidekick: Option<Sidekick>,
+    #[serde(default)]
+    pub presence: Option<PresenceChoice>,
 }
 
 /// Formats a handle the way people read it: `maya#0427`.
@@ -317,8 +357,12 @@ pub struct DirectoryEntry {
     pub avatar: Option<String>,
     #[serde(default)]
     pub is_agent: bool,
+    /// Theirs, or for a sidekick its person's: the design it's drawn with.
     #[serde(default)]
     pub sidekick: Option<Sidekick>,
+    /// `None` for agents.
+    #[serde(default)]
+    pub presence: Option<Presence>,
 }
 
 /// `GET /v1/devices`: the caller's own devices.
@@ -400,6 +444,15 @@ pub struct Member {
     /// For a sidekick: the person it works for.
     #[serde(default)]
     pub agent_of: Option<UserId>,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub avatar: Option<String>,
+    /// Theirs, or for a sidekick its person's design.
+    #[serde(default)]
+    pub sidekick: Option<Sidekick>,
+    #[serde(default)]
+    pub presence: Option<Presence>,
 }
 
 /// `POST /v1/channels/{channel}/events`. The sender is the authenticated device.
