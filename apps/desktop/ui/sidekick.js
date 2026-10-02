@@ -147,24 +147,114 @@ function skBrow(kind, u, ink, side) {
   return skNode("path", { d, fill: "none", stroke: ink, "stroke-width": u * .42, "stroke-linecap": "round" });
 }
 
-// The sidekick as an <svg>. `state` changes its face; animation is CSS (only
-// where the element is `.live`, so the badges next to names stay still).
+// The sidekick as an <svg>. Geometry that people tune (eye size, spacing,
+// tilt, colour) is set as CSS on stable groups, so a live sidekick can change
+// in place and glide there (see skPatch). `state` changes its face; animation
+// is CSS, only where the element is `.live`, so badges next to names stay still.
+const SK_U = 5.2;
+function skFaceOf(p, state) { return { ...SK_FACES[p.face], ...(SK_STATES[state]?.face || {}) }; }
+function skEyesInner(face, ink) {
+  return [-1, 1].map((side) => skNode("g", { class: "sk-eye", "data-side": side }, skBrow(face.brows, SK_U, ink, side), skEye(face.eyes, SK_U, ink, face.look, side)));
+}
+function skGeometry(svg, p) {
+  const body = SK_BODIES[p.shape];
+  const gap = 12.5 * (p.gap / 100) * body.fw;
+  const k = p.size / 100;
+  const fill = `#${p.color}`;
+  for (const n of svg.querySelectorAll(".sk-shape, .sk-extra")) { n.style.fill = n.classList.contains("sk-extra") ? "none" : fill; n.style.stroke = fill; }
+  svg.querySelector(".sk-anchor").style.transform = `translate(50px, ${body.fy}px) rotate(${p.tilt}deg)`;
+  for (const e of svg.querySelectorAll(".sk-eye")) e.style.transform = `translate(${e.dataset.side * gap}px, 0) scale(${k})`;
+}
 function skSvg(look, state = "idle") {
   const p = typeof look === "string" || !look ? skParse(look) : look;
   const body = SK_BODIES[p.shape];
-  const face = { ...SK_FACES[p.face], ...(SK_STATES[state]?.face || {}) };
-  const ink = skInk(p);
-  const fill = `#${p.color}`;
-  const u = 5.2 * (p.size / 100);
-  const gap = 12.5 * (p.gap / 100) * body.fw;
-  const eyes = [-1, 1].map((side) => skNode("g", { transform: `translate(${side * gap} 0)` }, skBrow(face.brows, u, ink, side), skEye(face.eyes, u, ink, face.look, side)));
-  const svg = skNode("svg", { viewBox: "0 0 100 100", class: "sk-svg", "data-state": state, "aria-hidden": "true" },
+  const svg = skNode("svg", { viewBox: "0 0 100 100", class: "sk-svg", "data-state": state, "data-shape": p.shape, "aria-hidden": "true" },
     skNode("g", { class: "sk-body" },
-      skNode("path", { d: body.d, fill, stroke: fill, "stroke-width": 9, "stroke-linejoin": "round" }),
-      body.extra ? skNode("path", { d: body.extra, fill: "none", stroke: fill, "stroke-width": 7, "stroke-linecap": "round" }) : null,
-      skNode("g", { transform: `translate(50 ${body.fy}) rotate(${p.tilt})` }, skNode("g", { class: "sk-eyes" }, ...eyes))),
-    state === "asleep" ? skNode("text", { class: "sk-z", x: 74, y: 22, fill: SK_INK }, "z") : null,
-    state === "thinking" ? skNode("g", { class: "sk-dots", fill: SK_INK }, ...[0, 1, 2].map((k) => skNode("circle", { cx: 70 + k * 8, cy: 12, r: 2.6, style: `animation-delay:${k * .18}s` }))) : null);
+      skNode("g", { class: "sk-squash" },
+        skNode("path", { class: "sk-shape", d: body.d, "stroke-width": 9, "stroke-linejoin": "round" }),
+        skNode("path", { class: "sk-extra", d: body.extra || "", "stroke-width": 7, "stroke-linecap": "round" }),
+        skNode("g", { class: "sk-anchor" }, skNode("g", { class: "sk-look" }, skNode("g", { class: "sk-eyes" }, ...skEyesInner(skFaceOf(p, state), skInk(p))))))),
+    skNode("text", { class: "sk-z", x: 74, y: 22, fill: SK_INK }, "z"),
+    skNode("g", { class: "sk-dots", fill: SK_INK }, ...[0, 1, 2].map((k) => skNode("circle", { cx: 70 + k * 8, cy: 12, r: 2.6, style: `animation-delay:${k * .18}s` }))));
+  svg._sk = { p, state, faceKey: skFaceKey(p, state) };
+  skGeometry(svg, p);
+  return svg;
+}
+function skFaceKey(p, state) { const f = skFaceOf(p, state); return `${f.eyes}|${f.brows || ""}|${(f.look || []).join(",")}|${skInk(p)}`; }
+
+// Changes a sidekick in place: colour fades, eyes glide, a new face arrives
+// behind a blink, a new body squashes in.
+function skPatch(svg, look, state = svg._sk.state) {
+  const p = typeof look === "string" ? skParse(look) : look;
+  const was = svg._sk;
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  svg.dataset.state = state;
+  if (p.shape !== was.p.shape) {
+    const body = SK_BODIES[p.shape];
+    const swap = () => { svg.querySelector(".sk-shape").setAttribute("d", body.d); svg.querySelector(".sk-extra").setAttribute("d", body.extra || ""); svg.dataset.shape = p.shape; };
+    if (calm) swap(); else { skKick(svg, "sk-pop"); setTimeout(swap, 110); }
+  }
+  const key = skFaceKey(p, state);
+  if (key !== was.faceKey) {
+    const eyes = svg.querySelector(".sk-eyes");
+    const swap = () => { eyes.replaceChildren(...skEyesInner(skFaceOf(p, state), skInk(p))); skGeometry(svg, svg._sk.p); };
+    if (calm) swap(); else { eyes.classList.add("sk-shut"); setTimeout(() => { swap(); eyes.classList.remove("sk-shut"); }, 90); }
+  }
+  svg._sk = { p, state, faceKey: key };
+  skGeometry(svg, p);
+}
+// Restarts a one-shot animation class.
+function skKick(svg, cls) {
+  const g = svg.querySelector(".sk-squash");
+  g.classList.remove(cls); void g.getBoundingClientRect(); g.classList.add(cls);
+  g.addEventListener("animationend", () => g.classList.remove(cls), { once: true });
+}
+
+// A sidekick that's alive: its eyes follow the pointer and wander when nobody
+// moves, it squishes under the pointer and hops when clicked (D36).
+function skLive(look, state = "idle", { track = true, react = true } = {}) {
+  const svg = skSvg(look, state);
+  svg.classList.add("live");
+  const lookG = svg.querySelector(".sk-look");
+  let tx = 0, ty = 0, x = 0, y = 0, lastMove = 0, raf = 0, glance = 0;
+  const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const frame = () => {
+    raf = 0;
+    if (!svg.isConnected) return;
+    x += (tx - x) * .18; y += (ty - y) * .18;
+    lookG.style.transform = `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px)`;
+    if (Math.abs(tx - x) + Math.abs(ty - y) > .02) raf = requestAnimationFrame(frame);
+  };
+  const aim = (nx, ny) => { tx = nx; ty = ny; if (!raf) raf = requestAnimationFrame(frame); };
+  const onMove = (e) => {
+    if (!svg.isConnected) return removeEventListener("pointermove", onMove);
+    if (calm()) return;
+    const r = svg.getBoundingClientRect();
+    const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height * .55);
+    const d = Math.hypot(dx, dy) || 1, reach = Math.min(1, d / 260);
+    lastMove = Date.now();
+    aim((dx / d) * 3.2 * reach, (dy / d) * 2.4 * reach);
+  };
+  if (track) addEventListener("pointermove", onMove, { passive: true });
+  // Left alone, it glances around now and then.
+  const wander = () => {
+    if (!svg.isConnected) return;
+    if (!calm() && Date.now() - lastMove > 2500) {
+      const r = Math.random();
+      if (r < .55) aim((Math.random() * 2 - 1) * 3, (Math.random() * 2 - 1.2) * 2); else aim(0, 0);
+    }
+    glance = setTimeout(wander, 1400 + Math.random() * 2600);
+  };
+  glance = setTimeout(wander, 1800);
+  if (react) {
+    svg.addEventListener("pointerenter", () => { if (!calm()) skKick(svg, "sk-squish"); });
+    svg.addEventListener("click", () => {
+      if (calm()) return;
+      const s = svg._sk.state, prev = svg._sk.p;
+      skKick(svg, "sk-jump");
+      if (s === "idle") { skPatch(svg, prev, "success"); setTimeout(() => svg.isConnected && skPatch(svg, prev, "idle"), 900); }
+    });
+  }
   return svg;
 }
 
@@ -193,7 +283,7 @@ function mountSidekickMaker(root, get, set) {
     for (const c of kids) if (c) n.append(c);
     return n;
   };
-  const change = (next) => { p = { ...p, ...next }; set(skLook(p)); paint(); };
+  const change = (next, how) => { p = { ...p, ...next }; set(skLook(p)); paint(how); };
 
   const hero = h("div", { class: "skm-hero" });
   const ring = h("div", { class: "skm-ring", role: "radiogroup", "aria-label": "Face" });
@@ -217,7 +307,7 @@ function mountSidekickMaker(root, get, set) {
       h("div", { class: "skm-orbit" }, ring, hero),
       shapes, shapeName,
       h("div", { class: "skm-bar" }, h("div", { class: "skm-color-wrap" }, colorBtn, colorPop), states),
-      h("button", { class: "btn-ink inline skm-surprise", type: "button", onclick: () => change(skRandom()) }, "Surprise me")),
+      h("button", { class: "btn-ink inline skm-surprise", type: "button", onclick: () => { if (heroSvg) skKick(heroSvg, "sk-spin"); change(skRandom()); } }, "Surprise me")),
     h("div", { class: "skm-panel" },
       h("p", { class: "skm-head", text: "Face" }), ...sliders.map((s) => s.row),
       h("div", { class: "skm-row" }, h("span", { text: "Ink" }), ink),
@@ -228,10 +318,12 @@ function mountSidekickMaker(root, get, set) {
   const faces = Object.keys(SK_FACES);
   faces.forEach((f, k) => {
     const a = (k / faces.length) * Math.PI * 2 - Math.PI / 2;
-    const b = h("button", { type: "button", role: "radio", class: "skm-face", title: f[0].toUpperCase() + f.slice(1), "aria-label": `Face: ${f}`, "data-face": f, style: `left:${50 + 44 * Math.cos(a)}%;top:${50 + 44 * Math.sin(a)}%`, onclick: () => change({ face: f }) });
+    const b = h("button", { type: "button", role: "radio", class: "skm-face", title: f[0].toUpperCase() + f.slice(1), "aria-label": `Face: ${f}`, "data-face": f, style: `left:${50 + 44 * Math.cos(a)}%;top:${50 + 44 * Math.sin(a)}%;--i:${k}`, onclick: () => change({ face: f }),
+      // Hovering a face tries it on.
+      onpointerenter: () => heroSvg && skPatch(heroSvg, { ...p, face: f }, state), onpointerleave: () => heroSvg && skPatch(heroSvg, p, state) });
     ring.append(b);
   });
-  for (const s of Object.keys(SK_BODIES)) shapes.append(h("button", { type: "button", role: "radio", class: "skm-shape", "data-shape": s, "aria-label": SK_BODIES[s].label, onclick: () => change({ shape: s }) }));
+  Object.keys(SK_BODIES).forEach((s, k) => shapes.append(h("button", { type: "button", role: "radio", class: "skm-shape", "data-shape": s, "aria-label": SK_BODIES[s].label, style: `--i:${k}`, onclick: () => change({ shape: s }) })));
   for (const c of SK_PALETTE) colorPop.append(h("button", { type: "button", class: "skm-swatch", style: `background:#${c}`, "aria-label": `#${c}`, "data-c": c, onclick: () => { change({ color: c }); colorPop.hidden = true; } }));
   const custom = h("input", { type: "color", class: "skm-custom", "aria-label": "Any colour", oninput: (e) => change({ color: e.target.value.slice(1).toLowerCase() }) });
   colorPop.append(h("label", { class: "skm-custom-row" }, custom, h("span", { text: "Any colour" })));
@@ -241,20 +333,29 @@ function mountSidekickMaker(root, get, set) {
   for (const [v, label] of [["a", "Auto"], ["b", "Black"], ["w", "White"]]) ink.append(h("button", { type: "button", role: "radio", "data-ink": v, onclick: () => change({ ink: v }) }, label));
   for (const pr of SK_PRESETS) presets.append(h("button", { type: "button", class: "skm-preset", "aria-label": `${SK_BODIES[pr.shape].label}, ${pr.face}`, onclick: () => change({ ...SK_DEFAULT, ...pr }) }, skSvg({ ...SK_DEFAULT, ...pr })));
 
+  let heroSvg = null, thumbs = 0;
+  // The big one changes in place; the small ones are redrawn at most once a frame.
   function paint() {
-    hero.replaceChildren(skSvg(p, state));
-    hero.firstChild.classList.add("live");
-    for (const b of ring.children) { b.replaceChildren(skSvg({ ...p, face: b.dataset.face, tilt: 0 })); b.setAttribute("aria-checked", String(b.dataset.face === p.face)); }
-    for (const b of shapes.children) { b.replaceChildren(skSvg({ ...p, shape: b.dataset.shape, tilt: 0 })); b.setAttribute("aria-checked", String(b.dataset.shape === p.shape)); }
+    if (!heroSvg) { heroSvg = skLive(p, state); hero.replaceChildren(heroSvg); } else skPatch(heroSvg, p, state);
     shapeName.textContent = SK_BODIES[p.shape].label;
     colorBtn.style.setProperty("--c", `#${p.color}`);
     for (const b of colorPop.querySelectorAll(".skm-swatch")) b.setAttribute("aria-checked", String(b.dataset.c === p.color));
     custom.value = `#${p.color}`;
-    for (const b of states.children) { b.firstChild.replaceChildren(skSvg(p, b.dataset.state)); b.setAttribute("aria-checked", String(b.dataset.state === state)); }
     for (const s of sliders) { s.input.value = p[s.key]; s.out.textContent = `${p[s.key]}${s.unit}`; }
     for (const b of ink.children) b.setAttribute("aria-checked", String(b.dataset.ink === p.ink));
+    for (const b of ring.children) b.setAttribute("aria-checked", String(b.dataset.face === p.face));
+    for (const b of shapes.children) b.setAttribute("aria-checked", String(b.dataset.shape === p.shape));
+    for (const b of states.children) b.setAttribute("aria-checked", String(b.dataset.state === state));
+    if (!thumbs) thumbs = requestAnimationFrame(paintThumbs);
+  }
+  function paintThumbs() {
+    thumbs = 0;
+    for (const b of ring.children) b.replaceChildren(skSvg({ ...p, face: b.dataset.face, tilt: 0 }));
+    for (const b of shapes.children) b.replaceChildren(skSvg({ ...p, shape: b.dataset.shape, tilt: 0 }));
+    for (const b of states.children) b.firstChild.replaceChildren(skSvg(p, b.dataset.state));
     sizes.replaceChildren(...[44, 24, 14].map((px) => { const n = skSvg(p); n.style.width = n.style.height = `${px}px`; return n; }));
   }
   paint();
+  root.querySelector(".skm").classList.add("enter");
   return { reload() { p = skParse(get().look); paint(); } };
 }

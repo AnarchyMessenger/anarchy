@@ -1483,21 +1483,35 @@ async function paintSidekickToggle(c) {
   };
   show(b, true);
 }
+// Its memory lives with it on the server (D36): asking opens your chat with it.
+$("ask-memory").addEventListener("click", async () => {
+  try {
+    const id = await invoke("sidekick_chat"); openAsk(false); await refreshChannels(); await openChannel(id);
+    await invoke("send_message", { channel: id, text: "what do you remember?", thread: null });
+    await openChannel(id);
+  } catch (err) { alert(String(err)); }
+});
 $("ask-server-chat").addEventListener("click", async () => {
   try { const id = await invoke("sidekick_chat"); openAsk(false); await refreshChannels(); await openChannel(id); }
   catch (err) { alert(String(err)); }
 });
 
+let askFace = null;
 function paintAskHead() {
   const sk = profile?.sidekick;
-  $("ask-mark").replaceChildren(sk ? sidekickEl(sk, "head") : icon("sparkle"));
-  $("ask-mark").querySelector("svg.sk-svg")?.classList.add("live");
+  // The panel's sidekick is alive: it watches the pointer and reacts (D36).
+  if (sk) {
+    if (!askFace || askFace._look !== sk.look) { askFace = skLive(sk.look); askFace._look = sk.look; }
+    const holder = el("span", { class: "sk head" }); holder.append(askFace);
+    if (!$("ask-mark").contains(askFace)) $("ask-mark").replaceChildren(holder);
+  } else $("ask-mark").replaceChildren(icon("sparkle"));
   $("ask-mark").classList.toggle("has-sk", !!sk);
   $("ask-name").textContent = sk ? sk.name : "Assistant";
   $("tool-ask").replaceChildren(sk ? sidekickEl(sk, "tool") : icon("sparkle"));
   $("tool-ask").title = sk ? `${sk.name}, your sidekick (Ctrl J)` : "Ask (Ctrl J)";
   show("ask-server", !!sk && skHosted === true);
   $("ask-server-chat").textContent = sk ? `Ask ${sk.name} on the server instead` : "Ask on the server instead";
+  $("ask-memory").textContent = sk ? `What does ${sk.name} remember?` : "What does it remember?";
 }
 function openAsk(on = true) {
   if (on && thread) closeThread();
@@ -1577,9 +1591,8 @@ let skMoodTimer = null;
 function skMood(state, back = 0) {
   const sk = profile?.sidekick;
   if (!sk) return;
-  const face = sidekickEl(sk, "head live", state);
-  face.querySelector("svg").classList.add("live");
-  $("ask-mark").replaceChildren(face);
+  if (!askFace) paintAskHead();
+  skPatch(askFace, sk.look, state);
   clearTimeout(skMoodTimer);
   if (back) skMoodTimer = setTimeout(() => skMood("idle"), back);
 }

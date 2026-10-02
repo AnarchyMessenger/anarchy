@@ -196,7 +196,118 @@ fn terms(q: &str) -> Vec<String> {
         .collect()
 }
 
+// ---------- memory (D36) ----------
+// What its person asked it to remember, kept in its own encrypted device on
+// the host. "remember …", "what do you remember", "forget 2" / "forget …" /
+// "forget everything". Searches look here too.
+
+const MEMORY_MAX: usize = 200;
+
+fn memory(agent: &Agent) -> Vec<String> {
+    agent
+        .client
+        .device()
+        .setting("memory")
+        .ok()
+        .flatten()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+fn save_memory(agent: &Agent, items: &[String]) -> Result<(), Error> {
+    let bytes = serde_json::to_vec(items).unwrap_or_default();
+    agent.client.device().set_setting("memory", &bytes)?;
+    Ok(())
+}
+
+/// Handles a memory request, or returns `None` when it isn't one.
+fn memory_reply(agent: &Agent, q: &str) -> Result<Option<String>, Error> {
+    let t = q.trim();
+    let lower = t.to_lowercase();
+    let mut items = memory(agent);
+    if let Some(rest) = ["remember that ", "remember ", "note that "]
+        .iter()
+        .find_map(|p| lower.starts_with(p).then(|| t[p.len()..].trim()))
+    {
+        let fact = rest.trim_end_matches('.').trim();
+        if fact.is_empty() {
+            return Ok(Some("What should I remember?".into()));
+        }
+        if items.iter().any(|i| i.eq_ignore_ascii_case(fact)) {
+            return Ok(Some(format!("I already remember that: \u{201c}{fact}\u{201d}.")));
+        }
+        let first = items.is_empty();
+        items.push(fact.chars().take(500).collect());
+        if items.len() > MEMORY_MAX {
+            items.remove(0);
+        }
+        save_memory(agent, &items)?;
+        let mut reply = format!("Got it. I'll remember: \u{201c}{fact}\u{201d}.");
+        if first {
+            reply.push_str(
+                " I keep my memory on the server, encrypted on disk; whoever runs the server could read it. \
+                 Ask \u{201c}what do you remember\u{201d} to see it, or \u{201c}forget\u{201d} to take something out.",
+            );
+        }
+        return Ok(Some(reply));
+    }
+    if [
+        "what do you remember",
+        "memory",
+        "what do you know about me",
+        "show memory",
+    ]
+    .iter()
+    .any(|p| lower.trim_end_matches('?') == *p)
+    {
+        if items.is_empty() {
+            return Ok(Some(
+                "I don't remember anything yet. Tell me \u{201c}remember …\u{201d} and I will.".into(),
+            ));
+        }
+        let list: Vec<String> = items
+            .iter()
+            .enumerate()
+            .map(|(k, i)| format!("{}. {i}", k + 1))
+            .collect();
+        return Ok(Some(format!(
+            "What I remember ({}):\n{}",
+            items.len(),
+            list.join("\n")
+        )));
+    }
+    if let Some(rest) = lower.strip_prefix("forget") {
+        let rest = rest.trim().trim_end_matches('.');
+        if rest == "everything" || rest == "all" {
+            save_memory(agent, &[])?;
+            return Ok(Some(format!("Done. I forgot all {} things.", items.len())));
+        }
+        let at = rest
+            .parse::<usize>()
+            .ok()
+            .and_then(|n| n.checked_sub(1))
+            .filter(|n| *n < items.len())
+            .or_else(|| {
+                (!rest.is_empty())
+                    .then(|| items.iter().position(|i| i.to_lowercase().contains(rest)))
+                    .flatten()
+            });
+        return Ok(Some(match at {
+            Some(k) => {
+                let gone = items.remove(k);
+                save_memory(agent, &items)?;
+                format!("Forgotten: \u{201c}{gone}\u{201d}.")
+            }
+            None => "I couldn't find that in what I remember. Ask \u{201c}what do you remember\u{201d} for the list.".into(),
+        }));
+    }
+    Ok(None)
+}
+
 async fn answer(agent: &mut Agent, dm: ChannelId, q: &str) -> Result<String, Error> {
+    if let Some(reply) = memory_reply(agent, q)? {
+        return Ok(reply);
+    }
     let readable: Vec<ChannelId> = agent
         .client
         .device()
@@ -212,7 +323,21 @@ async fn answer(agent: &mut Agent, dm: ChannelId, q: &str) -> Result<String, Err
             .map_or_else(|| "a channel".to_owned(), |(n, ..)| format!("#{n}"))
     };
     let ql = q.trim().to_lowercase();
+    let told = |agent: &Agent, words: &[String]| -> Vec<String> {
+        memory(agent)
+            .into_iter()
+            .filter(|m| {
+                let l = m.to_lowercase();
+                words.iter().any(|w| l.contains(w.as_str()))
+            })
+            .take(3)
+            .collect()
+    };
     if readable.is_empty() {
+        let mine = told(agent, &terms(q));
+        if !mine.is_empty() {
+            return Ok(format!("From what you told me:\n• {}", mine.join("\n• ")));
+        }
         return Ok(
             "I can't read any channels yet. Open a Company channel or desk and turn me on there; \
                    I never join Sealed channels."
@@ -244,8 +369,12 @@ async fn answer(agent: &mut Agent, dm: ChannelId, q: &str) -> Result<String, Err
             }
         }
     }
+    let remembered = told(agent, &words);
     hits.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
     hits.truncate(5);
+    if hits.is_empty() && !remembered.is_empty() {
+        return Ok(format!("From what you told me:\n• {}", remembered.join("\n• ")));
+    }
     if hits.is_empty() {
         return Ok(format!(
             "Nothing about \u{201c}{}\u{201d} in the {} {} you've let me read.",
@@ -264,6 +393,10 @@ async fn answer(agent: &mut Agent, dm: ChannelId, q: &str) -> Result<String, Err
         let short: String = text.chars().take(140).collect();
         let more = if short.len() < text.len() { "…" } else { "" };
         lines.push(format!("• {} · {who}: {short}{more}", name(&agent.client, c)));
+    }
+    if !remembered.is_empty() {
+        lines.push("From what you told me:".into());
+        lines.extend(remembered.iter().map(|m| format!("• {m}")));
     }
     Ok(lines.join("\n"))
 }

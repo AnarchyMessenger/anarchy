@@ -125,12 +125,47 @@ async fn a_sidekick_reads_only_what_its_person_shares_and_answers_only_them() {
     );
     assert!(reply.contains("Bob") && reply.contains("Maya"), "{reply}");
 
+    // Memory: what Maya asks it to keep, listed, used in answers, and forgotten.
+    let ask = |text: &'static str| Content::text(text);
+    for q in [
+        "remember that Acme pays on the 15th",
+        "remember the Acme contact is Jonas",
+        "what do you remember?",
+    ] {
+        maya.send_content(dm, &ask(q)).await.unwrap();
+    }
+    assert_eq!(host.tick().await.unwrap().answered, 3);
+    maya.sync_and_store(dm).await.unwrap();
+    let list = texts(&maya, dm).pop().unwrap();
+    assert!(
+        list.contains("1. Acme pays on the 15th") && list.contains("2. the Acme contact is Jonas"),
+        "{list}"
+    );
+    maya.send_content(dm, &ask("when does acme pay?")).await.unwrap();
+    host.tick().await.unwrap();
+    maya.sync_and_store(dm).await.unwrap();
+    assert!(
+        texts(&maya, dm)
+            .pop()
+            .unwrap()
+            .contains("From what you told me:\n• Acme pays on the 15th")
+    );
+    maya.send_content(dm, &ask("forget 1")).await.unwrap();
+    maya.send_content(dm, &ask("what do you remember")).await.unwrap();
+    host.tick().await.unwrap();
+    maya.sync_and_store(dm).await.unwrap();
+    let list = texts(&maya, dm).pop().unwrap();
+    assert!(
+        !list.contains("15th") && list.contains("1. the Acme contact is Jonas"),
+        "{list}"
+    );
+
     // Maya leaves: Pip is cut off before anyone removes it, and forgets the channel.
     bob.remove_user(general, maya.user_id()).await.unwrap();
     bob.send_content(general, &Content::text("Acme said after Maya left"))
         .await
         .unwrap();
-    maya.send_content(dm, &Content::text("acme?")).await.unwrap();
+    maya.send_content(dm, &Content::text("deposit?")).await.unwrap();
     let r = host.tick().await.unwrap();
     assert_eq!(r.forgot, vec![general]);
     maya.sync_and_store(dm).await.unwrap();
