@@ -468,13 +468,42 @@
           <div class="slash-pop panel" id="slash-pop" role="listbox" aria-label="Turn into" hidden></div>
         </div>
 
-        <!-- Inbox: what needs you, in one list (D35) -->
-        <div class="view page-view" id="view-inbox" hidden>
-          <header class="pagehead"><div><h1>Inbox</h1><p class="sub" id="inbox-sub">What needs you, newest first.</p></div>
-            <div class="row-actions"><button class="btn-outline pill" id="inbox-read" type="button"><svg class="i"><use href="#i-check"/></svg><span>Mark all read</span></button></div></header>
-          <div class="pagebar"><div class="pills" id="inbox-pills" role="tablist" aria-label="Show"></div></div>
-          <div class="inbox-list" id="inbox-list"></div>
+        <!-- Inbox: email and what happens in the app, in one place (D37) -->
+        <div class="view ibx" id="view-inbox" hidden>
+          <aside class="ibx-folders" aria-label="Inbox folders">
+            <h1>Inbox</h1>
+            <nav class="ibx-nav" id="ibx-nav"></nav>
+            <div class="ibx-acct" id="ibx-acct"></div>
+          </aside>
+          <section class="ibx-list" aria-label="Messages">
+            <header class="ibx-list-head"><label class="search pill"><svg class="i"><use href="#i-search"/></svg><input id="ibx-search" placeholder="Search the inbox" aria-label="Search the inbox"></label>
+              <button class="icon-btn" id="ibx-refresh" type="button" title="Check for new mail" aria-label="Check for new mail"><svg class="i"><use href="#i-undo"/></svg></button>
+              <button class="icon-btn" id="ibx-allread" type="button" title="Mark all read" aria-label="Mark all read"><svg class="i"><use href="#i-check"/></svg></button></header>
+            <p class="ibx-sub fine" id="ibx-sub"></p>
+            <div class="ibx-rows" id="ibx-rows" role="listbox" aria-label="Messages"></div>
+          </section>
+          <section class="ibx-read" id="ibx-read" aria-live="polite"></section>
         </div>
+
+        <dialog class="modal panel" id="dlg-mail" aria-labelledby="dlg-mail-title">
+          <form id="mail-form" novalidate>
+            <h2 id="dlg-mail-title">Connect your email</h2>
+            <p class="fine">Mail goes between this computer and your provider. It isn't end-to-end encrypted and never passes through Anarchy's server; it's kept here, encrypted, and shown as plain text.</p>
+            <label class="field" for="mail-email">Email address<input class="text-input" id="mail-email" type="email" autocomplete="email" placeholder="you@example.com"></label>
+            <label class="field" for="mail-name">Your name <span class="optional">· shown on mail you send</span><input class="text-input" id="mail-name" autocomplete="name"></label>
+            <label class="field" for="mail-pass">Password<input class="text-input" id="mail-pass" type="password" autocomplete="current-password"></label>
+            <p class="callout" id="mail-note" hidden></p>
+            <details class="mail-adv"><summary>Server settings</summary>
+              <div class="mail-grid">
+                <label class="field">IMAP server<input class="text-input mono" id="mail-imap"></label><label class="field">Port<input class="text-input mono" id="mail-imap-port" inputmode="numeric"></label>
+                <label class="field">SMTP server<input class="text-input mono" id="mail-smtp"></label><label class="field">Port<input class="text-input mono" id="mail-smtp-port" inputmode="numeric"></label>
+                <label class="field">User name<input class="text-input mono" id="mail-user" placeholder="Usually the address"></label>
+                <label class="field">Security<select class="text-input" id="mail-sec"><option value="tls">TLS</option><option value="plain">None (this computer only)</option></select></label>
+              </div></details>
+            <p class="error" id="mail-error" role="alert" hidden></p>
+            <div class="modal-actions"><button class="btn-outline" type="button" id="mail-cancel">Cancel</button><button class="btn-ink inline" type="submit" id="mail-save">Connect</button></div>
+          </form>
+        </dialog>
 
         <div class="view overview" id="view-desks" hidden>
           <div class="ov-inner">

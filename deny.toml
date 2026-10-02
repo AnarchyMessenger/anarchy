@@ -41,6 +41,12 @@ crate = "anarchy-testkit"
 [[licenses.exceptions]]
 allow = ["AGPL-3.0-only"]
 crate = "anarchy-brain"
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
+crate = "anarchy-sidekick"
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
+crate = "anarchy-mail"
 
 [bans]
 multiple-versions = "allow"

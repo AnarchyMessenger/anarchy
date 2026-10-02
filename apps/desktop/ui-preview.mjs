@@ -188,6 +188,14 @@ const mock = (startLocked) => {
   );
   const me = () => profile?.display_name || "You";
   const skOn = new Set();
+  let mailOn = true;
+  const mail = (uid, from_name, from_addr, subject, text, mins, seen) => ({ uid, message_id: `m${uid}@mail.test`, from_name, from_addr, to: ["maya@studiochen.fr"], subject, date_ms: now - mins * 60e3, text, seen, references: [] });
+  const mailbox = [
+    mail(41, "Jonas Weber", "ap@urbanthreads.eu", "Invoice 1042: payment date", "Hi Maya,\n\nThanks for the reminder. Finance has scheduled invoice 1042 for the 15th; you'll get the transfer confirmation the same day.\n\nBest,\nJonas Weber\nUrban Threads · Accounts payable", 25, false),
+    mail(40, "Camille Roux", "camille@trendyterra.fr", "Packaging: second round of mockups", "Bonjour Maya,\n\nThe second round looks great. Could we try the lighter kraft for the outer box? Our printer needs files by Thursday.\n\nMerci !\nCamille", 140, false),
+    mail(39, "Figma", "no-reply@figma.com", "Tomás commented on Acme rebrand", "Tomás Ruiz commented: \"Second direction, warmer. Shipping the deck cover today.\"", 60 * 20, true),
+    mail(38, "Sofia Marchetti", "sofia@casalume.it", "Casa Lume: new identity", "Hi! We filled in your form. Opening in March, so we'd love to start in November. Is a call on Monday possible?", 60 * 30, true),
+  ];
   const prefsItems = [];
   let skChat = false;
   channels.push({ id: "dpip", kind: "dm", peer: "pip", unread: false, messages: [
@@ -270,6 +278,14 @@ const mock = (startLocked) => {
       channels.find((x) => x.id === channel).messages.push({ sender: "ME", ts: Date.now(), text: `${profile.sidekick?.name || "My sidekick"}, my sidekick, can read this channel from now on, including what you say here. It runs on the server, so the server's operator could read it too. It only sees messages from now on.` });
     },
     heartbeat: async () => {},
+    mail_status: async () => ({ email: mailOn ? "maya@studiochen.fr" : null, name: "Maya Chen" }),
+    mail_list: async () => (mailOn ? mailbox : []),
+    mail_sync: async () => { await wait(150); return mailOn ? mailbox : []; },
+    mail_seen: async ({ uid, seen }) => { const m = mailbox.find((x) => x.uid === uid); if (m) m.seen = seen; },
+    mail_send: async () => { await wait(200); },
+    mail_preset: async ({ email }) => (email.includes("@") ? { imap_host: `imap.${email.split("@")[1]}`, imap_port: 993, smtp_host: `smtp.${email.split("@")[1]}`, smtp_port: 465, note: email.endsWith("gmail.com") ? "Gmail needs an app password: Google Account → Security → App passwords." : null, security: "tls" } : null),
+    mail_connect: async () => { await wait(300); mailOn = true; },
+    mail_disconnect: async () => { mailOn = false; },
     sidekick_leave: async ({ channel }) => { skOn.delete(channel); },
     sidekick_chat: async () => { skChat = true; return "dpip"; },
     open_channel: async ({ channel }) => {
@@ -674,7 +690,25 @@ await page.waitForTimeout(400);
 await shot("13q-desk-folders");
 await page.click('.section >> text=/^Inbox$/');
 await visible("#view-inbox");
+await shot("13r0-inbox-space");
+await page.click("#rail-home");
+await page.click('.section >> text=/^Inbox$/');
+await visible("#view-inbox");
+await page.waitForTimeout(300);
+await page.click('.ibx-row:has-text("Invoice 1042")');
+await page.waitForTimeout(200);
 await shot("13r-inbox");
+await page.click('.ibx-row:has-text("Collections")');
+await page.waitForTimeout(200);
+await shot("13r2-inbox-app-item");
+await page.click('.ibx-folder:has-text("Mail")');
+await page.keyboard.press("j");
+await page.waitForTimeout(200);
+await shot("13r3-inbox-mail-folder");
+await page.click('.ibx-acct .link');
+await page.waitForTimeout(100);
+await page.click("#rail-spaces .rail-btn >> nth=0");
+await page.waitForTimeout(200);
 await page.click("#rail-me");
 await shot("13s-presence");
 await page.click('#me-presence [data-p="busy"]');

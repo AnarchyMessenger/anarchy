@@ -6,6 +6,7 @@ members = [
   "crates/anarchy-server",
   "crates/anarchy-brain",
   "crates/anarchy-sidekick",
+  "crates/anarchy-mail",
   "crates/anarchy-testkit",
   "apps/desktop/src-tauri",
 ]
@@ -16,6 +17,7 @@ default-members = [
   "crates/anarchy-server",
   "crates/anarchy-brain",
   "crates/anarchy-sidekick",
+  "crates/anarchy-mail",
   "crates/anarchy-testkit",
 ]
 
@@ -32,6 +34,7 @@ anarchy-proto = { path = "crates/anarchy-proto" }
 anarchy-core = { path = "crates/anarchy-core" }
 anarchy-server = { path = "crates/anarchy-server" }
 anarchy-sidekick = { path = "crates/anarchy-sidekick" }
+anarchy-mail = { path = "crates/anarchy-mail" }
 anarchy-brain = { path = "crates/anarchy-brain" }
 anarchy-testkit = { path = "crates/anarchy-testkit" }
 openmls = "0.9"

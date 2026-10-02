@@ -1746,3 +1746,111 @@ pub async fn sidekick_chat(i: &mut Inner) -> Result<ChannelId, String> {
 pub async fn heartbeat(i: &mut Inner) -> Result<(), String> {
     i.client()?.heartbeat().await.map_err(err)
 }
+
+// ---------- mail (D37) ----------
+// The account and recent mail live in this device's encrypted database; mail
+// goes between this computer and the person's provider, never through the
+// Anarchy server. Shown as plain text.
+
+const MAIL_KEEP: usize = 300;
+
+#[derive(Serialize, serde::Deserialize, Default)]
+struct MailCache {
+    uid_validity: Option<u32>,
+    mails: Vec<anarchy_mail::Mail>,
+}
+
+#[derive(Serialize)]
+pub struct MailStatus {
+    email: Option<String>,
+    name: Option<String>,
+}
+
+fn mail_account(i: &Inner) -> Option<anarchy_mail::Account> {
+    read_json(i.device(), "mail:account")
+}
+
+pub async fn mail_preset(_i: &mut Inner, email: String) -> Result<Option<anarchy_mail::Preset>, String> {
+    Ok(anarchy_mail::preset(&email))
+}
+
+pub async fn mail_status(i: &mut Inner) -> Result<MailStatus, String> {
+    let a = mail_account(i);
+    Ok(MailStatus {
+        email: a.as_ref().map(|a| a.email.clone()),
+        name: a.and_then(|a| a.name),
+    })
+}
+
+/// Checks the settings by signing in, then keeps them.
+pub async fn mail_connect(i: &mut Inner, account: anarchy_mail::Account) -> Result<(), String> {
+    anarchy_mail::check(&account).await.map_err(|e| e.to_string())?;
+    write_json(i.device(), "mail:account", &account)?;
+    write_json(i.device(), "mail:cache", &MailCache::default())?;
+    Ok(())
+}
+
+/// Forgets the account and every message kept from it.
+pub async fn mail_disconnect(i: &mut Inner) -> Result<(), String> {
+    for k in ["mail:account", "mail:cache"] {
+        i.device().delete_setting(k).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+pub async fn mail_list(i: &mut Inner) -> Result<Vec<anarchy_mail::Mail>, String> {
+    Ok(read_json::<MailCache>(i.device(), "mail:cache")
+        .unwrap_or_default()
+        .mails)
+}
+
+/// Fetches what's new and returns everything kept.
+pub async fn mail_sync(i: &mut Inner) -> Result<Vec<anarchy_mail::Mail>, String> {
+    let Some(account) = mail_account(i) else {
+        return Ok(vec![]);
+    };
+    let mut cache: MailCache = read_json(i.device(), "mail:cache").unwrap_or_default();
+    let newest = cache.mails.iter().map(|m| m.uid).max();
+    let got = anarchy_mail::fetch(&account, newest, 100)
+        .await
+        .map_err(|e| e.to_string())?;
+    if got.uid_validity != cache.uid_validity {
+        // The server renumbered the mailbox: start over from what it has now.
+        cache = MailCache {
+            uid_validity: got.uid_validity,
+            mails: vec![],
+        };
+        let fresh = anarchy_mail::fetch(&account, None, 100)
+            .await
+            .map_err(|e| e.to_string())?;
+        cache.mails = fresh.mails;
+    } else {
+        cache.mails.extend(got.mails);
+    }
+    cache.mails.sort_by_key(|m| std::cmp::Reverse(m.date_ms));
+    cache.mails.dedup_by_key(|m| m.uid);
+    cache.mails.truncate(MAIL_KEEP);
+    write_json(i.device(), "mail:cache", &cache)?;
+    Ok(cache.mails)
+}
+
+pub async fn mail_seen(i: &mut Inner, uid: u32, seen: bool) -> Result<(), String> {
+    let Some(account) = mail_account(i) else {
+        return Ok(());
+    };
+    anarchy_mail::set_seen(&account, uid, seen)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut cache: MailCache = read_json(i.device(), "mail:cache").unwrap_or_default();
+    if let Some(m) = cache.mails.iter_mut().find(|m| m.uid == uid) {
+        m.seen = seen;
+    }
+    write_json(i.device(), "mail:cache", &cache)
+}
+
+pub async fn mail_send(i: &mut Inner, out: anarchy_mail::Outgoing) -> Result<(), String> {
+    let account = mail_account(i).ok_or("Connect a mail account first.")?;
+    anarchy_mail::send(&account, &out)
+        .await
+        .map_err(|e| e.to_string())
+}

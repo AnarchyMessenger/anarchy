@@ -507,6 +507,7 @@ async function showApp() {
   beat();
   try { spaces = await invoke("spaces"); } catch { spaces = []; }
   loadOrg();
+  loadMail().then(() => syncMail());
   if (status.session?.server) invoke("workspace_info", { server: status.session.server }).then((w) => { skHosted = !!w.config?.sidekicks_hosted; paintAskHead(); }).catch(() => {});
   renderRail();
   go("home");
@@ -4088,17 +4089,48 @@ function markRead(keys) {
 }
 $("notifs-read").addEventListener("click", () => markRead(notifItems().map((n) => n.key)));
 
-// ---------- inbox (D35) ----------
-// The bell's list as a page: everything that needs you, filtered by kind. In
-// a space it shows that space's conversations and desks; Home shows it all.
-let inboxTab = "all";
-const INBOX_TABS = [["all", "All"], ["mention", "Mentions"], ["msg", "Unread"], ["due", "Due"], ["desk", "Desks"], ["event", "Agenda"]];
-function inboxItems() {
+// ---------- inbox (D37) ----------
+// Email and what happens in the app, in one list, read like mail: folders on
+// the left, the list in the middle, the message on the right with what you
+// can do about it. Mail stays on this device (see anarchy-mail); app events
+// are worked out here, as before. Archive and snooze are yours and sync with
+// your folders.
+let mails = [], mailAcct = null, inboxSel = null, inboxFolderSel = "all", inboxQuery = "", mailBusy = false;
+const IBX_FOLDERS = [["all", "Everything", "bell"], ["mail", "Mail", "mail"], ["mention", "Mentions", "at"], ["msg", "Conversations", "chat"], ["due", "Due", "clock"], ["desk", "Desks", "receipt"], ["event", "Agenda", "calendar"], ["snoozed", "Snoozed", "clock"], ["archived", "Archived", "check"]];
+function ibxState() { org.inbox ??= { archived: {}, snoozed: {} }; return org.inbox; }
+function mailItem(m) {
+  return { key: `mail:${m.uid}`, kind: "mail", mail: m, icon: "mail", from: m.from_name || m.from_addr || "Unknown sender", title: m.subject || "(no subject)", sub: (m.text || "").replace(/\s+/g, " ").slice(0, 160), atMs: m.date_ms, unread: !m.seen };
+}
+function appItem(n) {
+  const c = n.channel ? channels.find((x) => x.id === n.channel) : null;
+  const from = n.kind === "msg" || n.kind === "mention" ? (c?.kind === "dm" ? c.name : `#${c?.name || n.title}`) : n.kind === "due" ? "Due" : n.kind === "desk" ? (c?.name || "Desk") : "Agenda";
+  const desk = n.kind === "desk";
+  return { ...n, from, title: desk ? n.sub : n.title, sub: desk ? "Open the desk to see what's waiting." : n.sub, atMs: Date.parse(n.at) || Date.now(), unread: !notifRead[n.key], channelObj: c };
+}
+// Everything, newest first; `scope` narrows app events to the space you're in.
+function inboxAll() {
   const sp = view === "space" ? currentSpace?.id : null;
-  return notifItems().filter((n) => !sp || (n.channel && channels.find((c) => c.id === n.channel)?.space === sp));
+  const apps = notifItems().filter((n) => !sp || (n.channel && channels.find((c) => c.id === n.channel)?.space === sp)).map(appItem);
+  const eod = new Date(); eod.setHours(23, 59, 59, 999);
+  const later = (x) => x.atMs > eod.getTime();
+  // What's coming up comes first, soonest first; then everything else, newest first.
+  return [...(sp ? [] : mails.map(mailItem)), ...apps].sort((a, b) => (later(b) - later(a)) || (later(a) ? a.atMs - b.atMs : b.atMs - a.atMs));
+}
+function inboxItems() {
+  const st = ibxState(), now = Date.now();
+  return inboxAll().filter((x) => !st.archived[x.key] && !((st.snoozed[x.key] || 0) > now));
+}
+function inboxShown() {
+  const st = ibxState(), now = Date.now(), all = inboxAll();
+  let list = inboxFolderSel === "archived" ? all.filter((x) => st.archived[x.key])
+    : inboxFolderSel === "snoozed" ? all.filter((x) => (st.snoozed[x.key] || 0) > now)
+    : inboxItems().filter((x) => inboxFolderSel === "all" || x.kind === inboxFolderSel);
+  const q = inboxQuery.trim().toLowerCase();
+  if (q) list = list.filter((x) => `${x.from} ${x.title} ${x.sub}`.toLowerCase().includes(q));
+  return list;
 }
 function inboxFolder() {
-  const n = inboxItems().filter((x) => !notifRead[x.key]).length;
+  const n = inboxItems().filter((x) => x.unread).length;
   return { key: "inbox", label: "Inbox", icon: "bell", n };
 }
 async function openInbox() {
@@ -4106,24 +4138,184 @@ async function openInbox() {
   hideMain(); show("view-inbox");
   renderFolders(); renderTabs();
   renderInbox();
+  syncMail();
 }
+const ibxDay = (ms) => { const d = new Date(ms), t = new Date(); const eod = new Date(t); eod.setHours(23, 59, 59, 999); if (ms > eod.getTime()) return "Coming up"; const y = new Date(t); y.setDate(t.getDate() - 1); return d.toDateString() === t.toDateString() ? "Today" : d.toDateString() === y.toDateString() ? "Yesterday" : d > new Date(t.getTime() - 6 * 864e5) ? "This week" : "Earlier"; };
+const ibxTime = (ms) => { const d = new Date(ms); return d.toDateString() === new Date().toDateString() ? timeFmt.format(d) : d.toLocaleDateString(undefined, { day: "numeric", month: "short" }); };
 function renderInbox() {
   if ($("view-inbox").hidden) return;
-  const items = inboxItems();
-  const count = (k) => (k === "all" ? items : items.filter((n) => n.kind === k)).length;
-  $("inbox-pills").replaceChildren(...INBOX_TABS.filter(([k]) => k === "all" || count(k)).map(([k, label]) =>
-    el("button", { class: `pill-tab${inboxTab === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(inboxTab === k), onclick: () => { inboxTab = k; renderInbox(); } }, label, el("span", { class: "n", text: String(count(k)) }))));
-  const shown = inboxTab === "all" ? items : items.filter((n) => n.kind === inboxTab);
-  const unread = items.filter((n) => !notifRead[n.key]).length;
-  $("inbox-sub").textContent = unread ? `${unread} unread${view === "space" ? ` in ${currentSpace?.name}` : ""}. What needs you, newest first.` : "You're all caught up.";
-  $("inbox-list").replaceChildren(...(shown.length ? shown.map((n) => el("button", { class: `inbox-row${notifRead[n.key] ? "" : " unread"}${n.late ? " late" : ""}`, type: "button", onclick: () => { markRead([n.key]); n.go(); } },
-    el("span", { class: "inbox-icon" }, icon(n.icon)),
-    el("span", { class: "lines" }, el("strong", { text: n.title }), el("small", { text: n.sub })),
-    el("span", { class: "inbox-kind", text: { mention: "Mention", msg: "Unread", due: n.late ? "Late" : "Due", desk: "Desk", event: "Agenda" }[n.kind] || "" }),
-    el("time", { text: sinceFmt(Date.parse(n.at)) }),
-    notifRead[n.key] ? null : el("span", { class: "unread-dot", "aria-label": "unread" }))) : [el("div", { class: "inbox-empty" }, icon("check"), el("strong", { text: "Nothing here" }), el("p", { class: "fine", text: "Mentions, unread conversations, things due and what desks need show up here." }))]));
+  const live = inboxItems(), all = inboxAll(), st = ibxState(), now = Date.now();
+  const count = (k) => k === "archived" ? all.filter((x) => st.archived[x.key]).length : k === "snoozed" ? all.filter((x) => (st.snoozed[x.key] || 0) > now).length : live.filter((x) => (k === "all" || x.kind === k) && x.unread).length;
+  $("ibx-nav").replaceChildren(...IBX_FOLDERS.filter(([k]) => k !== "mail" || mailAcct || view !== "space").map(([k, label, ic]) => {
+    const n = count(k);
+    return el("button", { class: `ibx-folder${inboxFolderSel === k ? " on" : ""}`, type: "button", onclick: () => { inboxFolderSel = k; inboxSel = null; renderInbox(); } }, icon(ic), el("span", { text: label }), n ? el("span", { class: "n", text: String(n) }) : null);
+  }));
+  $("ibx-acct").replaceChildren(...(mailAcct
+    ? [el("p", { class: "fine" }, icon("mail"), el("span", { text: mailAcct }), mailBusy ? el("span", { class: "soft", text: " · checking…" }) : null), el("button", { class: "link", type: "button", text: "Disconnect", onclick: disconnectMail })]
+    : [el("p", { class: "fine", text: "Bring your email in next to what happens here." }), el("button", { class: "btn-outline sm", type: "button", onclick: openMailDialog }, icon("mail"), "Connect email")]));
+  const shown = inboxShown();
+  const unread = shown.filter((x) => x.unread).length;
+  $("ibx-sub").textContent = shown.length ? `${shown.length} ${shown.length === 1 ? "item" : "items"}${unread ? `, ${unread} unread` : ""}` : "";
+  if (inboxSel && !shown.some((x) => x.key === inboxSel)) inboxSel = null;
+  const rows = []; let day = "";
+  for (const x of shown) {
+    const d = ibxDay(x.atMs);
+    if (d !== day) { rows.push(el("p", { class: "ibx-day", text: d })); day = d; }
+    rows.push(el("button", { class: `ibx-row${x.unread ? " unread" : ""}${x.late ? " late" : ""}${inboxSel === x.key ? " on" : ""}`, type: "button", role: "option", "aria-selected": String(inboxSel === x.key), "data-key": x.key, onclick: () => selectInbox(x.key) },
+      x.kind === "mail" ? avatarEl(x.from, { size: "sm" }) : el("span", { class: `ibx-kind k-${x.kind}` }, icon(x.icon)),
+      el("span", { class: "ibx-lines" },
+        el("span", { class: "ibx-top" }, el("strong", { class: "ibx-from", text: x.from }), el("time", { text: ibxTime(x.atMs) })),
+        el("span", { class: "ibx-title", text: x.title }),
+        el("span", { class: "ibx-snip", text: x.sub })),
+      x.unread ? el("span", { class: "unread-dot", "aria-label": "unread" }) : null));
+  }
+  $("ibx-rows").replaceChildren(...(rows.length ? rows : [el("div", { class: "inbox-empty" }, icon("check"), el("strong", { text: inboxQuery ? "Nothing matches" : "All clear" }), el("p", { class: "fine", text: inboxFolderSel === "archived" ? "Archived things wait here." : inboxFolderSel === "snoozed" ? "Snoozed things come back when it's time." : "Mail, mentions, unread conversations, things due and what desks need show up here." }))]));
+  renderInboxRead(shown.find((x) => x.key === inboxSel));
 }
-$("inbox-read").addEventListener("click", () => { markRead(inboxItems().map((n) => n.key)); renderFolders(); });
+async function selectInbox(key) {
+  inboxSel = key;
+  const x = inboxAll().find((i) => i.key === key);
+  if (x?.kind === "mail" && !x.mail.seen) {
+    x.mail.seen = true;
+    invoke("mail_seen", { uid: x.mail.uid, seen: true }).catch((e) => console.warn(e));
+  } else if (x && x.kind !== "mail") markRead([key]);
+  renderInbox();
+  renderFolders();
+}
+function ibxArchive(x, on = true) {
+  const st = ibxState();
+  if (on) st.archived[x.key] = Date.now(); else delete st.archived[x.key];
+  delete st.snoozed[x.key];
+  // Keep a month of these; older ones are long gone from the inbox anyway.
+  for (const [k, t] of Object.entries(st.archived)) if (Date.now() - t > 60 * 864e5) delete st.archived[k];
+  saveOrg(); inboxSel = null; renderInbox(); renderFolders();
+}
+function ibxSnooze(x, until) { ibxState().snoozed[x.key] = until; saveOrg(); inboxSel = null; renderInbox(); renderFolders(); }
+function snoozeTimes() {
+  const d = new Date(), at = (h, plus = 0) => { const t = new Date(d); t.setDate(t.getDate() + plus); t.setHours(h, 0, 0, 0); return t.getTime(); };
+  const mon = new Date(d); mon.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7)); mon.setHours(9, 0, 0, 0);
+  return [["In an hour", Date.now() + 3600e3], ["This evening", at(18)], ["Tomorrow morning", at(9, 1)], ["Next week", mon.getTime()]].filter(([, t]) => t > Date.now() + 10 * 60e3);
+}
+async function renderInboxRead(x) {
+  const box = $("ibx-read");
+  if (!x) { box.replaceChildren(el("div", { class: "ibx-none" }, icon("mail"), el("p", { class: "fine", text: "Pick something to read. j and k move, e archives, r replies." }))); return; }
+  const st = ibxState();
+  const archived = !!st.archived[x.key];
+  const acts = el("div", { class: "ibx-acts" },
+    el("button", { class: "btn-outline sm", type: "button", title: "Archive (e)", onclick: () => ibxArchive(x, !archived) }, icon(archived ? "undo" : "check"), archived ? "Move to inbox" : "Archive"),
+    el("button", { class: "btn-outline sm", type: "button", title: "Snooze", onclick: (e) => openMenu(e.currentTarget, "Snooze until", snoozeTimes().map(([label, t]) => ({ label, go: () => ibxSnooze(x, t) }))) }, icon("clock"), "Snooze"),
+    x.kind === "mail" ? el("button", { class: "btn-outline sm", type: "button", onclick: () => { x.mail.seen = false; invoke("mail_seen", { uid: x.mail.uid, seen: false }).catch(() => {}); inboxSel = null; renderInbox(); } }, "Mark unread") : null,
+    x.go ? el("button", { class: "btn-ink sm", type: "button", onclick: () => x.go() }, icon("external"), x.kind === "msg" || x.kind === "mention" ? "Open conversation" : x.kind === "event" ? "Open agenda" : "Open") : null);
+  if (x.kind === "mail") {
+    const m = x.mail;
+    const reply = el("textarea", { class: "text-input ibx-reply-text", rows: "4", placeholder: `Reply to ${m.from_name || m.from_addr || "sender"}…`, "aria-label": "Reply" });
+    const sendBtn = el("button", { class: "btn-ink sm", type: "button" }, icon("send"), "Send");
+    const err = el("p", { class: "error", hidden: "" });
+    sendBtn.addEventListener("click", () => busy(sendBtn, "Sending…", async () => {
+      const text = reply.value.trim();
+      if (!text) return;
+      try {
+        await invoke("mail_send", { out: { to: m.from_addr, subject: /^re:/i.test(m.subject) ? m.subject : `Re: ${m.subject}`, text, in_reply_to: m.message_id, references: [...(m.references || []), ...(m.message_id ? [m.message_id] : [])] } });
+        reply.value = ""; err.hidden = true;
+        box.querySelector(".ibx-sent")?.remove();
+        box.querySelector(".ibx-reply").before(el("p", { class: "ibx-sent fine", text: `Sent to ${m.from_addr}.` }));
+      } catch (e) { err.textContent = String(e); err.hidden = false; }
+    }));
+    box.replaceChildren(acts,
+      el("h2", { class: "ibx-subject", text: m.subject }),
+      el("div", { class: "ibx-meta" }, avatarEl(x.from), el("span", { class: "lines" }, el("strong", { text: m.from_name || m.from_addr }), el("small", { text: `${m.from_addr || ""}${m.to?.length ? ` → ${m.to.join(", ")}` : ""}` })), el("time", { text: dateTimeFmt.format(m.date_ms) })),
+      el("div", { class: "ibx-body", text: m.text || "(no text)" }),
+      el("p", { class: "fine ibx-plain", text: "Shown as plain text: no remote images, no scripts." }),
+      el("div", { class: "ibx-reply" }, reply, el("div", { class: "ibx-reply-bar" }, err, sendBtn)));
+    return;
+  }
+  // App events: what it is, a little context, and a reply where that makes sense.
+  const body = el("div", { class: "ibx-ctx" });
+  box.replaceChildren(acts, el("h2", { class: "ibx-subject", text: x.title }), el("div", { class: "ibx-meta" }, el("span", { class: `ibx-kind k-${x.kind}` }, icon(x.icon)), el("span", { class: "lines" }, el("strong", { text: x.from }), el("small", { text: x.sub })), el("time", { text: dateTimeFmt.format(x.atMs) })), body);
+  if ((x.kind === "msg" || x.kind === "mention") && x.channelObj) {
+    const c = x.channelObj;
+    let msgs = [];
+    try { msgs = await invoke("open_channel", { channel: c.id }); invoke("blur"); } catch { /* offline */ }
+    if (inboxSel !== x.key) return;
+    body.replaceChildren(...msgs.slice(-6).map((m) => el("div", { class: "ibx-msg" }, avatarEl(m.sender, m.look || {}), el("div", {}, el("p", { class: "ibx-msg-head" }, el("strong", { text: m.sender }), el("time", { text: timeFmt.format(m.ts_ms) })), el("p", { text: m.text })))));
+    const reply = el("textarea", { class: "text-input ibx-reply-text", rows: "3", placeholder: c.kind === "dm" ? `Message ${c.name}` : `Message #${c.name}`, "aria-label": "Reply" });
+    const sendBtn = el("button", { class: "btn-ink sm", type: "button" }, icon("send"), "Send");
+    sendBtn.addEventListener("click", () => busy(sendBtn, "Sending…", async () => {
+      const text = reply.value.trim(); if (!text) return;
+      try { await invoke("send_message", { channel: c.id, text, thread: null }); reply.value = ""; await refreshChannels(); renderInboxRead({ ...x }); } catch (e) { alert(String(e)); }
+    }));
+    box.append(el("div", { class: "ibx-reply" }, reply, el("div", { class: "ibx-reply-bar" }, el("span"), sendBtn)));
+  } else {
+    body.replaceChildren(el("p", { class: "fine", text: { due: "Open it to update it or mark it done.", event: "From your agenda." }[x.kind] || "" }));
+  }
+}
+// Keyboard, like a mail app: j/k move, e archive, r reply, u unread.
+document.addEventListener("keydown", (e) => {
+  if ($("view-inbox").hidden || e.target.closest("input, textarea, select, [contenteditable]") || e.metaKey || e.ctrlKey || e.altKey) return;
+  const shown = inboxShown(), at = shown.findIndex((x) => x.key === inboxSel);
+  if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); const n = shown[Math.min(shown.length - 1, at + 1)]; if (n) selectInbox(n.key); }
+  else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); const n = shown[Math.max(0, at - 1)]; if (n) selectInbox(n.key); }
+  else if (e.key === "e" && at >= 0) { e.preventDefault(); const next = shown[at + 1]; ibxArchive(shown[at], !ibxState().archived[shown[at].key]); if (next) selectInbox(next.key); }
+  else if (e.key === "r" && at >= 0) { e.preventDefault(); $("ibx-read").querySelector(".ibx-reply-text")?.focus(); }
+  else if (e.key === "u" && at >= 0 && shown[at].kind === "mail") { const m = shown[at].mail; m.seen = false; invoke("mail_seen", { uid: m.uid, seen: false }).catch(() => {}); renderInbox(); }
+});
+$("ibx-search").addEventListener("input", () => { inboxQuery = $("ibx-search").value; renderInbox(); });
+$("ibx-refresh").addEventListener("click", () => syncMail(true));
+$("ibx-allread").addEventListener("click", () => {
+  const shown = inboxShown();
+  markRead(shown.filter((x) => x.kind !== "mail").map((x) => x.key));
+  for (const x of shown) if (x.kind === "mail" && !x.mail.seen) { x.mail.seen = true; invoke("mail_seen", { uid: x.mail.uid, seen: true }).catch(() => {}); }
+  renderInbox(); renderFolders();
+});
+
+// ---------- mail account ----------
+async function loadMail() {
+  try { const st = await invoke("mail_status"); mailAcct = st.email; mails = await invoke("mail_list"); } catch { mailAcct = null; mails = []; }
+  renderInbox(); renderFolders();
+}
+async function syncMail(loud = false) {
+  if (!mailAcct || mailBusy) return;
+  mailBusy = true; renderInbox();
+  try {
+    const known = new Set(mails.map((m) => m.uid));
+    mails = await invoke("mail_sync");
+    // A desktop alert for new unread mail, unless you're busy or looking at it.
+    const fresh = mails.filter((m) => !m.seen && !known.has(m.uid));
+    if (known.size && fresh.length && profile?.presence !== "busy" && ($("view-inbox").hidden || document.hidden)) invoke("notify", { title: fresh.length === 1 ? (fresh[0].from_name || fresh[0].from_addr || "New mail") : `${fresh.length} new emails`, body: fresh.length === 1 ? fresh[0].subject : fresh.map((m) => m.subject).slice(0, 3).join(" · ") }).catch(() => {});
+  } catch (e) { if (loud) alert(String(e)); else console.warn(e); }
+  mailBusy = false;
+  renderInbox(); renderFolders();
+}
+setInterval(() => syncMail(), 3 * 60e3);
+function openMailDialog() {
+  for (const id of ["mail-email", "mail-pass", "mail-imap", "mail-imap-port", "mail-smtp", "mail-smtp-port", "mail-user"]) $(id).value = "";
+  $("mail-name").value = profile?.display_name || "";
+  $("mail-sec").value = "tls"; show("mail-note", false); setError("mail-error", "");
+  $("dlg-mail").showModal(); $("mail-email").focus();
+}
+$("mail-email").addEventListener("change", async () => {
+  const p = await invoke("mail_preset", { email: $("mail-email").value.trim() }).catch(() => null);
+  if (!p) return;
+  $("mail-imap").value = p.imap_host; $("mail-imap-port").value = p.imap_port; $("mail-smtp").value = p.smtp_host; $("mail-smtp-port").value = p.smtp_port; $("mail-sec").value = p.security;
+  $("mail-note").textContent = p.note || ""; show("mail-note", !!p.note);
+});
+$("mail-cancel").addEventListener("click", () => $("dlg-mail").close());
+$("mail-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = $("mail-email").value.trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return setError("mail-error", "Enter your email address.");
+  if (!$("mail-pass").value) return setError("mail-error", "Enter the password (or app password).");
+  if (!$("mail-imap").value) $("mail-email").dispatchEvent(new Event("change"));
+  const account = { email, name: $("mail-name").value.trim() || null, imap_host: $("mail-imap").value.trim(), imap_port: +$("mail-imap-port").value || 993, smtp_host: $("mail-smtp").value.trim(), smtp_port: +$("mail-smtp-port").value || 465, username: $("mail-user").value.trim() || email, password: $("mail-pass").value, security: $("mail-sec").value };
+  await busy($("mail-save"), "Signing in…", async () => {
+    try { await invoke("mail_connect", { account }); $("dlg-mail").close(); mailAcct = email; await syncMail(true); }
+    catch (err) { setError("mail-error", String(err)); }
+  });
+});
+async function disconnectMail() {
+  if (!confirm(`Disconnect ${mailAcct}? The mail kept on this computer is deleted; nothing changes in your mailbox.`)) return;
+  await invoke("mail_disconnect"); mailAcct = null; mails = []; renderInbox(); renderFolders();
+}
 
 // Desktop reminders: 15 minutes before a timed event, and from 9:00 on the day
 // something falls due (once a day while it stays late). Each fires once.

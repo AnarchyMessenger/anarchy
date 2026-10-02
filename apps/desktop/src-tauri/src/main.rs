@@ -80,6 +80,14 @@ op!(sidekick_join(channel: ChannelId) -> ());
 op!(sidekick_leave(channel: ChannelId) -> ());
 op!(sidekick_chat() -> ChannelId);
 op!(heartbeat() -> ());
+op!(mail_preset(email: String) -> Option<anarchy_mail::Preset>);
+op!(mail_status() -> ops::MailStatus);
+op!(mail_connect(account: anarchy_mail::Account) -> ());
+op!(mail_disconnect() -> ());
+op!(mail_list() -> Vec<anarchy_mail::Mail>);
+op!(mail_sync() -> Vec<anarchy_mail::Mail>);
+op!(mail_seen(uid: u32, seen: bool) -> ());
+op!(mail_send(out: anarchy_mail::Outgoing) -> ());
 op!(search(query: String) -> Vec<ops::SearchHit>);
 op!(space_members(space: SpaceId) -> Vec<ops::PeerView>);
 op!(ensure_drive(space: SpaceId) -> ChannelId);
@@ -418,6 +426,14 @@ fn main() {
             sidekick_leave,
             sidekick_chat,
             heartbeat,
+            mail_preset,
+            mail_status,
+            mail_connect,
+            mail_disconnect,
+            mail_list,
+            mail_sync,
+            mail_seen,
+            mail_send,
             search,
             space_members,
             ensure_drive,
