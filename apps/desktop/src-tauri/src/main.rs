@@ -3,6 +3,7 @@
 
 mod dav;
 mod engine;
+mod local;
 mod ops;
 mod storage;
 
@@ -80,6 +81,7 @@ op!(sidekick_join(channel: ChannelId) -> ());
 op!(sidekick_leave(channel: ChannelId) -> ());
 op!(sidekick_chat() -> ChannelId);
 op!(heartbeat() -> ());
+op!(start_local(name: String) -> anarchy_proto::Profile);
 op!(mail_preset(email: String) -> Option<anarchy_mail::Preset>);
 op!(mail_status() -> ops::MailStatus);
 op!(mail_connect(account: anarchy_mail::Account) -> ());
@@ -426,6 +428,7 @@ fn main() {
             sidekick_leave,
             sidekick_chat,
             heartbeat,
+            start_local,
             mail_preset,
             mail_status,
             mail_connect,

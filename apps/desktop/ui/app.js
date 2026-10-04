@@ -4,7 +4,9 @@
 
 const $ = (id) => document.getElementById(id);
 const tauri = window.__TAURI__;
-const invoke = (cmd, args) => tauri.core.invoke(cmd, args);
+// During the tour (D38) every command goes to the sample workspace in demo.js.
+let tour = null;
+const invoke = (cmd, args) => (tour ? tour.core.invoke(cmd, args) : tauri.core.invoke(cmd, args));
 const media = window.matchMedia("(prefers-color-scheme: dark)");
 const POLL_MS = 2500;
 const COLORS = ["ember", "cobalt", "spring", "summer", "autumn", "winter", "coral", "ocean", "forest", "dusk"];
@@ -181,11 +183,13 @@ $("lock-form").addEventListener("submit", async (e) => {
 // ---------- sign-in and onboarding ----------
 
 const FLOW = ["s-account", "s-usage", "s-lock", "s-card"];
+// A local account's first step stands in for signing in.
+const FLOW_ALIAS = { "s-local": "s-account", "s-anon": "s-account", "s-guest": "s-account", "s-invite": "s-account", "s-server": "s-account" };
 function authStep(id) {
   for (const s of document.querySelectorAll(".auth-step")) show(s, s.id === id);
-  const at = FLOW.indexOf(["s-anon", "s-guest", "s-invite", "s-server"].includes(id) ? "s-account" : id);
+  const at = FLOW.indexOf(FLOW_ALIAS[id] || id);
   $("steps").replaceChildren(...(at < 0 ? [] : FLOW.map((_, i) => el("i", { class: i <= at ? "on" : "" }))));
-  const focus = { "s-server": "server", "s-invite": "invite-link", "s-guest": "invite-code", "s-anon": "anon-name", "s-lock": "pass1", "s-card": "card-name" }[id];
+  const focus = { "s-local": "local-name", "s-server": "server", "s-invite": "invite-link", "s-guest": "invite-code", "s-anon": "anon-name", "s-lock": "pass1", "s-card": "card-name" }[id];
   if (focus) requestAnimationFrame(() => $(focus).focus());
   const notes = {
     "s-usage": "Nothing about how you use Anarchy leaves your account settings.",
@@ -201,10 +205,58 @@ function showAuth() {
   show("starting", false); show("lock", false); show("app", false); show("auth");
   paintArt({});
   $("server").value = "";
+  // Nothing here needs a server (D38): start on this computer, take a tour,
+  // or sign in. Someone with a local account who's connecting skips this.
+  if (connecting) { paintArt(profile || {}); openSignIn(); return; }
+  authStep("s-welcome");
+}
+let connecting = false;
+function openSignIn() {
   authStep("s-account");
-  // No address to type first: the server you used last, or the public one.
+  // The server you used last, or the public one.
   connect(status.last_server || status.default_server);
 }
+$("go-signin").addEventListener("click", openSignIn);
+$("go-local").addEventListener("click", () => { setError("local-error", ""); authStep("s-local"); });
+$("local-back").addEventListener("click", () => authStep("s-welcome"));
+$("account-back").addEventListener("click", () => { if (connecting) { connecting = false; showApp(); } else authStep("s-welcome"); });
+$("s-local").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("local-name").value.trim();
+  if (!name) return setError("local-error", "Add a name. It can be just your first name.");
+  await busy($("local-go"), "Starting…", async () => {
+    try { await invoke("start_local", { name }); await afterSignIn(); }
+    catch (err) { setError("local-error", String(err)); }
+  });
+});
+// From inside the app: sign in to a server and bring the local account along.
+function connectServer() {
+  if (tour) return endTour();
+  connecting = true;
+  showAuth();
+}
+$("local-connect").addEventListener("click", connectServer);
+
+// ---------- the tour (D38) ----------
+async function startTour() {
+  tour = anarchyDemo(true);
+  await tour.core.invoke("unlock", { passphrase: "correct horse battery" });
+  status = await invoke("status");
+  show("tour-bar");
+  document.body.classList.add("touring");
+  await afterSignIn();
+}
+async function endTour() {
+  tour = null;
+  show("tour-bar", false);
+  document.body.classList.remove("touring");
+  // The sample data goes with the tour.
+  mails = []; mailAcct = null; channels = []; spaces = []; profile = null; tabs = [];
+  status = await invoke("status");
+  showAuth();
+}
+$("go-tour").addEventListener("click", () => startTour().catch((e) => alert(String(e))));
+$("tour-end").addEventListener("click", endTour);
 
 // Loads a server's sign-in options. Failing to reach the default server
 // leaves a way out (another server, an invite) rather than a dead end.
@@ -217,7 +269,10 @@ async function connect(server) {
     show("server-loading", false);
     for (const id of ["to-anon", "to-guest"]) show(id, false);
     $("org-server").textContent = hostOf(server);
-    setError("account-error", `${err} You can use a different server, or an invite.`);
+    const pub = server === status.default_server;
+    setError("account-error", pub
+      ? "Anarchy's public server isn't open yet. Join with an invite or your company's server, or go back and start on this computer: you can connect later and keep everything."
+      : `${err} You can use a different server, or an invite.`);
     return false;
   }
 }
@@ -265,10 +320,12 @@ function prepareAccount() {
   const google = /accounts\.google\.com/.test(c.issuer || "");
   show("server-loading", false); show("account-methods");
   const isDefault = workspace.server === status.default_server;
-  $("account-title").textContent = c.open_signup ? "Welcome to Anarchy" : `Sign in to ${c.org_name}`;
-  $("account-sub").textContent = c.open_signup
-    ? "Messages are encrypted on this computer before they leave it. New here or coming back, it's the same step."
-    : "Use the account your organisation gave you.";
+  $("account-title").textContent = connecting ? `Connect ${c.org_name}` : c.open_signup ? "Welcome to Anarchy" : `Sign in to ${c.org_name}`;
+  $("account-sub").textContent = connecting
+    ? "Sign in or make an account there. Everything on this computer moves into it: your tasks, notes, agenda, files and sidekick."
+    : c.open_signup
+      ? "Messages are encrypted on this computer before they leave it. New here or coming back, it's the same step."
+      : "Use the account your organisation gave you.";
   $("account-note").textContent = pendingNote;
   show("account-note", !!pendingNote);
   $("change-server").textContent = isDefault ? "Use a different server" : "Change";
@@ -372,6 +429,7 @@ $("s-guest").addEventListener("submit", async (e) => {
 });
 
 async function afterSignIn() {
+  connecting = false;
   status = await invoke("status");
   profile = status.profile;
   if (profile?.onboarded) return showApp();
@@ -437,7 +495,9 @@ $("lock-skip").addEventListener("click", toCardStep);
 function toCardStep() {
   $("card-name").value = draft.display_name;
   $("card-user").value = draft.username;
-  $("card-tag").textContent = `#${String(draft.tag).padStart(4, "0")}`;
+  $("card-tag").textContent = status.local ? "#····" : `#${String(draft.tag).padStart(4, "0")}`;
+  // A local account gets its number from the server it connects to (D38).
+  $("card-local-note").hidden = !status.local;
   mountPickers($("avatar-picker"), $("color-picker"), () => draft, (c) => { Object.assign(draft, c); refreshCard(); });
   refreshCard();
   setError("card-error", "");
@@ -505,6 +565,11 @@ async function showApp() {
   show("omnibox");
   paintMe();
   beat();
+  // A local account (D38): what needs a server says so, and offers to connect one.
+  show("local-banner", !!status.local && !tour);
+  // Messaging someone, making or joining a space: all need a server.
+  for (const n of document.querySelectorAll("#view-start .start-grid")) show(n, !status.local);
+  show("me-connect", !!status.local);
   try { spaces = await invoke("spaces"); } catch { spaces = []; }
   loadOrg();
   loadMail().then(() => syncMail());
@@ -859,7 +924,7 @@ $("thread-form").addEventListener("submit", async (e) => {
 const MAX_TABS = 6;
 let tabs = readStore("anarchy.tabs", []);
 function readStore(key, fallback) { try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; } catch { return fallback; } }
-function writeStore(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private mode: fine */ } }
+function writeStore(key, value) { if (tour) return; try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private mode: fine */ } }
 const tabKey = (t) => (t.thread != null ? `${t.channel}:${t.thread}` : t.channel);
 function addTab(t) {
   const key = tabKey(t);
@@ -3877,7 +3942,12 @@ function spaceTab(tab) {
   $("dlg-space").dataset.tab = tab;
 }
 for (const t of document.querySelectorAll("#dlg-space .tab")) t.addEventListener("click", () => spaceTab(t.dataset.tab));
-$("rail-add").addEventListener("click", () => openSpaceDialog("create"));
+$("rail-add").addEventListener("click", () => {
+  // Spaces live on a server: a local account connects one first (D38).
+  if (status.local) { if (confirm("Spaces are shared with other people, so they live on a server. Connect one now? Everything you've made on this computer comes with you.")) connectServer(); return; }
+  openSpaceDialog("create");
+});
+$("me-connect").addEventListener("click", () => { toggleMe(false); connectServer(); });
 $("start-create").addEventListener("click", () => openSpaceDialog("create"));
 $("start-join").addEventListener("click", () => openSpaceDialog("join"));
 $("space-cancel").addEventListener("click", () => $("dlg-space").close());
@@ -4431,7 +4501,7 @@ function startPolling() {
         if (sig(items) !== sig(drive.items)) { drive.items = items; renderDrive(); }
       }
     } catch (err) {
-      if (/signed out|sign in required/i.test(String(err))) { status = await invoke("status"); if (!status.session) showAuth(); }
+      if (/signed out|sign in required/i.test(String(err))) { status = await invoke("status"); if (!status.session && !status.local) showAuth(); }
     } finally { syncing = false; }
   }, POLL_MS);
 }
@@ -4634,7 +4704,8 @@ async function route() {
   appearance = status.appearance;
   applyAppearance();
   profile = status.profile;
-  if (!status.session) return showAuth();
+  // A local account (D38) opens straight into the app, like a signed-in one.
+  if (!status.session && !status.local) return showAuth();
   if (profile && !profile.onboarded) {
     show("starting", false); show("lock", false); show("auth");
     return afterSignIn();

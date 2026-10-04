@@ -109,8 +109,30 @@
       <header class="auth-brand"><span class="steps" id="steps" aria-hidden="true"></span></header>
 
       <div class="auth-body">
+        <!-- 0. three ways in (D38): nothing here needs a server -->
+        <div class="auth-step" id="s-welcome">
+          <h1>Welcome to Anarchy</h1>
+          <p class="sub">Chats, tasks, notes, files and your email in one place, encrypted on this computer.</p>
+          <div class="paths">
+            <button class="path primary" id="go-local" type="button"><svg class="i"><use href="#i-laptop"/></svg><span><strong>Start on this computer</strong><small>No account, no server. Tasks, notes, agenda, files and email work right away. Connect a server later to message people, and bring everything with you.</small></span></button>
+            <button class="path" id="go-tour" type="button"><svg class="i"><use href="#i-sparkle"/></svg><span><strong>Take a tour</strong><small>Look around a sample workspace first. Nothing is saved.</small></span></button>
+            <button class="path" id="go-signin" type="button"><svg class="i"><use href="#i-key"/></svg><span><strong>Sign in or join</strong><small>With your work email, an invite link, or your company's own server.</small></span></button>
+          </div>
+        </div>
+
+        <!-- 0b. a local account: just a name -->
+        <form class="auth-step" id="s-local" novalidate hidden>
+          <h1>What should we call you?</h1>
+          <p class="sub">This stays on this computer until you connect a server.</p>
+          <label class="field" for="local-name">Your name
+            <input class="text-input" id="local-name" maxlength="64" autocomplete="name" placeholder="Maya Chen"></label>
+          <button class="btn-ink" id="local-go" type="submit">Continue</button>
+          <p class="error" id="local-error" role="alert" hidden></p>
+          <button class="link back" id="local-back" type="button"><svg class="i"><use href="#i-arrow-left"/></svg>Back</button>
+        </form>
+
         <!-- 1. server -->
-        <form class="auth-step" id="s-server" novalidate>
+        <form class="auth-step" id="s-server" novalidate hidden>
           <h1>Use a different server</h1>
           <p class="sub">Companies and communities can run their own Anarchy. Enter the address you were given.</p>
           <label class="field" for="server">Server
@@ -167,6 +189,7 @@
           </div>
           <p class="error" id="no-method" hidden>This server has no sign-in method turned on. Ask whoever runs it.</p>
           <p class="fine server-line">Server: <span id="org-server"></span> · <button class="link" id="change-server" type="button">Use a different server</button></p>
+          <button class="link back" id="account-back" type="button"><svg class="i"><use href="#i-arrow-left"/></svg>Back</button>
         </div>
 
         <!-- 2b. anonymous -->
@@ -231,6 +254,7 @@
           <label class="field" for="card-user">Username
             <span class="handle-input"><span class="at">@</span><input class="text-input mono" id="card-user" maxlength="32" autocomplete="username" spellcheck="false"><span class="tagnum mono" id="card-tag">#0000</span></span></label>
           <p class="fine">The number keeps two people called <span class="mono" id="card-hint-name">maya</span> apart. It stays when you rename, if it's free.</p>
+          <p class="note" id="card-local-note" hidden>You'll get your number when you connect a server. Until then, nobody can find you: this is all on your computer.</p>
           <div class="field"><span>Picture</span><div class="avatar-picker" id="avatar-picker" role="radiogroup" aria-label="Picture"></div></div>
           <div class="field"><span>Colour</span><div class="color-picker" id="color-picker" role="radiogroup" aria-label="Colour"></div></div>
           <button class="btn-ink" id="card-save" type="submit">Looks good</button>
@@ -291,7 +315,7 @@
           <button type="button" role="radio" data-p="away"><span class="presence-dot p-away"></span>Away</button>
           <button type="button" role="radio" data-p="invisible"><span class="presence-dot p-offline"></span>Invisible<small>Shown as offline</small></button>
         </div>
-        <div class="me-links"><button class="side-item" type="button" id="me-profile">Edit profile</button><button class="side-item" type="button" id="me-privacy">Who can message me</button><button class="side-item" type="button" id="me-settings"><svg class="i"><use href="#i-settings"/></svg>All settings</button></div>
+        <div class="me-links"><button class="side-item" type="button" id="me-connect" hidden><svg class="i"><use href="#i-plug"/></svg>Connect a server</button><button class="side-item" type="button" id="me-profile">Edit profile</button><button class="side-item" type="button" id="me-privacy">Who can message me</button><button class="side-item" type="button" id="me-settings"><svg class="i"><use href="#i-settings"/></svg>All settings</button></div>
       </div>
     </nav>
 
@@ -351,6 +375,7 @@
           <div class="start-inner ov-inner">
             <header class="pagehead home-head"><div><h1 id="home-headline">Good morning.</h1><p class="sub" id="home-summary"></p></div>
               <div class="row-actions"><button class="btn-ink inline" id="home-new-task" type="button"><svg class="i"><use href="#i-plus"/></svg><span>New task</span></button></div></header>
+            <div class="local-banner" id="local-banner" hidden><svg class="i"><use href="#i-laptop"/></svg><span><strong>Only on this computer for now.</strong> Connect a server to message people and share spaces; everything you've made here comes with you.</span><button class="btn-ink sm" id="local-connect" type="button">Connect a server</button></div>
             <section class="pipe" aria-labelledby="pipe-title">
               <div class="pipe-head"><h2 id="pipe-title">Task pipeline</h2><span class="fine" id="pipe-range">Last 30 days · every board you're on</span></div>
               <div class="pipe-grid" id="pipe-grid"></div>
@@ -1026,8 +1051,10 @@
   </div>
 </template>
 
+<div class="fold-menu panel" id="fold-menu" role="menu" hidden></div>
+<div class="tour-bar" id="tour-bar" role="status" hidden><svg class="i"><use href="#i-sparkle"/></svg><span><strong>You're on a tour.</strong> A sample workspace: click anything, nothing is saved.</span><button class="btn-ink sm" id="tour-end" type="button">Start for real</button></div>
+<script src="demo.js"></script>
 <script src="sidekick.js"></script>
 <script src="app.js"></script>
-<div class="fold-menu panel" id="fold-menu" role="menu" hidden></div>
 </body>
 </html>

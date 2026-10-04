@@ -72,8 +72,24 @@ impl Inner {
     pub fn client(&mut self) -> Result<&mut Client, String> {
         match &mut self.account {
             Account::SignedIn(c, _) => Ok(c),
+            Account::SignedOut(d) if crate::local::profile_of(d).is_some() => {
+                Err("That needs a server. Connect one from your profile to message people and share.".into())
+            }
             _ => Err("You're signed out".into()),
         }
+    }
+
+    /// The device of a local account, for making its desks.
+    pub fn local_device(&mut self) -> Result<&mut Device, String> {
+        match &mut self.account {
+            Account::SignedOut(d) => Ok(d),
+            _ => Err("Not a local account".into()),
+        }
+    }
+
+    /// A local account (D38): signed out, with a profile kept on this device.
+    pub fn is_local(&self) -> bool {
+        self.saved().is_none() && crate::local::profile_of(self.device()).is_some()
     }
 
     pub fn saved(&self) -> Option<&SavedSession> {

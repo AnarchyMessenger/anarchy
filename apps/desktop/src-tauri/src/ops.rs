@@ -91,6 +91,8 @@ pub struct Status {
     /// Where new accounts go unless an email domain, an invite or the person says otherwise.
     default_server: String,
     session: Option<SessionInfo>,
+    /// A local account: everything personal works, nothing that needs a server does (D38).
+    local: bool,
 }
 
 #[derive(Serialize)]
@@ -105,6 +107,10 @@ pub struct SessionInfo {
 }
 
 pub async fn status(i: &mut Inner) -> Result<Status, String> {
+    if i.is_local() {
+        let lp = crate::local::profile_of(i.device()).expect("local");
+        i.profile = Some(crate::local::as_profile(i.device(), &lp));
+    }
     if i.saved().is_some() && i.profile.is_none() {
         // Offline is fine: the app works from the saved session and fills this in later.
         if let Ok(p) = i.client()?.me().await {
@@ -121,6 +127,7 @@ pub async fn status(i: &mut Inner) -> Result<Status, String> {
         notifications: read_json(device, "notifications").unwrap_or_default(),
         last_server: read_json(device, "last_server"),
         default_server: default_server(),
+        local: i.is_local(),
         session: i.saved().map(|s| SessionInfo {
             server: s.server.clone(),
             org_name: s.org_name.clone(),
@@ -340,12 +347,23 @@ async fn attach(
         Account::SignedIn(c, _) => (*c).into_device(),
         Account::Moving => unreachable!(),
     };
-    let client = Client::from_session(&server, session.clone(), device);
+    let mut client = Client::from_session(&server, session.clone(), device);
     let registered = async {
         client.register_device().await?;
         client.publish_key_packages(KEY_PACKAGES_PER_SIGN_IN).await
     }
     .await;
+    // Someone who started on this computer brings it all with them (D38).
+    if registered.is_ok() && crate::local::profile_of(client.device()).is_some() {
+        match crate::local::migrate(&mut client, &i.data_dir).await {
+            Ok(m) => eprintln!(
+                "anarchy: moved {} desks, {} records, {} files into the account",
+                m.desks, m.items, m.files
+            ),
+            // Keep the local copies; signing in again tries once more.
+            Err(e) => eprintln!("anarchy: couldn't move the local account yet: {e}"),
+        }
+    }
     let profile = match &registered {
         Ok(()) => client.me().await.ok(),
         Err(_) => None,
@@ -390,12 +408,22 @@ pub async fn sign_out(i: &mut Inner) -> Result<(), String> {
 // ---------- profile ----------
 
 pub async fn me(i: &mut Inner) -> Result<Profile, String> {
+    if i.is_local() {
+        let lp = crate::local::profile_of(i.device()).expect("local");
+        return Ok(crate::local::as_profile(i.device(), &lp));
+    }
     let p = i.client()?.me().await.map_err(err)?;
     i.profile = Some(p.clone());
     Ok(p)
 }
 
 pub async fn update_profile(i: &mut Inner, update: ProfileUpdate) -> Result<Profile, String> {
+    if i.is_local() {
+        let lp = crate::local::update(i.device(), update)?;
+        let p = crate::local::as_profile(i.device(), &lp);
+        i.profile = Some(p.clone());
+        return Ok(p);
+    }
     let p = i.client()?.update_me(&update).await.map_err(err)?;
     // Keep the saved session's name in step, for offline starts.
     if let Account::SignedIn(client, saved) = &mut i.account {
@@ -427,6 +455,9 @@ pub async fn notify(i: &mut Inner, title: String, body: String) -> Result<(), St
 }
 
 pub async fn spaces(i: &mut Inner) -> Result<Vec<SpaceSummary>, String> {
+    if i.is_local() {
+        return Ok(vec![]);
+    }
     i.client()?.spaces().await.map_err(err)
 }
 
@@ -588,6 +619,24 @@ fn agent_tag(i: &Inner, channel: ChannelId, device: DeviceId) -> Option<AgentTag
 type ReadMarks = HashMap<ChannelId, u64>;
 
 pub async fn list_channels(i: &mut Inner) -> Result<Vec<ChannelView>, String> {
+    if i.is_local() {
+        return Ok(crate::local::list(i.device())
+            .into_iter()
+            .map(|(id, kind)| ChannelView {
+                id,
+                kind: "personal",
+                space: None,
+                name: crate::local::desk_name(&kind).into(),
+                desk: Some(kind),
+                peer: None,
+                topic: String::new(),
+                trust: Trust::Sealed,
+                last_text: None,
+                last_ts: 0,
+                unread: false,
+            })
+            .collect());
+    }
     let me = i.my_device();
     let local = i.client()?.device().channels();
     if local.iter().any(|c| !i.metas.contains_key(c)) {
@@ -599,6 +648,9 @@ pub async fn list_channels(i: &mut Inner) -> Result<Vec<ChannelView>, String> {
     let marks: ReadMarks = read_json(client.device(), "read").unwrap_or_default();
     let mut out = Vec::new();
     for id in client.device().channels() {
+        if crate::local::is_local(client.device(), id) {
+            continue;
+        }
         let history = client.device().messages(id, 200).map_err(|e| e.to_string())?;
         let (name, topic, trust) = client
             .channel_info(id)
@@ -668,6 +720,9 @@ async fn refresh_members(i: &mut Inner, channel: ChannelId) -> Result<(), String
 }
 
 pub async fn open_channel(i: &mut Inner, channel: ChannelId) -> Result<Vec<MessageView>, String> {
+    if crate::local::is_local(i.device(), channel) {
+        return Ok(vec![]);
+    }
     i.focused = Some(channel);
     if !i.members.contains_key(&channel) {
         refresh_members(i, channel).await?;
@@ -785,13 +840,9 @@ pub async fn search(i: &mut Inner, query: String) -> Result<Vec<SearchHit>, Stri
     }
     let me = i.my_device();
     let mut hits = Vec::new();
-    let channels = i.client()?.device().channels();
+    let channels = i.device().channels();
     for channel in channels {
-        let history = i
-            .client()?
-            .device()
-            .messages(channel, 5000)
-            .map_err(|e| e.to_string())?;
+        let history = i.device().messages(channel, 5000).map_err(|e| e.to_string())?;
         for m in history.iter().rev() {
             if let Some(text) = Content::decode(&m.content).text_body()
                 && text.to_lowercase().contains(&q)
@@ -811,7 +862,7 @@ pub async fn search(i: &mut Inner, query: String) -> Result<Vec<SearchHit>, Stri
                 });
             }
         }
-        for item in i.client()?.desk_items(channel).map_err(err)? {
+        for item in desk_items(i, channel).await? {
             // Settings and forms hold keys and config, not things people look for.
             if matches!(item.kind.as_str(), "settings" | "form") {
                 continue;
@@ -871,6 +922,9 @@ pub async fn create_desk(
 }
 
 pub async fn desk_items(i: &mut Inner, channel: ChannelId) -> Result<Vec<DeskItem>, String> {
+    if crate::local::is_local(i.device(), channel) {
+        return crate::local::items(i.device(), channel);
+    }
     i.client()?.desk_items(channel).map_err(err)
 }
 
@@ -882,6 +936,9 @@ pub async fn ensure_personal(i: &mut Inner, kind: String) -> Result<ChannelId, S
     // `prefs` holds how you organise things (sidebar folders), synced between your devices.
     if !matches!(kind.as_str(), "agenda" | "notes" | "files" | "tasks" | "prefs") {
         return Err("Unknown personal desk".into());
+    }
+    if i.is_local() {
+        return crate::local::ensure_desk(i.local_device()?, &kind);
     }
     let _ = refresh_metas(i).await;
     let local = i.client()?.device().channels();
@@ -910,10 +967,8 @@ pub async fn save_text_file(
     id: String,
     text: String,
 ) -> Result<(), String> {
-    let item = i
-        .client()?
-        .desk_items(channel)
-        .map_err(err)?
+    let item = desk_items(i, channel)
+        .await?
         .into_iter()
         .find(|x| x.id == id && x.kind == "file")
         .ok_or("That file isn't here any more")?;
@@ -1003,9 +1058,13 @@ pub async fn store_file(
     let by = i
         .saved()
         .and_then(|s| s.display_name.clone())
+        .or_else(|| crate::local::profile_of(i.device()).map(|p| p.display_name))
         .unwrap_or_else(|| "Someone".into());
-    let client = i.client()?;
-    let mut data = client.upload_file(channel, bytes).await.map_err(err)?;
+    let mut data = if crate::local::is_local(i.device(), channel) {
+        crate::local::store_file(&i.data_dir, bytes)?
+    } else {
+        i.client()?.upload_file(channel, bytes).await.map_err(err)?
+    };
     data["name"] = serde_json::json!(name);
     data["folder"] = serde_json::json!(folder);
     data["mime"] = serde_json::json!(mime_for(name));
@@ -1032,18 +1091,19 @@ async fn file_bytes(
     channel: ChannelId,
     id: &str,
 ) -> Result<(Vec<u8>, serde_json::Value), String> {
-    let item = i
-        .client()?
-        .desk_items(channel)
-        .map_err(err)?
+    let item = desk_items(i, channel)
+        .await?
         .into_iter()
         .find(|x| x.id == id && x.kind == "file")
         .ok_or("That file isn't here any more")?;
-    let bytes = i
-        .client()?
-        .download_file(channel, &item.data)
-        .await
-        .map_err(err)?;
+    let bytes = if item.data.get("local_chunks").is_some() {
+        crate::local::read_file(&i.data_dir, &item.data)?
+    } else {
+        i.client()?
+            .download_file(channel, &item.data)
+            .await
+            .map_err(err)?
+    };
     Ok((bytes, item.data))
 }
 
@@ -1100,6 +1160,9 @@ pub async fn preview_file(i: &mut Inner, channel: ChannelId, id: String) -> Resu
 pub async fn put_items(i: &mut Inner, channel: ChannelId, items: Vec<ItemRecord>) -> Result<(), String> {
     if items.is_empty() {
         return Ok(());
+    }
+    if crate::local::is_local(i.device(), channel) {
+        return crate::local::put(i.device(), channel, items);
     }
     let content = if items.len() == 1 {
         let r = items.into_iter().next().expect("one item");
@@ -1159,6 +1222,13 @@ pub struct SyncReport {
 /// Pulls invites and new messages for every channel, and notifies about messages
 /// from others in channels that aren't on screen.
 pub async fn sync_all(i: &mut Inner) -> Result<SyncReport, String> {
+    if i.is_local() {
+        return Ok(SyncReport {
+            new_messages: 0,
+            joined: 0,
+            removed: 0,
+        });
+    }
     let me = i.my_device();
     let prefs: NotificationPrefs = read_json(i.device(), "notifications").unwrap_or_default();
     let my_name = i
@@ -1174,7 +1244,17 @@ pub async fn sync_all(i: &mut Inner) -> Result<SyncReport, String> {
         removed: 0,
     };
     let mut to_notify = Vec::new();
+    let leftover = client
+        .device()
+        .channels()
+        .into_iter()
+        .filter(|c| crate::local::is_local(client.device(), *c));
+    let leftover: Vec<ChannelId> = leftover.collect();
     for channel in client.device().channels() {
+        // Local desks not yet moved into the account: they aren't on the server.
+        if leftover.contains(&channel) {
+            continue;
+        }
         let arrived = client.sync_and_store(channel).await.map_err(err)?;
         if !client.device().has_channel(channel) {
             report.removed += 1;
@@ -1257,6 +1337,9 @@ pub struct Person {
 }
 
 pub async fn people(i: &mut Inner, channel: Option<ChannelId>) -> Result<Vec<Person>, String> {
+    if i.is_local() {
+        return Ok(vec![]);
+    }
     let me = i.saved().map(|s| s.session.user_id);
     let in_channel: Vec<UserId> = match channel {
         Some(c) => {
@@ -1312,6 +1395,9 @@ pub struct MemberView {
 }
 
 pub async fn channel_members(i: &mut Inner, channel: ChannelId) -> Result<Vec<MemberView>, String> {
+    if crate::local::is_local(i.device(), channel) {
+        return Ok(vec![]);
+    }
     refresh_members(i, channel).await?;
     let me = i.saved().map(|s| s.session.user_id);
     let mut seen = Vec::new();
@@ -1605,6 +1691,13 @@ async fn my_sidekick(i: &mut Inner) -> Result<Option<anarchy_proto::SidekickAcco
 
 /// Whether your sidekick reads `channel`, and whether it may.
 pub async fn sidekick_state(i: &mut Inner, channel: ChannelId) -> Result<SidekickState, String> {
+    if i.is_local() {
+        return Ok(SidekickState {
+            hosted: false,
+            on: false,
+            blocked: Some("Connect a server first.".into()),
+        });
+    }
     let server = i.client()?.server_url().to_owned();
     let hosted = oidc::workspace_config(&server)
         .await
@@ -1744,6 +1837,9 @@ pub async fn sidekick_chat(i: &mut Inner) -> Result<ChannelId, String> {
 /// The app is open and someone is using it (D35). The UI calls this about
 /// once a minute and stops while the person is idle.
 pub async fn heartbeat(i: &mut Inner) -> Result<(), String> {
+    if i.is_local() {
+        return Ok(());
+    }
     i.client()?.heartbeat().await.map_err(err)
 }
 
@@ -1853,4 +1949,17 @@ pub async fn mail_send(i: &mut Inner, out: anarchy_mail::Outgoing) -> Result<(),
     anarchy_mail::send(&account, &out)
         .await
         .map_err(|e| e.to_string())
+}
+
+// ---------- local account (D38) ----------
+
+/// Starts using Anarchy on this computer, with no server.
+pub async fn start_local(i: &mut Inner, name: String) -> Result<Profile, String> {
+    if i.saved().is_some() {
+        return Err("You're already signed in".into());
+    }
+    let lp = crate::local::create(i.device(), &name)?;
+    let p = crate::local::as_profile(i.device(), &lp);
+    i.profile = Some(p.clone());
+    Ok(p)
 }

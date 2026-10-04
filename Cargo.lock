@@ -122,6 +122,7 @@ dependencies = [
  "anarchy-core",
  "anarchy-mail",
  "anarchy-proto",
+ "anarchy-testkit",
  "argon2",
  "base64 0.22.1",
  "bytes",
