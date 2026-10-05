@@ -72,6 +72,10 @@ Sign up with Google, email or anonymously, then say what it's for, lock the devi
 |---|---|
 | ![Dark](docs/screens/dark.png) | ![Locked](docs/screens/locked.png) |
 
+| An email that can move to Anarchy | The Buddy sidekick, with headwear |
+|---|---|
+| ![Mail upgrade](docs/screens/mail-upgrade.png) | ![Buddy](docs/screens/sidekick-buddy.png) |
+
 These are rendered by `apps/desktop/ui-preview.mjs` with a mocked backend. The one below is the real app: a DM from an anonymous account arriving by handle, against a real server, taken under Xvfb.
 
 ![Real app](docs/screens/real-app-dm-received.png)

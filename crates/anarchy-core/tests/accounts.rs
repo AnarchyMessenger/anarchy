@@ -136,6 +136,18 @@ async fn every_account_gets_a_handle_and_can_change_its_username() {
         ),
         400
     );
+    let me = maya
+        .update_me(&sk("Pip", "s2.bot.bean.e9edf2.100.100.0.a.cat"))
+        .await
+        .unwrap();
+    assert_eq!(me.sidekick.unwrap().look, "s2.bot.bean.e9edf2.100.100.0.a.cat");
+    assert_eq!(
+        status(
+            maya.update_me(&sk("Pip", "s2.bot.bean.e9edf2.100.100.0.a.<b>"))
+                .await
+        ),
+        400
+    );
     assert_eq!(
         status(maya.update_me(&sk(&"x".repeat(25), "orb-ocean")).await),
         400
@@ -390,4 +402,40 @@ async fn presence_follows_the_choice_and_the_heartbeat() {
     let me = maya.members(channel).await.unwrap().remove(0);
     assert_eq!(me.presence, Some(Presence::Online));
     assert!(me.color.is_some());
+}
+
+#[tokio::test]
+async fn an_email_finds_someone_only_if_you_could_message_them() {
+    let server = open_server().await;
+    let maya = email_user(&server, "maya@example.com").await;
+    let bob = email_user(&server, "bob@example.com").await;
+    // Strangers who only take messages from their spaces: same answer as no account.
+    assert!(maya.lookup_email("bob@example.com").await.unwrap().is_none());
+    assert!(maya.lookup_email("nobody@example.com").await.unwrap().is_none());
+    // Sharing a space, the address finds them, in any case and spacing.
+    let space = maya.create_space("Studio", SpaceKind::Freelance).await.unwrap();
+    let code = maya
+        .create_space_invite(space.id, Duration::from_secs(3600), 5)
+        .await
+        .unwrap();
+    bob.join_space(&code.code).await.unwrap();
+    let found = maya.lookup_email("  Bob@Example.com ").await.unwrap().unwrap();
+    assert_eq!(found.user_id, bob.user_id());
+    assert!(found.email.is_none(), "the answer doesn't echo the address book");
+    // Someone who takes messages from anyone is findable without a shared space.
+    let carol = email_user(&server, "carol@example.com").await;
+    assert!(maya.lookup_email("carol@example.com").await.unwrap().is_none());
+    carol
+        .update_me(&ProfileUpdate {
+            dm_policy: Some(DmPolicy::Anyone),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(maya.lookup_email("carol@example.com").await.unwrap().is_some());
+    // Not for testing addresses in bulk.
+    for _ in 0..56 {
+        let _ = maya.lookup_email("x@example.com").await;
+    }
+    assert_eq!(status(maya.lookup_email("bob@example.com").await), 403);
 }

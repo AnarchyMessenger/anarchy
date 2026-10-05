@@ -935,14 +935,15 @@ pub async fn directory(
     ))
 }
 
-/// A sidekick's look (D34): `s2.<shape>.<face>.<rrggbb>.<eye size>.<spacing>.<tilt>.<ink>`,
+/// A sidekick's look (D34): `s2.<shape>.<face>.<rrggbb>.<eye size>.<spacing>.<tilt>.<ink>[.<headwear>]`,
 /// or the older `<shape>-<colour>`. Others' apps draw it, so it stays plain data.
 fn valid_look(look: &str) -> bool {
     let word = |p: &str| (2..=12).contains(&p.len()) && p.chars().all(|c| c.is_ascii_lowercase());
     let num = |p: &str, lo: i32, hi: i32| p.parse::<i32>().is_ok_and(|n| (lo..=hi).contains(&n));
     if let Some(rest) = look.strip_prefix("s2.") {
         let parts: Vec<&str> = rest.split('.').collect();
-        return parts.len() == 7
+        // An eighth field, headwear, is optional (D40).
+        return (parts.len() == 7 || (parts.len() == 8 && word(parts[7])))
             && word(parts[0])
             && word(parts[1])
             && parts[2].len() == 6
@@ -956,6 +957,53 @@ fn valid_look(look: &str) -> bool {
     }
     look.split_once('-')
         .is_some_and(|(shape, colour)| word(shape) && word(colour))
+}
+
+/// Lookups a person may make per hour.
+const LOOKUPS_PER_HOUR: u32 = 60;
+
+/// `POST /v1/directory/by-email`: the person behind an address, if the caller
+/// could already start a conversation with them here: they share a space, or
+/// that person takes messages from anyone (D39). Everyone else, and addresses
+/// with no account, get the same `null`, so the answer doesn't reveal who has
+/// an account. Capped per hour against testing addresses in bulk.
+pub async fn by_email(
+    State(s): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<anarchy_proto::EmailLookup>,
+) -> ApiResult<Json<Option<DirectoryEntry>>> {
+    if user.is_guest {
+        return Err(ApiError::forbidden("guests can't look people up"));
+    }
+    {
+        let hour = now_ms() / 3_600_000;
+        let mut map = s.lookups.lock().expect("lookup counter");
+        let e = map.entry(user.user_id).or_insert((hour, 0));
+        if e.0 != hour {
+            *e = (hour, 0);
+        }
+        if e.1 >= LOOKUPS_PER_HOUR {
+            return Err(ApiError::forbidden("too many lookups; try again in an hour"));
+        }
+        e.1 += 1;
+    }
+    let email = req.email.trim().to_lowercase();
+    let target: Option<(Uuid, String, bool, bool)> = sqlx::query_as(
+        "SELECT id, dm_policy, dm_humans_only, is_agent FROM users
+         WHERE lower(email) = $1 AND id <> $2 AND NOT is_guest AND (expires_at IS NULL OR expires_at > now())
+         LIMIT 1",
+    )
+    .bind(&email)
+    .bind(user.user_id)
+    .fetch_optional(&s.db)
+    .await?;
+    let Some((peer, policy, _humans_only, is_agent)) = target else {
+        return Ok(Json(None));
+    };
+    if is_agent || !(policy == "anyone" || share_a_space(&s.db, user.user_id, peer).await?) {
+        return Ok(Json(None));
+    }
+    Ok(Json(Some(entry_for(&s.db, peer, false).await?)))
 }
 
 /// `POST /v1/me/heartbeat`: the app is open and someone is using it (D35).

@@ -17,15 +17,26 @@ const SK_INK = "#1d1b18";
 // joins, so corners come out soft. `fy` is where the eyes sit, `fw` how far
 // apart they may go.
 const SK_BODIES = {
-  orb: { label: "Orb", fy: 54, fw: 1, d: "M50 14a38 38 0 1 1 0 76a38 38 0 1 1 0-76z" },
-  drop: { label: "Drop", fy: 62, fw: .9, d: "M50 10C62 30 82 44 82 62a32 30 0 0 1-64 0C18 44 38 30 50 10z" },
-  star: { label: "Star", fy: 56, fw: .8, d: "M50 12l10.6 23.4 25.4 2.6-19 17.2 5.4 25L50 67.4 27.6 80.2l5.4-25-19-17.2 25.4-2.6z" },
-  peak: { label: "Peak", fy: 66, fw: .85, d: "M50 16L86 82H14z" },
-  tile: { label: "Tile", fy: 54, fw: 1, d: "M24 18h52a8 8 0 0 1 8 8v52a8 8 0 0 1-8 8H24a8 8 0 0 1-8-8V26a8 8 0 0 1 8-8z" },
-  heart: { label: "Heart", fy: 48, fw: .95, d: "M50 84C26 68 12 54 12 38a18 18 0 0 1 38-8a18 18 0 0 1 38 8c0 16-14 30-38 46z" },
-  case: { label: "Briefcase", fy: 62, fw: 1, d: "M14 36h72a4 4 0 0 1 4 4v40a4 4 0 0 1-4 4H14a4 4 0 0 1-4-4V40a4 4 0 0 1 4-4z", extra: "M38 36v-8a4 4 0 0 1 4-4h16a4 4 0 0 1 4 4v8" },
-  cloud: { label: "Cloud", fy: 60, fw: 1, d: "M30 80a18 18 0 0 1-2-35.8A22 22 0 0 1 70 38a20 20 0 0 1 2 42z" },
+  // The Buddy (D40): a glossy helmet with ear pods and a dark visor the eyes glow through.
+  bot: { label: "Buddy", fy: 55, fw: .95, top: 20, hw: 24, d: "M44 24h12a26 26 0 0 1 26 26v8a26 26 0 0 1-26 26H44a26 26 0 0 1-26-26v-8a26 26 0 0 1 26-26z" },
+  orb: { label: "Orb", fy: 54, fw: 1, top: 10, hw: 22, d: "M50 14a38 38 0 1 1 0 76a38 38 0 1 1 0-76z" },
+  drop: { label: "Drop", fy: 62, fw: .9, top: 6, hw: 9, d: "M50 10C62 30 82 44 82 62a32 30 0 0 1-64 0C18 44 38 30 50 10z" },
+  star: { label: "Star", fy: 56, fw: .8, top: 8, hw: 8, d: "M50 12l10.6 23.4 25.4 2.6-19 17.2 5.4 25L50 67.4 27.6 80.2l5.4-25-19-17.2 25.4-2.6z" },
+  peak: { label: "Peak", fy: 66, fw: .85, top: 12, hw: 10, d: "M50 16L86 82H14z" },
+  tile: { label: "Tile", fy: 54, fw: 1, top: 14, hw: 28, d: "M24 18h52a8 8 0 0 1 8 8v52a8 8 0 0 1-8 8H24a8 8 0 0 1-8-8V26a8 8 0 0 1 8-8z" },
+  heart: { label: "Heart", fy: 48, fw: .95, top: 18, hw: 24, d: "M50 84C26 68 12 54 12 38a18 18 0 0 1 38-8a18 18 0 0 1 38 8c0 16-14 30-38 46z" },
+  case: { label: "Briefcase", fy: 62, fw: 1, top: 20, hw: 30, d: "M14 36h72a4 4 0 0 1 4 4v40a4 4 0 0 1-4 4H14a4 4 0 0 1-4-4V40a4 4 0 0 1 4-4z", extra: "M38 36v-8a4 4 0 0 1 4-4h16a4 4 0 0 1 4 4v8" },
+  cloud: { label: "Cloud", fy: 60, fw: 1, top: 30, hw: 18, d: "M30 80a18 18 0 0 1-2-35.8A22 22 0 0 1 70 38a20 20 0 0 1 2 42z" },
 };
+
+// Headwear (D40): what sets one sidekick apart from the next. Drawn from the
+// top of whatever body it sits on (`top`, `hw` in SK_BODIES).
+const SK_HATS = {
+  none: "None", cat: "Cat ears", dog: "Dog ears", bunny: "Bunny ears", antenna: "Antenna", phones: "Headphones",
+  beanie: "Beanie", cap: "Cap", tophat: "Top hat", crown: "Crown", sprout: "Sprout", halo: "Halo",
+};
+// A Buddy's eyes glow; its "ink" picks the light.
+const SK_GLOW = { a: "#5dffb4", b: "#6fd3ff", w: "#ffffff" };
 
 // Faces: eyes, brows, and where the eyes look. Shown as a ring in the maker.
 const SK_FACES = {
@@ -68,6 +79,10 @@ const SK_OLD_COLORS = { ember: "f2b48c", cobalt: "8c9dff", spring: "86dca0", sum
 const SK_PALETTE = ["b07150", "f15a4a", "ff9450", "ffcc4d", "86dca0", "2fc4b2", "52c2ca", "3d8bff", "8c9dff", "a970ff", "ff7eb6", "6b6359"];
 
 const SK_PRESETS = [
+  { shape: "bot", face: "bean", color: "e9edf2", hat: "cat" },
+  { shape: "bot", face: "calm", color: "ff9450", hat: "antenna", ink: "b" },
+  { shape: "bot", face: "happy", color: "2b2d33", hat: "phones" },
+  { shape: "bot", face: "peek", color: "8c9dff", hat: "dog", ink: "w" },
   { shape: "drop", face: "grumpy", color: "f15a4a" },
   { shape: "star", face: "calm", color: "ffcc4d" },
   { shape: "case", face: "stern", color: "b07150" },
@@ -78,12 +93,14 @@ const SK_PRESETS = [
   { shape: "tile", face: "sly", color: "86dca0" },
 ];
 
-const SK_DEFAULT = { shape: "orb", face: "calm", color: "52c2ca", size: 100, gap: 100, tilt: 0, ink: "a" };
+const SK_DEFAULT = { shape: "orb", face: "calm", color: "52c2ca", size: 100, gap: 100, tilt: 0, ink: "a", hat: "none" };
+// What a new sidekick starts as: the Buddy with cat ears.
+const SK_BUDDY = { ...SK_DEFAULT, shape: "bot", face: "bean", color: "e9edf2", hat: "cat" };
 
 function skParse(look) {
   const s = String(look || "");
   if (s.startsWith("s2.")) {
-    const [, shape, face, color, size, gap, tilt, ink] = s.split(".");
+    const [, shape, face, color, size, gap, tilt, ink, hat] = s.split(".");
     return {
       shape: SK_BODIES[shape] ? shape : "orb",
       face: SK_FACES[face] ? face : "calm",
@@ -92,16 +109,18 @@ function skParse(look) {
       gap: skClamp(+gap, 60, 160, 100),
       tilt: skClamp(+tilt, -20, 20, 0),
       ink: ["a", "b", "w"].includes(ink) ? ink : "a",
+      hat: SK_HATS[hat] ? hat : "none",
     };
   }
   const [, color] = s.split("-");
   return { ...SK_DEFAULT, color: SK_OLD_COLORS[color] || SK_DEFAULT.color };
 }
 function skClamp(v, lo, hi, dflt) { return Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : dflt; }
-function skLook(p) { return ["s2", p.shape, p.face, p.color, p.size, p.gap, p.tilt, p.ink].join("."); }
+function skLook(p) { return ["s2", p.shape, p.face, p.color, p.size, p.gap, p.tilt, p.ink, ...(p.hat && p.hat !== "none" ? [p.hat] : [])].join("."); }
 
 // Dark ink on light bodies, white on dark ones.
 function skInk(p) {
+  if (p.shape === "bot") return SK_GLOW[p.ink] || SK_GLOW.a;
   if (p.ink === "b") return SK_INK;
   if (p.ink === "w") return "#ffffff";
   const n = parseInt(p.color, 16);
@@ -156,12 +175,82 @@ function skFaceOf(p, state) { return { ...SK_FACES[p.face], ...(SK_STATES[state]
 function skEyesInner(face, ink) {
   return [-1, 1].map((side) => skNode("g", { class: "sk-eye", "data-side": side }, skBrow(face.brows, SK_U, ink, side), skEye(face.eyes, SK_U, ink, face.look, side)));
 }
+// The Buddy's helmet details: ear pods, a gloss, the visor.
+function skDeco(p) {
+  if (p.shape !== "bot") return [];
+  return [
+    ...[14, 86].map((cx) => skNode("g", {}, skNode("circle", { class: "sk-tint sk-dark", cx, cy: 56, r: 9 }), skNode("circle", { cx, cy: 56, r: 4.5, fill: "#2b2d33", opacity: .55 }))),
+    skNode("ellipse", { cx: 38, cy: 33, rx: 13, ry: 6, fill: "#fff", opacity: .45, transform: "rotate(-14 38 33)" }),
+    skNode("rect", { x: 26, y: 39, width: 48, height: 31, rx: 13, fill: "#16181d" }),
+    skNode("path", { d: "M33 42h22", stroke: "#fff", "stroke-width": 2, "stroke-linecap": "round", opacity: .16 }),
+  ];
+}
+function skHat(p) {
+  const b = SK_BODIES[p.shape], t = b.top, h = b.hw, back = [], front = [];
+  const accent = p.shape === "bot" ? skInk(p) : "#ff5a36";
+  const N = (tag, a) => skNode(tag, a);
+  switch (p.hat) {
+    case "cat":
+      for (const s of [-1, 1]) {
+        const x = 50 + s * h;
+        back.push(N("path", { class: "sk-tint", d: `M${x - s * 2} ${t + 14}L${x + s * 4} ${t - 13}L${x - s * 16} ${t + 4}Z`, "stroke-linejoin": "round", "stroke-width": 4 }));
+        back.push(N("path", { d: `M${x} ${t + 8}L${x + s * 2.5} ${t - 6}L${x - s * 9} ${t + 3}Z`, fill: "#ffb3c7" }));
+      }
+      break;
+    case "dog":
+      for (const s of [-1, 1]) front.push(N("ellipse", { class: "sk-tint sk-dark", cx: 50 + s * (h + 3), cy: t + 17, rx: 7, ry: 15, transform: `rotate(${s * 24} ${50 + s * (h + 3)} ${t + 17})` }));
+      break;
+    case "bunny":
+      for (const s of [-1, 1]) {
+        back.push(N("ellipse", { class: "sk-tint", cx: 50 + s * 10, cy: t - 12, rx: 6.5, ry: 17, transform: `rotate(${s * 10} ${50 + s * 10} ${t - 12})` }));
+        back.push(N("ellipse", { cx: 50 + s * 10, cy: t - 11, rx: 3, ry: 12, fill: "#ffb3c7", transform: `rotate(${s * 10} ${50 + s * 10} ${t - 11})` }));
+      }
+      break;
+    case "antenna":
+      back.push(N("path", { d: `M50 ${t + 6}L52 ${t - 10}L62 ${t - 16}`, fill: "none", stroke: "#2b2d33", "stroke-width": 2.6, "stroke-linecap": "round", "stroke-linejoin": "round" }));
+      front.push(N("circle", { class: "sk-glowball", cx: 63, cy: t - 17, r: 5, fill: accent }));
+      break;
+    case "phones":
+      back.push(N("path", { d: `M${50 - h - 6} ${t + 22}C${50 - h - 6} ${t - 12} ${50 + h + 6} ${t - 12} ${50 + h + 6} ${t + 22}`, fill: "none", stroke: "#2b2d33", "stroke-width": 5, "stroke-linecap": "round" }));
+      for (const s of [-1, 1]) front.push(N("rect", { x: 50 + s * (h + 6) - 5, y: t + 16, width: 10, height: 18, rx: 5, fill: "#2b2d33" }), N("rect", { x: 50 + s * (h + 6) - 2.5, y: t + 20, width: 5, height: 10, rx: 2.5, fill: accent }));
+      break;
+    case "beanie":
+      front.push(N("path", { d: `M${50 - h - 3} ${t + 12}Q50 ${t - 24} ${50 + h + 3} ${t + 12}Z`, fill: "#e8574b" }), N("rect", { x: 50 - h - 4, y: t + 8, width: 2 * h + 8, height: 7, rx: 3.5, fill: "#c9443a" }), N("circle", { cx: 50, cy: t - 9, r: 5, fill: "#fff" }));
+      break;
+    case "cap":
+      front.push(N("path", { d: `M${50 - h + 1} ${t + 11}Q50 ${t - 18} ${50 + h - 1} ${t + 11}Z`, fill: "#3d8bff" }), N("path", { d: `M50 ${t + 8}h${h + 14}a3.5 3.5 0 0 1 0 7H50z`, fill: "#2f6fd6" }), N("circle", { cx: 50, cy: t - 3, r: 2, fill: "#2f6fd6" }));
+      break;
+    case "tophat":
+      front.push(N("rect", { x: 31, y: t - 2, width: 38, height: 5, rx: 2.5, fill: "#1d1b18" }), N("rect", { x: 37, y: t - 27, width: 26, height: 26, rx: 3, fill: "#1d1b18" }), N("rect", { x: 37, y: t - 8, width: 26, height: 4, fill: "#e8574b" }));
+      break;
+    case "crown":
+      front.push(N("path", { d: `M36 ${t + 3}L35 ${t - 12}L43 ${t - 4}L50 ${t - 16}L57 ${t - 4}L65 ${t - 12}L64 ${t + 3}Z`, fill: "#ffcc4d", stroke: "#e0a800", "stroke-width": 1.5, "stroke-linejoin": "round" }), N("circle", { cx: 50, cy: t - 2, r: 2.2, fill: "#e8574b" }));
+      break;
+    case "sprout":
+      front.push(N("path", { d: `M50 ${t + 3}V${t - 9}`, stroke: "#3f9a4d", "stroke-width": 2.4, "stroke-linecap": "round" }), N("ellipse", { cx: 44, cy: t - 11, rx: 7, ry: 3.6, fill: "#5fbf6a", transform: `rotate(-25 44 ${t - 11})` }), N("ellipse", { cx: 56, cy: t - 13, rx: 7, ry: 3.6, fill: "#5fbf6a", transform: `rotate(25 56 ${t - 13})` }));
+      break;
+    case "halo":
+      back.push(N("ellipse", { cx: 50, cy: t - 9, rx: 17, ry: 4.5, fill: "none", stroke: "#ffd84d", "stroke-width": 3 }));
+      break;
+  }
+  return { back, front };
+}
+// Fills what's drawn in the sidekick's colour; makes room above for headwear.
+function skDress(svg, p) {
+  const { back, front } = skHat(p);
+  svg.querySelector(".sk-hat-back").replaceChildren(...back);
+  svg.querySelector(".sk-hat-front").replaceChildren(...front);
+  svg.querySelector(".sk-deco").replaceChildren(...skDeco(p));
+  svg.querySelector(".sk-fit").setAttribute("transform", p.hat && p.hat !== "none" ? "translate(50 60) scale(.84) translate(-50 -60)" : "");
+}
 function skGeometry(svg, p) {
   const body = SK_BODIES[p.shape];
   const gap = 12.5 * (p.gap / 100) * body.fw;
   const k = p.size / 100;
   const fill = `#${p.color}`;
   for (const n of svg.querySelectorAll(".sk-shape, .sk-extra")) { n.style.fill = n.classList.contains("sk-extra") ? "none" : fill; n.style.stroke = fill; }
+  for (const n of svg.querySelectorAll(".sk-tint")) { n.style.fill = fill; n.style.stroke = fill; }
+  svg.style.setProperty("--glow", skInk(p));
   svg.querySelector(".sk-anchor").style.transform = `translate(50px, ${body.fy}px) rotate(${p.tilt}deg)`;
   for (const e of svg.querySelectorAll(".sk-eye")) e.style.transform = `translate(${e.dataset.side * gap}px, 0) scale(${k})`;
 }
@@ -170,13 +259,17 @@ function skSvg(look, state = "idle") {
   const body = SK_BODIES[p.shape];
   const svg = skNode("svg", { viewBox: "0 0 100 100", class: "sk-svg", "data-state": state, "data-shape": p.shape, "aria-hidden": "true" },
     skNode("g", { class: "sk-body" },
-      skNode("g", { class: "sk-squash" },
+      skNode("g", { class: "sk-squash" }, skNode("g", { class: "sk-fit" },
+        skNode("g", { class: "sk-hat-back" }),
         skNode("path", { class: "sk-shape", d: body.d, "stroke-width": 9, "stroke-linejoin": "round" }),
         skNode("path", { class: "sk-extra", d: body.extra || "", "stroke-width": 7, "stroke-linecap": "round" }),
-        skNode("g", { class: "sk-anchor" }, skNode("g", { class: "sk-look" }, skNode("g", { class: "sk-eyes" }, ...skEyesInner(skFaceOf(p, state), skInk(p))))))),
+        skNode("g", { class: "sk-deco" }),
+        skNode("g", { class: "sk-anchor" }, skNode("g", { class: "sk-look" }, skNode("g", { class: "sk-eyes" }, ...skEyesInner(skFaceOf(p, state), skInk(p))))),
+        skNode("g", { class: "sk-hat-front" })))),
     skNode("text", { class: "sk-z", x: 74, y: 22, fill: SK_INK }, "z"),
     skNode("g", { class: "sk-dots", fill: SK_INK }, ...[0, 1, 2].map((k) => skNode("circle", { cx: 70 + k * 8, cy: 12, r: 2.6, style: `animation-delay:${k * .18}s` }))));
   svg._sk = { p, state, faceKey: skFaceKey(p, state) };
+  skDress(svg, p);
   skGeometry(svg, p);
   return svg;
 }
@@ -191,8 +284,11 @@ function skPatch(svg, look, state = svg._sk.state) {
   svg.dataset.state = state;
   if (p.shape !== was.p.shape) {
     const body = SK_BODIES[p.shape];
-    const swap = () => { svg.querySelector(".sk-shape").setAttribute("d", body.d); svg.querySelector(".sk-extra").setAttribute("d", body.extra || ""); svg.dataset.shape = p.shape; };
+    const swap = () => { svg.querySelector(".sk-shape").setAttribute("d", body.d); svg.querySelector(".sk-extra").setAttribute("d", body.extra || ""); svg.dataset.shape = p.shape; skDress(svg, p); skGeometry(svg, p); };
     if (calm) swap(); else { skKick(svg, "sk-pop"); setTimeout(swap, 110); }
+  } else if (p.hat !== was.p.hat || (p.shape === "bot" && p.ink !== was.p.ink)) {
+    skDress(svg, p);
+    if (!calm && p.hat !== was.p.hat) skKick(svg, "sk-squish");
   }
   const key = skFaceKey(p, state);
   if (key !== was.faceKey) {
@@ -264,6 +360,7 @@ function skRandom() {
     shape: pick(Object.keys(SK_BODIES)), face: pick(Object.keys(SK_FACES)), color: pick(SK_PALETTE),
     size: 80 + Math.floor(Math.random() * 6) * 10, gap: 80 + Math.floor(Math.random() * 5) * 10,
     tilt: pick([0, 0, 0, -8, 8, -4, 4]), ink: "a",
+    hat: Math.random() < .7 ? pick(Object.keys(SK_HATS).filter((h) => h !== "none")) : "none",
   };
 }
 
@@ -289,6 +386,7 @@ function mountSidekickMaker(root, get, set) {
   const ring = h("div", { class: "skm-ring", role: "radiogroup", "aria-label": "Face" });
   const shapes = h("div", { class: "skm-shapes", role: "radiogroup", "aria-label": "Body" });
   const shapeName = h("p", { class: "skm-shape-name" });
+  const hats = h("div", { class: "skm-hats", role: "radiogroup", "aria-label": "Headwear" });
   const colorBtn = h("button", { class: "skm-color", type: "button", "aria-label": "Colour", "aria-haspopup": "true" });
   const colorPop = h("div", { class: "skm-color-pop panel", hidden: "" });
   const states = h("div", { class: "skm-states", role: "radiogroup", "aria-label": "State" });
@@ -305,7 +403,7 @@ function mountSidekickMaker(root, get, set) {
   root.replaceChildren(h("div", { class: "skm" },
     h("div", { class: "skm-stage" },
       h("div", { class: "skm-orbit" }, ring, hero),
-      shapes, shapeName,
+      shapes, shapeName, hats,
       h("div", { class: "skm-bar" }, h("div", { class: "skm-color-wrap" }, colorBtn, colorPop), states),
       h("button", { class: "btn-ink inline skm-surprise", type: "button", onclick: () => { if (heroSvg) skKick(heroSvg, "sk-spin"); change(skRandom()); } }, "Surprise me")),
     h("div", { class: "skm-panel" },
@@ -330,7 +428,9 @@ function mountSidekickMaker(root, get, set) {
   colorBtn.addEventListener("click", (e) => { e.stopPropagation(); colorPop.hidden = !colorPop.hidden; });
   document.addEventListener("click", (e) => { if (!colorPop.hidden && !colorPop.contains(e.target)) colorPop.hidden = true; });
   for (const s of Object.keys(SK_STATES)) states.append(h("button", { type: "button", role: "radio", class: "skm-state", "data-state": s, onclick: () => { state = s; paint(); } }, h("span", { class: "skm-state-face" }), h("span", { text: SK_STATES[s].label })));
-  for (const [v, label] of [["a", "Auto"], ["b", "Black"], ["w", "White"]]) ink.append(h("button", { type: "button", role: "radio", "data-ink": v, onclick: () => change({ ink: v }) }, label));
+  for (const [v, label] of [["a", "Auto"], ["b", "Black"], ["w", "White"]]) ink.append(h("button", { type: "button", role: "radio", "data-ink": v, "data-label": label, onclick: () => change({ ink: v }) }, label));
+  Object.keys(SK_HATS).forEach((k, i) => hats.append(h("button", { type: "button", role: "radio", class: "skm-hat", "data-hat": k, title: SK_HATS[k], "aria-label": SK_HATS[k], style: `--i:${i}`, onclick: () => change({ hat: k }),
+    onpointerenter: () => heroSvg && skPatch(heroSvg, { ...p, hat: k }, state), onpointerleave: () => heroSvg && skPatch(heroSvg, p, state) })));
   for (const pr of SK_PRESETS) presets.append(h("button", { type: "button", class: "skm-preset", "aria-label": `${SK_BODIES[pr.shape].label}, ${pr.face}`, onclick: () => change({ ...SK_DEFAULT, ...pr }) }, skSvg({ ...SK_DEFAULT, ...pr })));
 
   let heroSvg = null, thumbs = 0;
@@ -343,6 +443,11 @@ function mountSidekickMaker(root, get, set) {
     custom.value = `#${p.color}`;
     for (const s of sliders) { s.input.value = p[s.key]; s.out.textContent = `${p[s.key]}${s.unit}`; }
     for (const b of ink.children) b.setAttribute("aria-checked", String(b.dataset.ink === p.ink));
+    // A Buddy's eyes glow: the same control picks the light.
+    const bot = p.shape === "bot";
+    ink.previousElementSibling.textContent = bot ? "Glow" : "Ink";
+    for (const b of ink.children) b.textContent = bot ? { a: "Mint", b: "Sky", w: "White" }[b.dataset.ink] : b.dataset.label;
+    for (const b of hats.children) b.setAttribute("aria-checked", String(b.dataset.hat === p.hat));
     for (const b of ring.children) b.setAttribute("aria-checked", String(b.dataset.face === p.face));
     for (const b of shapes.children) b.setAttribute("aria-checked", String(b.dataset.shape === p.shape));
     for (const b of states.children) b.setAttribute("aria-checked", String(b.dataset.state === state));
@@ -352,6 +457,7 @@ function mountSidekickMaker(root, get, set) {
     thumbs = 0;
     for (const b of ring.children) b.replaceChildren(skSvg({ ...p, face: b.dataset.face, tilt: 0 }));
     for (const b of shapes.children) b.replaceChildren(skSvg({ ...p, shape: b.dataset.shape, tilt: 0 }));
+    for (const b of hats.children) b.replaceChildren(skSvg({ ...p, hat: b.dataset.hat, tilt: 0 }));
     for (const b of states.children) b.firstChild.replaceChildren(skSvg(p, b.dataset.state));
     sizes.replaceChildren(...[44, 24, 14].map((px) => { const n = skSvg(p); n.style.width = n.style.height = `${px}px`; return n; }));
   }

@@ -82,6 +82,9 @@ op!(sidekick_leave(channel: ChannelId) -> ());
 op!(sidekick_chat() -> ChannelId);
 op!(heartbeat() -> ());
 op!(start_local(name: String) -> anarchy_proto::Profile);
+op!(mail_find(email: String) -> Option<ops::PeerView>);
+op!(mail_continue(email: String) -> ChannelId);
+op!(mail_links() -> std::collections::HashMap<String, ChannelId>);
 op!(mail_preset(email: String) -> Option<anarchy_mail::Preset>);
 op!(mail_status() -> ops::MailStatus);
 op!(mail_connect(account: anarchy_mail::Account) -> ());
@@ -429,6 +432,9 @@ fn main() {
             sidekick_chat,
             heartbeat,
             start_local,
+            mail_find,
+            mail_continue,
+            mail_links,
             mail_preset,
             mail_status,
             mail_connect,

@@ -1963,3 +1963,44 @@ pub async fn start_local(i: &mut Inner, name: String) -> Result<Profile, String>
     i.profile = Some(p.clone());
     Ok(p)
 }
+
+// ---------- email threads that upgrade (D39) ----------
+// Someone you email may be on Anarchy too. You ask (nothing is looked up on
+// its own: a lookup tells the server who you write to); if they are, the
+// thread continues in an encrypted conversation, and the app remembers it for
+// that address.
+
+pub async fn mail_find(i: &mut Inner, email: String) -> Result<Option<PeerView>, String> {
+    if i.is_local() {
+        return Err("Connect a server to find people.".into());
+    }
+    Ok(i.client()?
+        .lookup_email(&email)
+        .await
+        .map_err(err)?
+        .as_ref()
+        .map(peer_view))
+}
+
+/// Opens (or finds) the conversation with whoever is behind `email`, and keeps the link.
+pub async fn mail_continue(i: &mut Inner, email: String) -> Result<ChannelId, String> {
+    let peer = i
+        .client()?
+        .lookup_email(&email)
+        .await
+        .map_err(err)?
+        .ok_or("They aren't someone you can message here.")?;
+    let (Some(u), Some(t)) = (peer.username.clone(), peer.tag) else {
+        return Err("They have no handle yet.".into());
+    };
+    let channel = start_dm(i, format_handle(&u, t)).await?;
+    let mut links: HashMap<String, ChannelId> = read_json(i.device(), "mail:upgraded").unwrap_or_default();
+    links.insert(email.trim().to_lowercase(), channel);
+    write_json(i.device(), "mail:upgraded", &links)?;
+    Ok(channel)
+}
+
+/// Addresses whose threads continue in Anarchy, and where.
+pub async fn mail_links(i: &mut Inner) -> Result<HashMap<String, ChannelId>, String> {
+    Ok(read_json(i.device(), "mail:upgraded").unwrap_or_default())
+}

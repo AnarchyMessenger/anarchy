@@ -1489,3 +1489,25 @@ svg.i.flip { transform: scaleX(-1); }
 .tour-bar svg.i { width: 16px; height: 16px; }
 .tour-bar .btn-ink { background: var(--surface); color: var(--ink); border-radius: 999px; }
 .me-links .side-item#me-connect { font-weight: 600; color: var(--ink); }
+
+/* ---------- email that upgrades (D39) ---------- */
+.upgrade:empty { display: none; }
+.upgrade { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface-sunken); font-size: 13px; color: var(--ink-muted); }
+.upgrade > svg.i { width: 16px; height: 16px; flex: none; color: var(--sealed); }
+.upgrade > span { flex: 1; }
+.upgrade strong { color: var(--ink); }
+.upgrade .btn-ink { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.upgrade .link { font-size: 13px; }
+.upgrade > .avatar { flex: none; width: 28px; height: 28px; }
+
+/* ---------- the Buddy and headwear (D40) ---------- */
+.sk-svg .sk-dark { filter: brightness(.82); }
+.sk-svg[data-shape="bot"] .sk-eyes { filter: drop-shadow(0 0 1.6px var(--glow)) drop-shadow(0 0 3.5px var(--glow)); }
+.sk-svg.live[data-shape="bot"] .sk-glowball { animation: sk-glow 2.4s ease-in-out infinite; }
+@keyframes sk-glow { 50% { opacity: .55; } }
+.skm-hats { display: flex; justify-content: center; flex-wrap: wrap; gap: 2px; max-width: 600px; }
+.skm-hat { width: 40px; height: 40px; padding: 3px; border: 0; border-radius: 12px; background: transparent; cursor: pointer; opacity: .7; transition: transform .18s cubic-bezier(.3, 1.6, .5, 1), opacity .12s, background .12s; }
+.skm-hat:hover { opacity: 1; transform: translateY(-2px); }
+.skm-hat[aria-checked="true"] { opacity: 1; background: var(--surface); box-shadow: 0 0 0 1px var(--border), var(--shadow-2); }
+.skm-hat svg { width: 100%; height: 100%; overflow: visible; }
+.skm.enter .skm-hat { animation: skm-rise .4s cubic-bezier(.3, 1.5, .5, 1) backwards; animation-delay: calc(320ms + var(--i) * 25ms); }

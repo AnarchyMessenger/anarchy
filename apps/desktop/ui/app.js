@@ -85,7 +85,8 @@ function sidekickEl(sk, cls = "", state = "idle") {
   return n;
 }
 function defaultSidekick() {
-  return { name: SK_NAMES[Math.floor(Math.random() * SK_NAMES.length)], look: skLook({ ...SK_DEFAULT, ...skRandom() }) };
+  // New sidekicks start as the Buddy with cat ears; the maker changes everything (D40).
+  return { name: SK_NAMES[Math.floor(Math.random() * SK_NAMES.length)], look: skLook(SK_BUDDY) };
 }
 function fillAvatar(node, name, color, avatar) {
   node.dataset.color = color || colorFor(name);
@@ -894,7 +895,7 @@ function threadLabel() {
 }
 $("thread-tab").addEventListener("click", () => { if (thread) { addTab({ channel: thread.channel, thread: thread.root, label: threadLabel() }); renderTabs(); } });
 $("thread-input").addEventListener("input", () => { $("thread-send").disabled = !$("thread-input").value.trim(); mentionInput($("thread-input")); });
-$("thread-input").addEventListener("blur", () => setTimeout(closeMention, 120));
+$("thread-input").addEventListener("blur", closeMentionSoon);
 $("thread-input").addEventListener("keydown", (e) => {
   if (mentionKey(e)) return;
   if (e.key === "Escape") { e.preventDefault(); closeThread(); composer.focus(); return; }
@@ -1326,7 +1327,7 @@ composer.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("composer").requestSubmit(); }
 });
 composer.addEventListener("input", () => mentionInput(composer));
-composer.addEventListener("blur", () => setTimeout(closeMention, 120));
+composer.addEventListener("blur", closeMentionSoon);
 $("composer").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = composer.value.trim();
@@ -1498,6 +1499,8 @@ function pickMention(k) {
   input.focus();
 }
 function closeMention() { mention = null; show("mention-pop", false); }
+// On blur, after a click on the picker has had its turn; not if focus moved to the input the picker now serves.
+function closeMentionSoon() { setTimeout(() => { if (!mention || document.activeElement !== mention.input) closeMention(); }, 120); }
 // Arrow keys, Enter/Tab and Escape while the picker is open. True if handled.
 function mentionKey(e) {
   if (!mention) return false;
@@ -1630,7 +1633,7 @@ document.addEventListener("keydown", (e) => {
 });
 function fitAsk() { $("ask-send").disabled = !$("ask-input").value.trim(); }
 $("ask-input").addEventListener("input", () => { fitAsk(); mentionInput($("ask-input")); });
-$("ask-input").addEventListener("blur", () => setTimeout(closeMention, 120));
+$("ask-input").addEventListener("blur", closeMentionSoon);
 $("ask-input").addEventListener("keydown", (e) => {
   if (mentionKey(e)) return;
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("ask-form").requestSubmit(); }
@@ -4294,6 +4297,7 @@ async function renderInboxRead(x) {
     box.replaceChildren(acts,
       el("h2", { class: "ibx-subject", text: m.subject }),
       el("div", { class: "ibx-meta" }, avatarEl(x.from), el("span", { class: "lines" }, el("strong", { text: m.from_name || m.from_addr }), el("small", { text: `${m.from_addr || ""}${m.to?.length ? ` → ${m.to.join(", ")}` : ""}` })), el("time", { text: dateTimeFmt.format(m.date_ms) })),
+      upgradeStrip(m),
       el("div", { class: "ibx-body", text: m.text || "(no text)" }),
       el("p", { class: "fine ibx-plain", text: "Shown as plain text: no remote images, no scripts." }),
       el("div", { class: "ibx-reply" }, reply, el("div", { class: "ibx-reply-bar" }, err, sendBtn)));
@@ -4338,9 +4342,53 @@ $("ibx-allread").addEventListener("click", () => {
   renderInbox(); renderFolders();
 });
 
+// ---------- email threads that upgrade (D39) ----------
+// You ask whether a sender is on Anarchy (a lookup tells the server who you
+// write to, so it never happens on its own). If they are, the thread goes on
+// in an encrypted conversation, and later mail from them says so.
+let mailLinks = {};
+function upgradeStrip(m) {
+  const addr = (m.from_addr || "").toLowerCase();
+  const who = m.from_name || m.from_addr || "They";
+  const strip = el("div", { class: "upgrade" });
+  if (!addr || tour) return strip;
+  const linked = mailLinks[addr];
+  if (linked) {
+    strip.replaceChildren(icon("lock"), el("span", { text: `You talk to ${who} on Anarchy too, end-to-end encrypted.` }),
+      el("button", { class: "btn-ink sm", type: "button", onclick: () => continueIn(linked, m) }, "Open conversation"));
+    return strip;
+  }
+  if (status.local) return strip;
+  const ask = el("button", { class: "link", type: "button", text: `Is ${who} on Anarchy?` });
+  ask.addEventListener("click", async () => {
+    ask.disabled = true; ask.textContent = "Checking…";
+    try {
+      const p = await invoke("mail_find", { email: addr });
+      if (!p) { strip.replaceChildren(icon("mail"), el("span", { class: "soft", text: `${who} isn't someone you can message here, so email it is.` })); return; }
+      strip.replaceChildren(avatarEl(p.name, { color: p.color, avatar: p.avatar, sidekick: p.sidekick, size: "sm" }),
+        el("span", {}, el("strong", { text: `${p.name} is on Anarchy` }), p.handle ? el("span", { class: "soft", text: ` as @${p.handle}` }) : null, el("span", { text: ". Continue there: end-to-end encrypted, with threads and desks." })),
+        el("button", { class: "btn-ink sm", type: "button", onclick: async (e) => {
+          await busy(e.currentTarget, "Opening…", async () => {
+            try { const id = await invoke("mail_continue", { email: addr }); mailLinks[addr] = id; await continueIn(id, m); }
+            catch (err) { alert(String(err)); }
+          });
+        } }, icon("lock"), "Continue in Anarchy"));
+    } catch (err) { ask.disabled = false; ask.textContent = `Is ${who} on Anarchy?`; alert(String(err)); }
+  });
+  strip.replaceChildren(icon("lock"), ask);
+  return strip;
+}
+async function continueIn(channel, m) {
+  await refreshChannels();
+  await openChannel(channel);
+  // Pick up where the email left off.
+  if (!composer.value.trim()) { composer.value = `Re: ${m.subject.replace(/^re:\s*/i, "")}\n`; fitComposer(); }
+  composer.focus();
+}
+
 // ---------- mail account ----------
 async function loadMail() {
-  try { const st = await invoke("mail_status"); mailAcct = st.email; mails = await invoke("mail_list"); } catch { mailAcct = null; mails = []; }
+  try { const st = await invoke("mail_status"); mailAcct = st.email; mails = await invoke("mail_list"); mailLinks = await invoke("mail_links").catch(() => ({})); } catch { mailAcct = null; mails = []; }
   renderInbox(); renderFolders();
 }
 async function syncMail(loud = false) {

@@ -365,6 +365,12 @@ pub struct DirectoryEntry {
     pub presence: Option<Presence>,
 }
 
+/// `POST /v1/directory/by-email`: is this address someone I could message here? (D39)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailLookup {
+    pub email: String,
+}
+
 /// `GET /v1/devices`: the caller's own devices.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeviceSummary {

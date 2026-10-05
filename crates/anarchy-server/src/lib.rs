@@ -67,6 +67,8 @@ pub struct AppState {
     pub default_space: Option<Uuid>,
     /// SHA-256 of the sidekick host's token, when sidekicks run here.
     pub sidekick_host_hash: Option<Arc<Vec<u8>>>,
+    /// Email lookups per person this hour, so nobody can test addresses in bulk (D39).
+    pub lookups: Arc<std::sync::Mutex<std::collections::HashMap<Uuid, (u64, u32)>>>,
 }
 
 impl AppState {
@@ -102,6 +104,7 @@ impl AppState {
                 .sidekick_host_token
                 .filter(|t| t.len() >= 32)
                 .map(|t| Arc::new(<sha2::Sha256 as sha2::Digest>::digest(t.as_bytes()).to_vec())),
+            lookups: Default::default(),
         })
     }
 }
@@ -161,6 +164,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/host/agents", get(sidekicks::host_agents))
         .route("/v1/host/agents/{user}/session", post(sidekicks::host_session))
         .route("/v1/directory", get(accounts::directory))
+        .route("/v1/directory/by-email", post(accounts::by_email))
         .route(
             "/v1/spaces",
             post(accounts::create_space).get(accounts::my_spaces),

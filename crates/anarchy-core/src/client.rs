@@ -293,6 +293,14 @@ impl Client {
         self.put("/v1/me", update).await
     }
 
+    /// The person behind an email address, if you could message them here (D39).
+    pub async fn lookup_email(&self, email: &str) -> Result<Option<DirectoryEntry>, Error> {
+        let body = anarchy_proto::EmailLookup {
+            email: email.to_owned(),
+        };
+        Ok(self.post("/v1/directory/by-email", &body).await?.json().await?)
+    }
+
     /// Tells the server the app is open and in use, for presence (D35).
     pub async fn heartbeat(&self) -> Result<(), Error> {
         self.post("/v1/me/heartbeat", &serde_json::json!({})).await?;

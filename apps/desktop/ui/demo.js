@@ -181,7 +181,9 @@ function anarchyDemo(startLocked) {
   const skOn = new Set();
   let mailOn = true;
   const mail = (uid, from_name, from_addr, subject, text, mins, seen) => ({ uid, message_id: `m${uid}@mail.test`, from_name, from_addr, to: ["maya@studiochen.fr"], subject, date_ms: now - mins * 60e3, text, seen, references: [] });
+  const mailLinked = {};
   const mailbox = [
+    mail(42, "Tomás Ruiz", "tomas@ruizstudio.es", "Deck fonts, licence question", "Hey Maya,\n\nBefore I send the deck: is the serif licensed for print too, or just web? Happy to switch if not.\n\nT.", 8, false),
     mail(41, "Jonas Weber", "ap@urbanthreads.eu", "Invoice 1042: payment date", "Hi Maya,\n\nThanks for the reminder. Finance has scheduled invoice 1042 for the 15th; you'll get the transfer confirmation the same day.\n\nBest,\nJonas Weber\nUrban Threads · Accounts payable", 25, false),
     mail(40, "Camille Roux", "camille@trendyterra.fr", "Packaging: second round of mockups", "Bonjour Maya,\n\nThe second round looks great. Could we try the lighter kraft for the outer box? Our printer needs files by Thursday.\n\nMerci !\nCamille", 140, false),
     mail(39, "Figma", "no-reply@figma.com", "Tomás commented on Acme rebrand", "Tomás Ruiz commented: \"Second direction, warmer. Shipping the deck cover today.\"", 60 * 20, true),
@@ -281,6 +283,9 @@ function anarchyDemo(startLocked) {
     mail_seen: async ({ uid, seen }) => { const m = mailbox.find((x) => x.uid === uid); if (m) m.seen = seen; },
     mail_send: async () => { await wait(200); },
     mail_preset: async ({ email }) => (email.includes("@") ? { imap_host: `imap.${email.split("@")[1]}`, imap_port: 993, smtp_host: `smtp.${email.split("@")[1]}`, smtp_port: 465, note: email.endsWith("gmail.com") ? "Gmail needs an app password: Google Account → Security → App passwords." : null, security: "tls" } : null),
+    mail_find: async ({ email }) => { await wait(250); return email === "tomas@ruizstudio.es" ? peer("u2") : null; },
+    mail_continue: async ({ email }) => { await wait(150); const c = channels.find((x) => x.kind === "dm" && x.peer === "u2"); mailLinked[email] = c.id; return c.id; },
+    mail_links: async () => ({ ...mailLinked }),
     mail_connect: async () => { await wait(300); mailOn = true; },
     mail_disconnect: async () => { mailOn = false; },
     sidekick_leave: async ({ channel }) => { skOn.delete(channel); },
