@@ -153,13 +153,21 @@ cargo run -p anarchy-server    # needs DATABASE_URL and OIDC settings, see docs/
 cargo run -p anarchy-desktop   # desktop app (Linux needs WebKitGTK, see CONTRIBUTING.md)
 ```
 
-**Windows installer.** Every app change on `main` builds one: Actions → *Windows build* → the run → `anarchy-windows-…` (NSIS `.exe` and `.msi`). To build it on your own Windows machine (Rust, plus the WebView2 runtime that Windows 11 already has):
+**Installers.** Every app change on `main` builds them: Actions → *Desktop builds* → the run → `anarchy-windows-…` (NSIS `.exe` and `.msi`) or `anarchy-macos-…` (a universal `.dmg` for Apple silicon and Intel). They aren't signed yet: on Windows choose *More info → Run anyway*; on macOS right-click the app → *Open* the first time, or run `xattr -cr /Applications/Anarchy.app`. To build on your own Windows machine (Rust, plus the WebView2 runtime that Windows 11 already has):
 
 ```powershell
 git pull
 cargo install tauri-cli --version "^2" --locked
 cd apps/desktop/src-tauri
 cargo tauri build --bundles nsis   # installer in target\release\bundle\nsis\
+```
+
+On a Mac (Rust and the Xcode command-line tools):
+
+```sh
+cargo install tauri-cli --version "^2" --locked
+cd apps/desktop/src-tauri
+cargo tauri build --bundles dmg   # in target/release/bundle/dmg/
 ```
 
 Status: phase 0 in progress (see [docs/ROADMAP.md](docs/ROADMAP.md)).

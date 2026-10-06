@@ -18,7 +18,7 @@ The order follows one rule: **fix what stops a new person from using the app wit
 - Tasks lead (D45): sections as folder tabs on top, no right rail, people under the channels, notifications on Home, the assistant as a bubble that grows into the side panel.
 - Agents can add and move tasks, Roma's way (D46, `docs/ROMA.md`).
 - The sidekick is its own package, `packages/buddy`, with blobatar-style idle motion (D47).
-- Open tabs in the title bar, a sidebar edge handle, a connect-a-server card, empty states for Notes and the agenda, and a Windows installer build in CI (D48).
+- Open tabs in the title bar, a sidebar edge handle, a connect-a-server card, empty states for Notes and the agenda, and Windows and macOS installer builds in CI (D48).
 
 ## 1. A public server people can join (M)
 
