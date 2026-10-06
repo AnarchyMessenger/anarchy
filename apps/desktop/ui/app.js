@@ -223,7 +223,7 @@ function openSignIn() {
 $("go-signin").addEventListener("click", openSignIn);
 $("go-local").addEventListener("click", () => { setError("local-error", ""); authStep("s-local"); });
 $("local-back").addEventListener("click", () => authStep("s-welcome"));
-$("account-back").addEventListener("click", () => { if (connecting) { connecting = false; showApp(); } else authStep("s-welcome"); });
+$("account-back").addEventListener("click", () => { if (connecting) { connecting = false; if (!closeConnectCard()) showApp(); } else authStep("s-welcome"); });
 $("s-local").addEventListener("submit", async (e) => {
   e.preventDefault();
   const name = $("local-name").value.trim();
@@ -236,9 +236,33 @@ $("s-local").addEventListener("submit", async (e) => {
 // From inside the app: sign in to a server and bring the local account along.
 function connectServer() {
   if (tour) return endTour();
-  connecting = true;
-  showAuth();
+  openConnectCard();
 }
+// From inside the app the sign-in steps run in a card over it, not on the
+// first-run page: the same forms and handlers, moved into the dialog (D48).
+const CONNECT_STEPS = ["s-account", "s-server", "s-invite", "s-anon", "s-guest"];
+let connectHome = null;
+function openConnectCard() {
+  connecting = true;
+  connectHome = $("s-account").parentNode;
+  $("connect-body").append(...CONNECT_STEPS.map($));
+  $("dlg-connect").showModal();
+  openSignIn();
+}
+function closeConnectCard() {
+  if (!connectHome) return false;
+  connectHome.append(...CONNECT_STEPS.map($));
+  connectHome = null;
+  if ($("dlg-connect").open) $("dlg-connect").close();
+  return true;
+}
+$("connect-x").addEventListener("click", () => $("dlg-connect").close());
+$("dlg-connect").addEventListener("close", () => {
+  if (!connectHome) return;
+  if (!$("sso-waiting").hidden) invoke("cancel_sign_in").catch(() => {});
+  connecting = false;
+  closeConnectCard();
+});
 $("local-connect").addEventListener("click", connectServer);
 
 // ---------- the tour (D38) ----------
@@ -433,10 +457,13 @@ $("s-guest").addEventListener("submit", async (e) => {
 });
 
 async function afterSignIn() {
+  const fromCard = closeConnectCard();
   connecting = false;
   status = await invoke("status");
   profile = status.profile;
   if (profile?.onboarded) return showApp();
+  // Connected from the card, but the account still needs setting up: finish on the full page.
+  if (fromCard) { show("app", false); show("auth"); }
   draft = { usage: profile?.usage || null, display_name: profile?.display_name || "", username: profile?.username || "", tag: profile?.tag || 0, color: profile?.color || "ember", avatar: profile?.avatar, sidekick: profile?.sidekick || "" };
   paintArt({ ...profile, ...draft });
   try { spaces = await invoke("spaces"); } catch { spaces = []; }
@@ -1021,12 +1048,11 @@ function renderTabs() {
       lead, el("span", { class: "tab-name", text: name }), status,
       el("button", { class: "tab-x", type: "button", "aria-label": `Close ${name}`, onclick: (e) => closeTab(t, e) }, icon("x")));
   }));
-  show("tabs", true);
   renderFolders();
   show("tool-chats-dot", !pinned && drawer !== "chats" && channels.some((c) => c.unread && c.id !== current && belongsHere(c)));
 }
 document.addEventListener("keydown", (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === "\\") { e.preventDefault(); if (pinned) { pinned = false; writeStore("anarchy.chatsPinned", false); closeDrawers(); } else toggleDrawer("chats"); }
+  if ((e.ctrlKey || e.metaKey) && e.key === "\\") { e.preventDefault(); if (!$("tool-chats").hidden) $("tool-chats").click(); }
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "w" && current) { e.preventDefault(); const t = tabs.find((x) => tabKey(x) === activeTabKey()); if (t) closeTab(t); }
 });
 
@@ -1073,7 +1099,6 @@ function renderFolders() {
   $("section-foot").replaceChildren(...(view === "space" && currentSpace ? [item({ key: "spaceset", label: "Settings", icon: "settings", active: sectionNow() === "spaceset", go: openSpaceSettings })] : []));
   $("sections").classList.toggle("pages", view === "settings");
   paintSide();
-  show("tab-list", view !== "settings");
   show("tools", view !== "settings");
   $("workspace").classList.toggle("no-tools", view === "settings");
 }
@@ -1265,6 +1290,7 @@ function paintDrawers() {
   if (chatsOn) show("tool-chats-dot", false);
   show("drawer-chats", chatsOn);
   show("tool-chats", chatSection);
+  $("main").classList.toggle("side-open", chatsOn);
   $("workspace").classList.toggle("chats-pinned", chatsOn && pinned);
   $("tool-people").setAttribute("aria-expanded", String(drawer === "people"));
   // Docked: the button collapses it. Popped over: the same button docks it.
@@ -1275,12 +1301,13 @@ function paintDrawers() {
     b.firstElementChild.firstElementChild.setAttribute("href", pinned ? "#i-sidebar" : "#i-pin");
   }
   $("tool-chats").setAttribute("aria-pressed", String(pinned));
-  $("tool-chats").title = pinned ? "Hide the sidebar (Ctrl \\)" : "Show the sidebar (Ctrl \\)";
+  $("tool-chats").title = chatsOn ? "Hide the sidebar (Ctrl \\)" : "Show the sidebar (Ctrl \\)";
 }
 // Docked: hide it. Hidden: pop it over (pin it from there to dock it again).
+// The handle: open docks the sidebar; closed collapses it, wherever it was.
 $("tool-chats").addEventListener("click", () => {
-  if (pinned) { pinned = false; writeStore("anarchy.chatsPinned", false); closeDrawers(); }
-  else toggleDrawer("chats");
+  if (pinned || drawer === "chats") { pinned = false; writeStore("anarchy.chatsPinned", false); closeDrawers(); }
+  else { pinned = true; writeStore("anarchy.chatsPinned", true); paintDrawers(); }
 });
 $("tool-people").addEventListener("click", () => toggleDrawer("people"));
 $("tool-notifs").addEventListener("click", () => toggleDrawer("notifs"));
@@ -1863,6 +1890,7 @@ function renderAgenda() {
   const ref = agenda.mode === "week" ? mondayOf(c) : (now.getMonth() === c.getMonth() && now.getFullYear() === c.getFullYear() ? now : new Date(c.getFullYear(), c.getMonth(), 1, 12));
   $("agenda-kind").textContent = `Agenda · Week ${weekNumber(ref)}`;
   for (const b of document.querySelectorAll(".agenda-mode button")) b.setAttribute("aria-selected", String(b.dataset.mode === agenda.mode));
+  show("agenda-empty", !events().length && !agenda.dues.length);
   const heads = [...Array(7)].map((_, k) => { const d = mondayOf(new Date()); d.setDate(d.getDate() + k); return el("div", { class: "cal-dow", text: weekdayFmt.format(d) }); });
   const grid = $("cal-grid");
   grid.className = `cal-grid ${agenda.mode}`;
@@ -1998,6 +2026,7 @@ function renderNoteList() {
     el("span", { class: "note-emoji", text: p.icon || "📝" }), el("span", { class: "lines" }, el("span", { class: "name", text: p.title || "Untitled" }), el("small", { text: p.updated ? sinceFmt(p.updated) : "" })))));
   show("no-notes", list.length === 0);
 }
+$("note-first").addEventListener("click", () => $("note-new").click());
 $("note-search").addEventListener("input", () => { notesState.query = $("note-search").value; renderNoteList(); });
 $("note-new").addEventListener("click", async () => {
   flushNote();
@@ -2008,6 +2037,8 @@ $("note-new").addEventListener("click", async () => {
 });
 function renderNote() {
   show("note-page", !!note);
+  show("note-none", !note && !pages().length && !notesState.query);
+  if (!note) show("note-delete", false);
   if (!note) {
     $("note-crumbs").replaceChildren(el("span", { text: notesState.shared ? notesState.shared.name : "Notes" }));
     $("note-blocks").replaceChildren();
@@ -4261,7 +4292,7 @@ $("home-notifs-read").addEventListener("click", () => markRead(notifItems().map(
 // are worked out here, as before. Archive and snooze are yours and sync with
 // your folders.
 let mails = [], mailAcct = null, inboxSel = null, inboxFolderSel = "all", inboxQuery = "", mailBusy = false;
-const IBX_FOLDERS = [["all", "Everything", "bell"], ["mail", "Mail", "mail"], ["mention", "Mentions", "at"], ["msg", "Conversations", "chat"], ["due", "Due", "clock"], ["desk", "Desks", "receipt"], ["event", "Agenda", "calendar"], ["snoozed", "Snoozed", "clock"], ["archived", "Archived", "check"]];
+const IBX_FOLDERS = [["all", "Everything", "plane"], ["mail", "Mail", "mail"], ["mention", "Mentions", "at"], ["msg", "Conversations", "chat"], ["due", "Due", "clock"], ["desk", "Desks", "receipt"], ["event", "Agenda", "calendar"], ["snoozed", "Snoozed", "clock"], ["archived", "Archived", "check"]];
 function ibxState() { org.inbox ??= { archived: {}, snoozed: {} }; return org.inbox; }
 function mailItem(m) {
   return { key: `mail:${m.uid}`, kind: "mail", mail: m, icon: "mail", from: m.from_name || m.from_addr || "Unknown sender", title: m.subject || "(no subject)", sub: (m.text || "").replace(/\s+/g, " ").slice(0, 160), atMs: m.date_ms, unread: !m.seen };
@@ -4296,7 +4327,7 @@ function inboxShown() {
 }
 function inboxFolder() {
   const n = inboxItems().filter((x) => x.unread).length;
-  return { key: "inbox", label: "Inbox", icon: "bell", n };
+  return { key: "inbox", label: "Inbox", icon: "plane", n };
 }
 async function openInbox() {
   current = null; invoke("blur");

@@ -222,8 +222,6 @@ p { margin: 0; }
 .workspace { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 48px; grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "folders tools" "main tools"; min-height: 0; overflow: hidden; }
 .workspace > .tools { grid-area: tools; }
 .workspace.no-tools { grid-template-columns: minmax(0, 1fr) 0; }
-.workspace.no-tools > .folders { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
-.workspace > .folders { grid-area: folders; }
 .workspace > .main { grid-area: main; }
 .sidebar { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); background: color-mix(in srgb, var(--surface-sunken) 55%, var(--surface)); border-radius: var(--radius-lg) 0 0 var(--radius-lg); }
 .side { flex: 1; display: flex; flex-direction: column; min-height: 0; }
@@ -750,7 +748,6 @@ form.start-card { cursor: default; }
 .tool-dot { position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 2px var(--surface); }
 
 /* Folder tabs sit on the canvas's top edge; the open one is part of the page below. */
-.folders { display: flex; align-items: flex-end; gap: 12px; min-width: 0; height: 42px; padding: 0 10px 0 8px; background: color-mix(in srgb, var(--surface-sunken) 55%, var(--surface)); border-bottom: 1px solid var(--border); border-radius: var(--radius-lg) 0 0 0; }
 .folder-tabs { display: flex; align-items: flex-end; gap: 2px; flex: none; margin-bottom: -1px; }
 .folder { position: relative; display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border: 1px solid transparent; border-bottom: 0; border-radius: 10px 10px 0 0; background: transparent; color: var(--ink-muted); font: inherit; font-size: 13px; font-weight: 540; cursor: pointer; white-space: nowrap; }
 .folder svg.i { width: 15px; height: 15px; }
@@ -758,9 +755,6 @@ form.start-card { cursor: default; }
 .folder.active { background: var(--surface); color: var(--ink); font-weight: 620; border-color: var(--border); }
 .folder.active::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--surface); }
 .folder .tab-badge, .folder .unread-dot { margin-left: 2px; }
-.folders .tab-list { align-self: center; padding-left: 12px; border-left: 1px solid var(--border); height: 28px; }
-.folders .tab { flex: 0 0 auto; max-width: 180px; min-width: 0; }
-.folders .tab-list { overflow-x: auto; mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
 
 .drawer { position: absolute; top: 0; left: 0; bottom: 0; width: 280px; z-index: 25; display: flex; flex-direction: column; min-height: 0; background: color-mix(in srgb, var(--surface-sunken) 35%, var(--surface)); border-right: 1px solid var(--border); border-radius: 0; box-shadow: 18px 0 36px -26px rgb(0 0 0 / .35); animation: from-left .16s ease-out; }
 .drawer.pinned { box-shadow: none; animation: none; z-index: 5; }
@@ -906,7 +900,6 @@ svg.i.flip { transform: scaleX(-1); }
 .folder:hover { background: color-mix(in srgb, var(--ink) 17%, var(--surface-sunken)); color: var(--ink); }
 .folder.active { background: var(--surface); color: var(--ink); border-color: var(--border); }
 .folder .tab-badge.warn { background: var(--public); color: #fff; }
-.folders .tab-list { border-left: 0; padding-left: 2px; }
 /* Every icon on the top edge sits on one line: rail, sidebar toggle, sections, right strip. */
 .tools { padding-top: 4px; }
 .rail { padding-top: 4px; }
@@ -1124,9 +1117,6 @@ svg.i.flip { transform: scaleX(-1); }
 .sections.pages .section { justify-items: start; padding: 8px 10px; font-size: 13px; font-weight: 540; }
 .sections.pages .section.active { background: var(--surface); box-shadow: 0 0 0 1px var(--border); }
 /* The top row is only the working set now. */
-.folders { border-radius: 0; align-items: center; gap: 8px; }
-.workspace.no-tools > .folders { border-radius: 0 var(--radius-lg) 0 0; }
-.folders .tab-list { flex: 1; height: 30px; }
 .spaceset-page { overflow-y: auto; padding: 28px 32px; }
 .spaceset-page > * { max-width: 560px; }
 .spaceset-page .spaceset { padding: 0; }
@@ -1518,9 +1508,6 @@ button.sm-row:hover { background: rgba(255,255,255,.07); }
 .workspace.no-tools { grid-template-columns: minmax(0, 1fr); }
 .workspace > .tools { display: none; }
 .workspace:has(> .sections.pages) { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "sections folders" "sections main"; }
-.workspace > .folders { border-bottom: 0; border-radius: var(--radius-lg) var(--radius-lg) 0 0; height: 40px; align-items: center; }
-.workspace:has(> .sections.pages) > .folders { border-bottom: 1px solid var(--border); border-radius: 0 var(--radius-lg) 0 0; }
-.workspace:has(> .sections.pages) > .folders .tab-list { display: none; }
 /* The section strip: folder tabs that open onto the page below. */
 .sections:not(.pages) { flex-direction: row; align-items: flex-end; width: auto; height: 38px; padding: 0 12px; gap: 4px; border-right: 0; border-bottom: 1px solid var(--border); border-radius: 0;
   background: color-mix(in srgb, var(--surface-sunken) 55%, var(--surface)); overflow-x: auto; scrollbar-width: none; }
@@ -1568,5 +1555,52 @@ button.sm-row:hover { background: rgba(255,255,255,.07); }
 .main.dock-right { padding-right: 360px; }
 .main > .ask { will-change: clip-path; }
 @media (prefers-reduced-motion: reduce) { .ask-bubble { transition: none; } }
-/* No open tabs and no sidebar button: the working-set row shrinks to a sliver. */
-.workspace > .folders:not(:has(.tab)):not(:has(#tool-chats:not([hidden]))) { height: 10px; }
+
+/* ---------- Tabs in the title bar, the sidebar's handle (D48) ----------
+   The working set lives in a second title-bar row that unfolds when something
+   is open and folds away when nothing is, so an empty window has no gap. The
+   sidebar opens and closes from a handle on its right edge. */
+.titlebar { grid-template-rows: 40px auto; height: auto; row-gap: 0; }
+.tb-tabs { grid-column: 1 / -1; display: grid; grid-template-rows: 0fr; min-width: 0; opacity: 0; transition: grid-template-rows .22s cubic-bezier(.2, .8, .3, 1), opacity .18s; }
+.tb-tabs > .tab-list { min-height: 0; overflow: hidden; padding: 0 8px; mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
+.frame:has(#app:not([hidden])):not(:has(.sections.pages)) .tb-tabs:has(.tab) { grid-template-rows: 1fr; opacity: 1; }
+.frame:has(#app:not([hidden])):not(:has(.sections.pages)) .tb-tabs:has(.tab) > .tab-list { padding-bottom: 6px; overflow-x: auto; }
+.tb-tabs .tab { flex: 0 0 auto; max-width: 200px; min-width: 0; }
+.tb-tabs .tab:not(.active) { background: color-mix(in srgb, var(--surface) 28%, transparent); }
+[data-theme="luna"] .tb-tabs .tab:not(.active) { color: #fff; }
+@media (prefers-reduced-motion: reduce) { .tb-tabs { transition: none; } }
+
+/* The canvas: sections on top, the page below (settings: pages on the left). */
+.workspace { grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "sections" "main"; }
+.workspace:has(> .sections.pages) { grid-template-rows: minmax(0, 1fr); grid-template-areas: "sections main"; }
+.sections:not(.pages) { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+
+.side-handle { position: absolute; top: 50%; left: 0; z-index: 30; display: grid; place-items: center; width: 16px; height: 44px; padding: 0; margin-top: -22px;
+  border: 1px solid var(--border); border-left: 0; border-radius: 0 9px 9px 0; background: var(--surface); color: var(--ink-faint); cursor: pointer;
+  box-shadow: 2px 1px 6px -3px rgb(26 24 20 / .25); transition: left .2s cubic-bezier(.2, .8, .3, 1), color .12s, width .12s; }
+.side-handle:hover { color: var(--ink); width: 20px; }
+.side-handle svg.i { width: 13px; height: 13px; transition: transform .2s; }
+.side-handle .tool-dot { top: 4px; right: 3px; width: 6px; height: 6px; }
+.main.side-open > .side-handle { left: 248px; }
+.main.side-open > .side-handle svg.i { transform: rotate(180deg); }
+.side-handle[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .side-handle, .side-handle svg.i { transition: none; } }
+
+/* The connect card: sign-in steps over the app instead of the first-run page. */
+.connect-card { position: relative; width: 420px; padding: 22px 24px; }
+.connect-x { position: absolute; top: 14px; right: 14px; }
+.connect-body #account-back { display: none; }
+.connect-body .auth-step h1 { padding-right: 32px; }
+.connect-body .auth-step { max-width: none; gap: 12px; }
+.connect-body .auth-step h1 { font-size: 19px; }
+.connect-body .auth-step .sub { font-size: 13px; }
+/* Without the lights the grid loses a column: keep search in the middle. */
+[data-os="windows"] .titlebar, [data-os="linux"] .titlebar { grid-template-columns: auto 1fr auto; }
+/* Empty states the audit found missing (D48). */
+.note-none { align-content: center; flex: 1; padding: 40px 24px; text-align: center; }
+.note-none p { max-width: 320px; }
+.note-none svg.i { color: var(--ink-faint); }
+.agenda-empty { display: flex; align-items: center; gap: 8px; margin: 0 22px 12px; padding: 8px 12px; border: 1px dashed var(--border); border-radius: var(--radius-md); color: var(--ink-muted); }
+.agenda-empty svg.i { width: 15px; height: 15px; flex: none; }
+.agenda-empty[hidden], .note-none[hidden] { display: none; }
+.inbox-empty .btn-ink svg.i { width: 14px; height: 14px; color: inherit; }

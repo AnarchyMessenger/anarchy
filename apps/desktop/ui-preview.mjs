@@ -241,10 +241,10 @@ await page.press("#start-dm", "Enter");
 await visible("#view-convo");
 await shot("09-dm");
 await page.click("#tool-chats");
+await page.waitForTimeout(250);
+await shot("09b-sidebar-collapsed");
 await page.click("#tool-chats");
-await page.waitForTimeout(200);
-await shot("09b-sidebar-popover");
-await page.click("#drawer-chats .drawer-pin");
+await page.waitForTimeout(250);
 await page.click('.dm-item >> text="Léa Martin"');
 await shot("10-dm-empty");
 await page.click("#new-dm");
@@ -474,7 +474,6 @@ await page.click("#tool-chats");
 await page.waitForTimeout(150);
 await shot("13p-sidebar-collapsed");
 await page.click("#tool-chats");
-await page.click("#drawer-chats .drawer-pin");
 await page.waitForSelector("#side-people-list .side-item");
 await page.waitForTimeout(300);
 await shot("13q-people-space");
@@ -626,8 +625,17 @@ await page.click("#me-connect");
 await visible("#s-account");
 await page.waitForTimeout(300);
 await shot("00f-connect-from-local");
-await page.click("#account-back");
+await page.click("#connect-x");
 await visible("#app");
+// Empty states: an agenda and a notebook with nothing in them.
+await folder("Agenda");
+await page.evaluate(() => { agenda.items = []; agenda.dues = []; renderAgenda(); });
+await visible("#agenda-empty");
+await shot("00h-agenda-empty");
+await folder("Notes");
+await page.evaluate(() => { notesState.items = []; note = null; renderNote(); renderNoteList(); });
+await visible("#note-none");
+await shot("00i-notes-empty");
 
 // The title bar on each platform: lights at the left on macOS, controls at the right elsewhere.
 for (const os of ["windows", "linux"]) {

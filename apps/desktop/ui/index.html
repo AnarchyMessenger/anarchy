@@ -26,6 +26,7 @@
   <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol><symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol><symbol id="i-star" viewBox="0 0 24 24"><path d="m12 4 2.4 5 5.4.6-4 3.7 1.1 5.4L12 16l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z" stroke-linejoin="round"/></symbol><symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol><symbol id="i-folder-plus" viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5zM12 11v5M9.5 13.5h5"/></symbol>
   <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M3 20a6 6 0 0 1 12 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3 6"/></symbol>
+  <symbol id="i-plane" viewBox="0 0 24 24"><path d="M21.5 2.5 10.6 13.4"/><path d="M21.5 2.5 14.6 21.3l-4-7.9-7.9-4z"/></symbol>
   <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 20 4l-6 16-3-7z"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
@@ -100,6 +101,8 @@
         <button type="button" data-win="close" aria-label="Close" title="Close"><svg class="wi"><use href="#i-win-close"/></svg></button>
       </div>
     </div>
+    <!-- The working set: what's open right now. Folds away when nothing is. -->
+    <div class="tb-tabs" id="tabs" data-tauri-drag-region><div class="tab-list" id="tab-list" role="tablist" aria-label="Open" data-tauri-drag-region></div></div>
   </header>
 
   <div class="stage">
@@ -353,13 +356,10 @@
         <span class="spacer"></span>
         <div class="section-list" id="section-foot"></div>
       </nav>
-      <!-- The working set: what's open right now, as tabs. -->
-      <div class="folders" id="tabs">
-        <button class="icon-btn side-toggle" id="tool-chats" type="button" title="Show the sidebar (Ctrl \)" aria-label="Sidebar" aria-expanded="false"><svg class="i"><use href="#i-sidebar"/></svg><span class="tool-dot" id="tool-chats-dot" hidden></span></button>
-        <div class="tab-list" id="tab-list" role="tablist" aria-label="Open"></div>
-      </div>
       <!-- Main -->
       <main class="main" id="main">
+        <!-- The sidebar's edge handle: at its right edge when open, at the canvas's left edge when not. -->
+        <button class="side-handle" id="tool-chats" type="button" title="Show the sidebar (Ctrl \)" aria-label="Sidebar" aria-expanded="false"><svg class="i"><use href="#i-chevron"/></svg><span class="tool-dot" id="tool-chats-dot" hidden></span></button>
         <!-- Chats and channels: pops over from the left, or stays when pinned -->
         <aside class="sidebar drawer" id="drawer-chats" aria-label="Sidebar" hidden>
           <!-- Only in pop-over mode: dock it again -->
@@ -478,6 +478,7 @@
             <div class="navseg agenda-mode" role="tablist" aria-label="View"><button type="button" role="tab" data-mode="day">Day</button><button type="button" role="tab" data-mode="week">Week</button><button type="button" role="tab" data-mode="month">Month</button></div>
             <button class="btn-ink inline" id="event-new" type="button"><svg class="i"><use href="#i-plus"/></svg><span>Add event</span></button>
           </div>
+          <p class="agenda-empty fine" id="agenda-empty" hidden><svg class="i"><use href="#i-calendar"/></svg>Nothing planned yet. Click any day to add something, or use Add event. Tasks with a due date show up here too.</p>
           <div class="agenda-results panel" id="agenda-results" hidden></div>
           <div class="cal-grid" id="cal-grid"></div>
           <form class="quick-event panel" id="quick-event" novalidate hidden>
@@ -511,6 +512,7 @@
           </aside>
           <section class="note-main">
           <div class="note-bar"><nav class="crumbs" id="note-crumbs" aria-label="Where"></nav><span class="spacer"></span><span class="fine" id="note-saved"></span><button class="icon-btn" id="note-delete" type="button" title="Delete page" aria-label="Delete page"><svg class="i"><use href="#i-trash"/></svg></button></div>
+          <div class="inbox-empty note-none" id="note-none" hidden><svg class="i"><use href="#i-note"/></svg><strong>No pages yet</strong><p class="fine">Plans, meeting notes, anything your tasks need. Only your devices can read them.</p><button class="btn-ink sm" id="note-first" type="button"><svg class="i"><use href="#i-plus"/></svg>New page</button></div>
           <div class="note-scroll">
             <article class="note-page" id="note-page">
               <button class="note-icon" id="note-icon" type="button" title="Change icon" aria-label="Change icon"></button>
@@ -832,6 +834,12 @@
 </div>
 
 <!-- ============ Dialogs ============ -->
+<!-- Connecting from inside the app: the sign-in steps move into this card (D48). -->
+<dialog class="modal panel connect-card" id="dlg-connect" aria-labelledby="account-title">
+  <button class="icon-btn connect-x" id="connect-x" type="button" aria-label="Close" title="Close"><svg class="i"><use href="#i-x"/></svg></button>
+  <div class="connect-body" id="connect-body"></div>
+</dialog>
+
 <dialog class="modal panel" id="dlg-phone" aria-labelledby="dlg-phone-title">
   <h2 id="dlg-phone-title">Link a phone</h2>
   <div class="phone-wait" id="phone-wait">

@@ -90,6 +90,14 @@ The sidekick is a package of its own, [`packages/buddy`](packages/buddy): drop i
 |---|---|
 | ![Link a phone](docs/screens/link-phone.png) | ![Approve the phone](docs/screens/link-phone-approve.png) |
 
+| Connecting a server from inside the app | The sidebar closed, its handle at the edge |
+|---|---|
+| ![Connect card](docs/screens/connect-card.png) | ![Sidebar collapsed](docs/screens/sidebar-collapsed.png) |
+
+| An empty agenda | An empty notebook |
+|---|---|
+| ![Empty agenda](docs/screens/empty-agenda.png) | ![Empty notes](docs/screens/empty-notes.png) |
+
 Title bars on Windows and Linux (macOS keeps its own traffic lights):
 
 ![Windows title bar](docs/screens/titlebar-windows.png)
@@ -143,6 +151,15 @@ export ANARCHY_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pos
 cargo test                     # E2EE messaging, auth and Brain scoping against a real server
 cargo run -p anarchy-server    # needs DATABASE_URL and OIDC settings, see docs/SELF-HOSTING.md
 cargo run -p anarchy-desktop   # desktop app (Linux needs WebKitGTK, see CONTRIBUTING.md)
+```
+
+**Windows installer.** Every app change on `main` builds one: Actions → *Windows build* → the run → `anarchy-windows-…` (NSIS `.exe` and `.msi`). To build it on your own Windows machine (Rust, plus the WebView2 runtime that Windows 11 already has):
+
+```powershell
+git pull
+cargo install tauri-cli --version "^2" --locked
+cd apps/desktop/src-tauri
+cargo tauri build --bundles nsis   # installer in target\release\bundle\nsis\
 ```
 
 Status: phase 0 in progress (see [docs/ROADMAP.md](docs/ROADMAP.md)).
