@@ -1567,3 +1567,59 @@ svg.i.flip { transform: scaleX(-1); }
    runs under the ID card (which sits higher up) to get the full width. */
 .page:has(#ps-maker:not([hidden])) { max-width: 1040px; }
 #ps-maker { width: calc(100% + 312px); }
+
+/* ---------- Summon (D44) ----------
+   A layer over everything: the sidekick's pill at the top, what you said in
+   the middle, cards under it. Dark glass in every theme: it's a moment, not a page. */
+.tb-center { gap: 8px; }
+.summon-open { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--surface) 62%, transparent); color: var(--ink-muted); cursor: pointer; box-shadow: 0 0 0 1px rgba(26,24,20,.07); }
+.summon-open:hover { color: var(--ink); background: var(--surface); }
+.summon { position: fixed; inset: 0; z-index: 60; display: grid; grid-template-rows: auto auto auto 1fr auto; justify-items: center; align-content: start; gap: 18px; padding: 28px 24px 22px;
+  background: radial-gradient(120% 70% at 50% 0%, rgba(40, 52, 82, .55), transparent 60%), radial-gradient(80% 60% at 70% 100%, rgba(96, 52, 30, .42), transparent 70%), rgba(9, 10, 13, .78);
+  backdrop-filter: blur(18px) saturate(1.2); -webkit-backdrop-filter: blur(18px) saturate(1.2); color: #eef0f3;
+  opacity: 0; transition: opacity .28s ease; overflow: auto; }
+.summon.on { opacity: 1; }
+.summon-pill { display: flex; align-items: center; gap: 12px; min-width: min(420px, 100%); padding: 10px 12px 10px 10px; border-radius: 18px; background: rgba(22, 24, 30, .86); box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 1px rgba(255,255,255,.07), 0 18px 50px -20px rgba(0,0,0,.7);
+  transform: translateY(-8px); transition: transform .35s cubic-bezier(.2, 1.2, .4, 1); }
+.summon.on .summon-pill { transform: none; }
+.summon-face { width: 40px; height: 40px; flex: none; }
+.summon-face svg { width: 100%; height: 100%; overflow: visible; }
+.summon-who { flex: 1; display: flex; align-items: baseline; gap: 8px; font-size: 13.5px; }
+.summon-who strong { font-weight: 650; }
+.summon-who span { color: rgba(238, 240, 243, .55); font-size: 12.5px; }
+.summon-mic { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 50%; background: rgba(255,255,255,.08); color: #eef0f3; cursor: pointer; }
+.summon-mic:hover { background: rgba(255,255,255,.14); }
+.summon-mic.on { background: #e5484d; animation: summon-rec 1.2s ease-in-out infinite; }
+@keyframes summon-rec { 50% { box-shadow: 0 0 0 6px rgba(229, 72, 77, .25); } }
+.summon-said { min-height: 1.2em; max-width: 900px; margin: 6vh 0 0; text-align: center; font-size: clamp(28px, 4.2vw, 46px); font-weight: 650; letter-spacing: -0.025em; line-height: 1.12; }
+.summon-said .w { display: inline; transition: filter .35s ease, opacity .35s ease; }
+.summon-said .w.fresh { filter: blur(5px); opacity: .55; }
+/* The real field sits under the words, quiet; the words above are what you see. */
+.summon-input { width: min(560px, 100%); padding: 9px 14px; border: 0; border-radius: 12px; outline: 0; background: rgba(255,255,255,.035); color: #eef0f3; font: inherit; font-size: 14px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+.summon-input::placeholder { color: rgba(238, 240, 243, .45); }
+.summon-input:focus { box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
+.summon-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; width: min(900px, 100%); align-content: start; }
+.sm-card { display: grid; gap: 6px; align-content: start; padding: 14px 16px; border-radius: 16px; background: rgba(28, 30, 37, .9); box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 0 0 1px rgba(255,255,255,.07);
+  animation: sm-in .45s cubic-bezier(.2, 1.1, .4, 1) backwards; animation-delay: calc(var(--i, 0) * 70ms); }
+.summon:not(.on) .sm-card { opacity: 0; transform: translateY(6px) scale(.98); transition: opacity .25s, transform .25s; }
+@keyframes sm-in { from { opacity: 0; transform: translateY(10px) scale(.97); filter: blur(4px); } }
+.sm-card small { color: rgba(238, 240, 243, .55); font-size: 12px; font-weight: 560; }
+.sm-card.stat strong { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+.sm-card.stat .sub { color: rgba(238, 240, 243, .55); font-size: 12px; }
+.sm-card.stat.good strong { color: #7ee2a8; }
+.sm-card.stat.warn strong { color: #ffb36b; }
+.sm-card.list, .sm-card.draft { grid-column: span 2; }
+.sm-row { display: grid; gap: 1px; width: 100%; padding: 7px 8px; margin: 0 -8px; border: 0; border-radius: 10px; background: transparent; color: #eef0f3; text-align: left; font: inherit; font-size: 13.5px; }
+button.sm-row { cursor: pointer; }
+button.sm-row:hover { background: rgba(255,255,255,.07); }
+.sm-row small { color: rgba(238, 240, 243, .5); font-size: 12px; }
+.sm-draft-text { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 0; border-radius: 10px; background: rgba(255,255,255,.06); color: #eef0f3; font: inherit; font-size: 14px; line-height: 1.5; resize: vertical; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+.sm-actions { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.sm-actions .fine { color: rgba(238, 240, 243, .5); }
+.summon .btn-ink { background: #eef0f3; color: #16181d; }
+.summon-hint { align-self: end; margin: 0; color: rgba(238, 240, 243, .4); font-size: 12px; }
+@media (max-width: 640px) { .sm-card.list, .sm-card.draft { grid-column: auto; } }
+@media (prefers-reduced-motion: reduce) {
+  .summon, .summon-pill, .summon-said .w { transition: none; }
+  .sm-card, .summon-mic.on { animation: none; }
+}

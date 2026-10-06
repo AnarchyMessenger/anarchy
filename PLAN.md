@@ -13,6 +13,8 @@ The order follows one rule: **fix what stops a new person from using the app wit
 - Title bars per platform: macOS traffic lights, Windows and GNOME controls (D41).
 - Linking a phone: QR code, approve on the desktop, then a session (D42). Server, client and desktop are done; the phone app is step 12.
 - Audit, October 2026 (`docs/AUDIT-2026-10.md`): the CSP was blocking inline styles in the real app; fixed, and the preview now runs under the same CSP.
+- The agent bridge (D43): Anarchy is an MCP server for agents on this computer (Claude Code, Codex, Backspace). Reads desks and Company channels, never Sealed conversations; drafts but never sends.
+- Summon (D44): ⌘/Ctrl Shift Space, a voice or typed request, an answer as cards that go away. How this fits with Backspace and Agently: `docs/HARNESSES.md`.
 
 ## 1. A public server people can join (M)
 
@@ -70,7 +72,8 @@ Apache Wave is retired (2018) and its operational transforms need a server that 
 ## 9. Sidekicks that think (M–L)
 
 **Why here:** the sidekick searches and remembers (D36), but there's no model yet. Connecting one is the biggest privacy decision in the product, so it comes after the basics are trusted.
-**Includes:** connect a model (local first, e.g. Ollama; then a hosted API key you own); what it may read set per channel and per desk, Sealed always excluded; others can remove a sidekick from a channel they're in; the sidekick on/off switch on each desk; reminders that fire while the app is closed (OS scheduler).
+**How:** don't build model routing here. Backspace already runs Claude Code, Codex, Ollama and routers; the sidekick sends its request to a Backspace route and gets back card specs for Summon (D44) or a reply. Anarchy's data reaches the model only through the bridge's tools (D43), so the Sealed rule holds (`docs/HARNESSES.md`).
+**Includes:** connect a model (through Backspace, or directly: local first, e.g. Ollama; then a hosted API key you own); Summon over every app (a transparent always-on-top window and a system-wide shortcut), and local voice (Whisper) where the web view has none; what it may read set per channel and per desk, Sealed always excluded; others can remove a sidekick from a channel they're in; the sidekick on/off switch on each desk; reminders that fire while the app is closed (OS scheduler).
 **Done when:** a sidekick answers from a desk it may read and refuses one it may not, in a test.
 
 ## 10. Co-editing notes and pages (L)

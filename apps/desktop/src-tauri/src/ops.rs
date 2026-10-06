@@ -2069,3 +2069,184 @@ fn query_escape(s: &str) -> String {
         })
         .collect()
 }
+
+// ---------- the agent bridge (D43) ----------
+// What agents on this computer (Claude Code, Codex, Backspace…) may read
+// through the bridge: your personal desks and Company channels. Never a
+// Sealed conversation with other people: those stay between the people in it.
+
+/// Channels an agent may see.
+async fn agent_channels(i: &mut Inner) -> Result<Vec<ChannelView>, String> {
+    Ok(list_channels(i)
+        .await?
+        .into_iter()
+        .filter(|c| c.kind == "personal" || c.trust == Trust::Company)
+        .collect())
+}
+
+fn where_of(c: &ChannelView) -> String {
+    match (&c.desk, c.kind) {
+        (Some(_), _) => c.name.clone(),
+        (None, "dm") => format!(
+            "conversation with {}",
+            c.peer.as_ref().map(|p| p.name.as_str()).unwrap_or("someone")
+        ),
+        _ => format!("#{}", c.name),
+    }
+}
+
+/// The tools the bridge offers, as MCP describes them.
+pub fn agent_tools() -> serde_json::Value {
+    let obj = |props: serde_json::Value, required: &[&str]| serde_json::json!({ "type": "object", "properties": props, "required": required });
+    serde_json::json!([
+        { "name": "anarchy_search",
+          "description": "Search what the user keeps in Anarchy (their desks and Company channels; never private Sealed conversations). Returns matching messages and records, newest first.",
+          "inputSchema": obj(serde_json::json!({ "query": { "type": "string", "description": "A word or phrase" } }), &["query"]) },
+        { "name": "anarchy_today",
+          "description": "The user's day: agenda events and tasks that are due or late.",
+          "inputSchema": obj(serde_json::json!({ "date": { "type": "string", "description": "YYYY-MM-DD; today if left out" } }), &[]) },
+        { "name": "anarchy_desks",
+          "description": "The desks the user lets agents read (tasks, invoices, clients, notes…), with how many records each holds.",
+          "inputSchema": obj(serde_json::json!({}), &[]) },
+        { "name": "anarchy_desk_items",
+          "description": "The records in one desk, by its name or id from anarchy_desks.",
+          "inputSchema": obj(serde_json::json!({ "desk": { "type": "string" }, "limit": { "type": "integer", "description": "At most this many, newest first (default 50)" } }), &["desk"]) },
+        { "name": "anarchy_draft",
+          "description": "Put a message in the composer of a desk or channel for the user to read and send. Nothing is sent: the user decides.",
+          "inputSchema": obj(serde_json::json!({ "to": { "type": "string", "description": "Desk or channel name or id" }, "text": { "type": "string" } }), &["to", "text"]) },
+    ])
+}
+
+/// Runs one bridge tool. `Ok` holds the result for the agent; a draft also
+/// returns where it should open, for the app to show.
+pub async fn agent_call(i: &mut Inner, tool: &str, args: &serde_json::Value) -> Result<AgentAnswer, String> {
+    use serde_json::json;
+    if i.is_locked() {
+        return Err("Anarchy is locked; unlock it on this computer first".into());
+    }
+    let visible = agent_channels(i).await?;
+    let find = |key: &str| -> Option<&ChannelView> {
+        let k = key.trim().trim_start_matches('#').to_lowercase();
+        visible.iter().find(|c| {
+            c.id.to_string() == k || c.name.to_lowercase() == k || c.desk.as_deref() == Some(k.as_str())
+        })
+    };
+    let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("").to_owned();
+    match tool {
+        "anarchy_search" => {
+            let q = s("query");
+            let hits = search(i, q).await?;
+            let out: Vec<_> = hits
+                .into_iter()
+                .filter_map(|h| {
+                    let c = visible.iter().find(|c| c.id == h.channel)?;
+                    Some(json!({ "where": where_of(c), "what": h.what, "by": h.by, "at_ms": h.ts_ms, "text": h.text }))
+                })
+                .collect();
+            Ok(AgentAnswer::data(json!({ "results": out })))
+        }
+        "anarchy_today" => {
+            let date = match s("date") {
+                d if d.len() == 10 => d,
+                _ => chrono::Local::now().format("%Y-%m-%d").to_string(),
+            };
+            let mut events = Vec::new();
+            let mut tasks = Vec::new();
+            for c in &visible {
+                for it in desk_items(i, c.id).await? {
+                    let d = &it.data;
+                    if d.get("deleted").and_then(|v| v.as_bool()) == Some(true) {
+                        continue;
+                    }
+                    match it.kind.as_str() {
+                        "event" if d.get("date").and_then(|v| v.as_str()) == Some(date.as_str()) => events.push(json!({
+                            "title": d["title"], "start": d.get("start"), "end": d.get("end"), "all_day": d.get("all_day"), "where": d.get("where"),
+                        })),
+                        "card" => {
+                            let due = d.get("due").and_then(|v| v.as_str()).unwrap_or("");
+                            let done = d.get("column").and_then(|v| v.as_str()) == Some("done");
+                            if !due.is_empty() && due <= date.as_str() && !done {
+                                tasks.push(json!({ "title": d["title"], "due": due, "late": due < date.as_str(), "desk": where_of(c) }));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            events.sort_by(|a, b| a["start"].as_str().cmp(&b["start"].as_str()));
+            Ok(AgentAnswer::data(
+                json!({ "date": date, "events": events, "tasks": tasks }),
+            ))
+        }
+        "anarchy_desks" => {
+            let mut out = Vec::new();
+            for c in visible.iter().filter(|c| c.desk.is_some()) {
+                let n = desk_items(i, c.id)
+                    .await?
+                    .iter()
+                    .filter(|x| x.data.get("deleted").and_then(|v| v.as_bool()) != Some(true))
+                    .count();
+                out.push(json!({ "id": c.id, "name": c.name, "kind": c.desk, "records": n }));
+            }
+            Ok(AgentAnswer::data(json!({ "desks": out })))
+        }
+        "anarchy_desk_items" => {
+            let c = find(&s("desk"))
+                .filter(|c| c.desk.is_some())
+                .ok_or("No desk by that name that agents may read")?;
+            let limit = args
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(50)
+                .clamp(1, 200) as usize;
+            let mut items: Vec<_> = desk_items(i, c.id)
+                .await?
+                .into_iter()
+                // Settings and forms hold keys; file records hold keys to the file.
+                .filter(|x| {
+                    !matches!(x.kind.as_str(), "settings" | "form")
+                        && x.data.get("deleted").and_then(|v| v.as_bool()) != Some(true)
+                })
+                .collect();
+            items.sort_by_key(|x| std::cmp::Reverse(x.updated_ms));
+            let out: Vec<_> = items
+                .into_iter()
+                .take(limit)
+                .map(|x| {
+                    let mut data = x.data.clone();
+                    if let Some(o) = data.as_object_mut() {
+                        for k in ["file_key", "local_chunks", "chunks", "key", "secret"] {
+                            o.remove(k);
+                        }
+                    }
+                    json!({ "id": x.id, "kind": x.kind, "updated_ms": x.updated_ms, "data": data })
+                })
+                .collect();
+            Ok(AgentAnswer::data(json!({ "desk": c.name, "items": out })))
+        }
+        "anarchy_draft" => {
+            let c = find(&s("to")).ok_or("No desk or channel by that name that agents may write to")?;
+            let text: String = s("text").chars().take(8000).collect();
+            if text.trim().is_empty() {
+                return Err("The draft is empty".into());
+            }
+            Ok(AgentAnswer {
+                result: json!({ "drafted_in": where_of(c), "sent": false, "note": "It's in the composer; the user reads it and decides." }),
+                draft: Some((c.id, text)),
+            })
+        }
+        _ => Err(format!("No tool called {tool}")),
+    }
+}
+
+pub struct AgentAnswer {
+    pub result: serde_json::Value,
+    /// A draft for the app to open: the channel and its text.
+    pub draft: Option<(ChannelId, String)>,
+}
+
+impl AgentAnswer {
+    fn data(result: serde_json::Value) -> Self {
+        Self { result, draft: None }
+    }
+}

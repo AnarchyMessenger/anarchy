@@ -181,6 +181,15 @@ function anarchyDemo(startLocked) {
   const skOn = new Set();
   let mailOn = true;
   const mail = (uid, from_name, from_addr, subject, text, mins, seen) => ({ uid, message_id: `m${uid}@mail.test`, from_name, from_addr, to: ["maya@studiochen.fr"], subject, date_ms: now - mins * 60e3, text, seen, references: [] });
+  let bridgeState = {
+    enabled: true, running: true, url: "http://127.0.0.1:47613/mcp", token: "3f9c…demo", command: "/Applications/Anarchy.app/Contents/MacOS/anarchy-desktop --mcp",
+    calls: [
+      { at_ms: Date.now() - 60000, tool: "anarchy_draft", ok: true, about: "for collections" },
+      { at_ms: Date.now() - 64000, tool: "anarchy_desk_items", ok: true, about: "Collections" },
+      { at_ms: Date.now() - 70000, tool: "anarchy_today", ok: true, about: "" },
+      { at_ms: Date.now() - 3600000, tool: "anarchy_search", ok: true, about: "\u201cAcme\u201d" },
+    ],
+  };
   let phonePolls = 0, phoneState = "open";
   const mailLinked = {};
   const mailbox = [
@@ -288,6 +297,9 @@ function anarchyDemo(startLocked) {
     mail_continue: async ({ email }) => { await wait(150); const c = channels.find((x) => x.kind === "dm" && x.peer === "u2"); mailLinked[email] = c.id; return c.id; },
     mail_links: async () => ({ ...mailLinked }),
     // Linking a phone: a code that looks like one, then a phone that claims it.
+    // The agent bridge (D43): on, with a few requests from Claude Code.
+    bridge_info: async () => bridgeState,
+    set_bridge: async ({ enabled }) => { bridgeState = { ...bridgeState, enabled, running: enabled }; return bridgeState; },
     phone_link_start: async () => {
       const w = 29, dark = [];
       const finder = (x, y) => [[0, 0], [w - 7, 0], [0, w - 7]].some(([fx, fy]) => {

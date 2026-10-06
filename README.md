@@ -76,6 +76,14 @@ Sign up with Google, email or anonymously, then say what it's for, lock the devi
 |---|---|
 | ![Mail upgrade](docs/screens/mail-upgrade.png) | ![Buddy](docs/screens/sidekick-buddy.png) |
 
+| Summon: ask by voice or typing | The answer, as cards |
+|---|---|
+| ![Summon listening](docs/screens/summon-listening.png) | ![Summon money](docs/screens/summon-money.png) |
+
+| A weekly update, drafted, never sent | Agents on this computer (MCP) |
+|---|---|
+| ![Summon draft](docs/screens/summon-draft.png) | ![Agent bridge](docs/screens/agents-bridge.png) |
+
 | Linking a phone | Approving it |
 |---|---|
 | ![Link a phone](docs/screens/link-phone.png) | ![Approve the phone](docs/screens/link-phone-approve.png) |

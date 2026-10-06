@@ -1,6 +1,7 @@
 // Hides the console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod bridge;
 mod dav;
 mod engine;
 mod local;
@@ -26,6 +27,10 @@ struct AppState {
     dropped: Arc<Mutex<HashSet<PathBuf>>>,
     /// The drive's local WebDAV share, while it's on.
     mount: Arc<tokio::sync::Mutex<Option<dav::Running>>>,
+    /// The agent bridge, while it's on (D43).
+    bridge: Arc<tokio::sync::Mutex<Option<bridge::Running>>>,
+    data_dir: PathBuf,
+    app: tauri::AppHandle,
 }
 
 type R<T> = Result<T, String>;
@@ -251,6 +256,112 @@ async fn save_file_as(
     Ok(true)
 }
 
+// ---------- the agent bridge (D43) ----------
+
+#[derive(serde::Serialize)]
+struct BridgeInfo {
+    enabled: bool,
+    running: bool,
+    /// For agents that speak MCP over HTTP.
+    url: String,
+    token: String,
+    /// For agents that start a program: this app with `--mcp`.
+    command: String,
+    calls: Vec<bridge::Call>,
+}
+
+async fn bridge_prefs(state: &AppState, update: Option<(bool, bool)>) -> R<bridge::BridgePrefs> {
+    state
+        .engine
+        .run(move |i| {
+            Box::pin(async move {
+                if i.is_locked() {
+                    return Err("Unlock Anarchy first".to_string());
+                }
+                let mut prefs: bridge::BridgePrefs =
+                    engine::read_json(i.device(), "bridge").unwrap_or_default();
+                if prefs.token.is_empty() {
+                    prefs.token = bridge::BridgePrefs::new_token();
+                }
+                if let Some((enabled, new_token)) = update {
+                    prefs.enabled = enabled;
+                    if new_token {
+                        prefs.token = bridge::BridgePrefs::new_token();
+                    }
+                }
+                engine::write_json(i.device(), "bridge", &prefs)?;
+                Ok(prefs)
+            })
+        })
+        .await
+}
+
+async fn apply_bridge(state: &AppState, mut prefs: bridge::BridgePrefs) -> R<BridgeInfo> {
+    let mut running = state.bridge.lock().await;
+    let stale = running.as_ref().is_some_and(|r| r.token != prefs.token);
+    if !prefs.enabled || stale {
+        *running = None;
+    }
+    if prefs.enabled && running.is_none() {
+        let app = state.app.clone();
+        // A draft opens in the app, in that conversation's composer; nothing is sent.
+        let on_draft: bridge::OnDraft = Arc::new(move |channel, text| {
+            let _ = app.emit(
+                "bridge-draft",
+                serde_json::json!({ "channel": channel, "text": text }),
+            );
+        });
+        let r = bridge::start(state.engine.clone(), &prefs, &state.data_dir, on_draft).await?;
+        if r.port != prefs.port {
+            prefs.port = r.port;
+            let saved = prefs.clone();
+            state
+                .engine
+                .run(move |i| Box::pin(async move { engine::write_json(i.device(), "bridge", &saved) }))
+                .await?;
+        }
+        *running = Some(r);
+    }
+    let calls = running
+        .as_ref()
+        .map(|r| {
+            r.log
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .iter()
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    let exe = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "anarchy-desktop".into());
+    Ok(BridgeInfo {
+        enabled: prefs.enabled,
+        running: running.is_some(),
+        url: format!(
+            "http://127.0.0.1:{}/mcp",
+            running.as_ref().map(|r| r.port).unwrap_or(prefs.port)
+        ),
+        token: prefs.token,
+        command: format!("{exe} --mcp"),
+        calls,
+    })
+}
+
+/// The bridge's state; starts it if it's on and not running yet (after unlock).
+#[tauri::command]
+async fn bridge_info(state: tauri::State<'_, AppState>) -> R<BridgeInfo> {
+    let prefs = bridge_prefs(&state, None).await?;
+    apply_bridge(&state, prefs).await
+}
+
+#[tauri::command]
+async fn set_bridge(state: tauri::State<'_, AppState>, enabled: bool, new_token: bool) -> R<BridgeInfo> {
+    let prefs = bridge_prefs(&state, Some((enabled, new_token))).await?;
+    apply_bridge(&state, prefs).await
+}
+
 #[derive(serde::Serialize)]
 struct MountInfo {
     enabled: bool,
@@ -385,6 +496,11 @@ async fn cancel_sign_in(state: tauri::State<'_, AppState>) -> R<()> {
 }
 
 fn main() {
+    // `anarchy-desktop --mcp`: a stdio MCP server for agents, backed by the running app (D43).
+    if std::env::args().any(|a| a == "--mcp") {
+        bridge::stdio_shim();
+        return;
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
@@ -408,10 +524,13 @@ fn main() {
                 });
             });
             app.manage(AppState {
-                engine: Engine::start(dir, notify),
+                engine: Engine::start(dir.clone(), notify),
                 cancel_sign_in: Arc::new(Notify::new()),
                 dropped: Arc::new(Mutex::new(HashSet::new())),
                 mount: Arc::new(tokio::sync::Mutex::new(None)),
+                bridge: Arc::new(tokio::sync::Mutex::new(None)),
+                data_dir: dir,
+                app: app.handle().clone(),
             });
             Ok(())
         })
@@ -437,6 +556,8 @@ fn main() {
             heartbeat,
             start_local,
             mail_find,
+            bridge_info,
+            set_bridge,
             phone_link_start,
             phone_link_status,
             phone_link_approve,

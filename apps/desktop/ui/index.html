@@ -12,6 +12,7 @@
 <svg width="0" height="0" class="sprite" aria-hidden="true">
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
   <symbol id="i-mobile" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></symbol>
   <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 19h20"/></symbol>
   <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></symbol>
@@ -89,6 +90,7 @@
         <label class="omni-field"><svg class="i"><use href="#i-search"/></svg><input id="search" placeholder="Search messages, desks, people" autocomplete="off" spellcheck="false" aria-label="Search"><kbd id="search-kbd">Ctrl K</kbd></label>
         <div class="search-results panel" id="search-results" role="listbox" hidden></div>
       </div>
+      <button class="summon-open" id="summon-open" type="button" aria-label="Ask your sidekick (⌘/Ctrl Shift Space)" title="Ask your sidekick · ⌘/Ctrl Shift Space"><svg class="i"><use href="#i-sparkle"/></svg></button>
     </div>
     <div class="tb-right" data-tauri-drag-region>
       <div class="winctl">
@@ -753,6 +755,27 @@
             <p class="error" id="m-error" hidden></p>
           </div>
 
+          <div class="page" data-page="agents" hidden>
+            <h1 class="page-title">Agents on this computer</h1>
+            <p class="page-sub">Let Claude Code, Codex, Cursor, Backspace or any agent that speaks MCP read what you keep here, and draft messages for you to send.</p>
+            <div class="toggles">
+              <label class="toggle"><input type="checkbox" id="b-enabled"><span><strong>Let agents on this computer read Anarchy</strong><small>Your desks and Company channels. Never a Sealed conversation with other people.</small></span></label>
+            </div>
+            <div class="mount-box" id="b-box" hidden>
+              <dl class="facts-list">
+                <div><dt>Claude Code</dt><dd><code id="b-claude"></code></dd></div>
+                <div><dt>Any agent</dt><dd><code id="b-cmd"></code></dd></div>
+                <div><dt>Over HTTP</dt><dd><code id="b-url"></code></dd></div>
+              </dl>
+              <div class="row-actions"><button class="btn-outline pill" id="b-copy" type="button"><svg class="i"><use href="#i-copy"/></svg><span>Copy the Claude Code command</span></button><span class="saved" id="b-copied" hidden>Copied</span></div>
+              <div class="callout"><svg class="i"><use href="#i-shield"/></svg><p>Agents can read; they can't send. A draft opens in the conversation for you to read first. Anarchy has to be running and unlocked. Anything you give the token to can read the same things, so keep it in the agent's settings only.</p></div>
+              <h2 class="block-label">Recent requests</h2>
+              <div class="list" id="b-calls"></div>
+              <div class="row-actions"><button class="btn-outline sm" id="b-rotate" type="button">New token</button><span class="fine">Agents using the old one have to be set up again.</span></div>
+            </div>
+            <p class="error" id="b-error" hidden></p>
+          </div>
+
           <div class="page" data-page="devices" hidden>
             <h1 class="page-title">Devices</h1>
             <p class="page-sub">Every computer or phone signed in as you. Revoke one you've lost: it's signed out and removed from your conversations.</p>
@@ -1097,8 +1120,22 @@
 
 <div class="fold-menu panel" id="fold-menu" role="menu" hidden></div>
 <div class="tour-bar" id="tour-bar" role="status" hidden><svg class="i"><use href="#i-sparkle"/></svg><span><strong>You're on a tour.</strong> A sample workspace: click anything, nothing is saved.</span><button class="btn-ink sm" id="tour-end" type="button">Start for real</button></div>
+<!-- Summon (D44): ask by voice or typing; the answer is built for the question and goes away. -->
+<div class="summon" id="summon" role="dialog" aria-modal="true" aria-label="Ask your sidekick" hidden>
+  <div class="summon-pill" id="summon-pill">
+    <span class="summon-face" id="summon-face"></span>
+    <span class="summon-who"><strong id="summon-name">Sidekick</strong><span id="summon-state" aria-live="polite">Listening</span></span>
+    <button class="summon-mic" id="summon-mic" type="button" aria-label="Speak" title="Speak"><svg class="i"><use href="#i-mic"/></svg></button>
+  </div>
+  <p class="summon-said" id="summon-said" aria-hidden="true"></p>
+  <input class="summon-input" id="summon-input" autocomplete="off" spellcheck="false" placeholder="Ask, or say what to do" aria-label="Ask your sidekick">
+  <div class="summon-cards" id="summon-cards"></div>
+  <p class="summon-hint">Try “my day”, “who owes me”, “write the weekly update to #studio”. Esc closes.</p>
+</div>
+
 <script src="demo.js"></script>
 <script src="sidekick.js"></script>
 <script src="app.js"></script>
+<script src="summon.js"></script>
 </body>
 </html>

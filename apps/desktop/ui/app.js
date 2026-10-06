@@ -591,6 +591,8 @@ async function showApp() {
   refreshDeskNeeds().then(renderTabs);
   // Brings the local file share back up if it was on.
   invoke("mount_info").then((m) => { mount = m; }).catch(() => {});
+  // The agent bridge comes back on after unlock if it was on (D43).
+  invoke("bridge_info").then((b) => { bridgeInfo = b; }).catch(() => {});
 }
 
 // ---------- presence (D35) ----------
@@ -1033,7 +1035,7 @@ document.addEventListener("keydown", (e) => {
 // tabs; the working set follows them. In settings, the folders are its pages.
 
 let settingsAt = "profile";
-const SETTINGS_PAGES = [["profile", "Profile"], ["privacy", "Privacy"], ["account", "Account & device"], ["appearance", "Appearance"], ["notifications", "Notifications"], ["files", "Files on this computer"], ["devices", "Devices"], ["invites", "Guest invites"]];
+const SETTINGS_PAGES = [["profile", "Profile"], ["privacy", "Privacy"], ["account", "Account & device"], ["appearance", "Appearance"], ["notifications", "Notifications"], ["files", "Files on this computer"], ["agents", "Agents on this computer"], ["devices", "Devices"], ["invites", "Guest invites"]];
 // Set when you pick Chats with no conversation open, so the list still shows.
 let chatsHint = false;
 function sectionNow() {
@@ -4583,7 +4585,7 @@ function settingsPage(page) {
   for (const p of document.querySelectorAll(".page")) show(p, p.dataset.page === page);
   settingsAt = page;
   renderFolders();
-  ({ profile: loadProfile, privacy: loadPrivacy, account: loadAccount, notifications: loadNotifications, files: loadMount, devices: loadDevices, appearance: () => {}, invites: () => { show("invite-result", false); setError("invite-error", ""); } })[page]();
+  ({ profile: loadProfile, privacy: loadPrivacy, account: loadAccount, notifications: loadNotifications, files: loadMount, agents: loadBridge, devices: loadDevices, appearance: () => {}, invites: () => { show("invite-result", false); setError("invite-error", ""); } })[page]();
 }
 
 let edit = {};
@@ -4706,6 +4708,44 @@ function paintMount() {
   show("m-win-row", OS === "windows");
   $("m-how").textContent = MOUNT_HOW[OS];
 }
+// Agents on this computer (D43).
+let bridgeInfo = null;
+const TOOL_SAYS = { anarchy_search: "Searched", anarchy_today: "Read your day", anarchy_desks: "Listed desks", anarchy_desk_items: "Read", anarchy_draft: "Drafted" };
+function paintBridge() {
+  const b = bridgeInfo;
+  $("b-enabled").checked = !!b?.enabled;
+  show("b-box", !!b?.running);
+  if (!b?.running) return;
+  const claude = `claude mcp add --transport http anarchy ${b.url} --header "Authorization: Bearer ${b.token}"`;
+  $("b-claude").textContent = claude;
+  $("b-cmd").textContent = b.command;
+  $("b-url").textContent = b.url;
+  $("b-calls").replaceChildren(...(b.calls.length ? b.calls.slice(0, 12).map((c) => el("div", { class: "list-row" },
+    el("span", { class: "grow" }, el("span", { text: `${TOOL_SAYS[c.tool] || c.tool} ${c.about}`.trim() }), el("small", { text: dateTimeFmt.format(c.at_ms) })),
+    c.ok ? null : el("span", { class: "tag", text: "Refused" })))
+    : [el("p", { class: "fine", text: "Nothing yet. Requests show here as agents make them." })]));
+}
+async function loadBridge() {
+  setError("b-error", ""); show("b-copied", false);
+  try { bridgeInfo = await invoke("bridge_info"); } catch (err) { setError("b-error", String(err)); }
+  paintBridge();
+}
+async function setBridge(enabled, newToken = false) {
+  setError("b-error", "");
+  try { bridgeInfo = await invoke("set_bridge", { enabled, newToken }); } catch (err) { setError("b-error", String(err)); }
+  paintBridge();
+}
+$("b-enabled").addEventListener("change", () => setBridge($("b-enabled").checked));
+$("b-rotate").addEventListener("click", () => setBridge(true, true));
+$("b-copy").addEventListener("click", async () => { await navigator.clipboard.writeText($("b-claude").textContent); show("b-copied", true); });
+// An agent drafted something: open that conversation with the draft in the composer, unsent.
+tauri?.event?.listen?.("bridge-draft", async ({ payload }) => {
+  await refreshChannels();
+  await openChannel(payload.channel);
+  if (composer.value.trim() && !confirm("An agent drafted a message here. Replace what you're writing?")) return;
+  composer.value = payload.text; fitComposer(); composer.focus();
+});
+
 async function loadMount() {
   setError("m-error", ""); show("m-copied", false);
   try { mount = await invoke("mount_info"); } catch (err) { setError("m-error", String(err)); }

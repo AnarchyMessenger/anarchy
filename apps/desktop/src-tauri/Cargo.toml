@@ -39,7 +39,10 @@ getrandom.workspace = true
 argon2 = "0.5"
 chacha20poly1305 = "0.10"
 keyring = { version = "3.6", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
+# Today's date in the local time zone, for the agent bridge (MIT/Apache-2.0).
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 qrcode = { version = "0.14", default-features = false }
+http-body-util = "0.1"
 
 [dev-dependencies]
 anarchy-testkit.workspace = true
