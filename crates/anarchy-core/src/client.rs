@@ -301,6 +301,65 @@ impl Client {
         Ok(self.post("/v1/directory/by-email", &body).await?.json().await?)
     }
 
+    /// Starts linking a phone (D42): an offer whose secret goes in a QR code.
+    pub async fn link_offer(&self) -> Result<anarchy_proto::LinkOffer, Error> {
+        Ok(self
+            .post("/v1/devices/links", &serde_json::json!({}))
+            .await?
+            .json()
+            .await?)
+    }
+
+    /// Where a link offer stands: open, claimed by a phone, approved, done or ended.
+    pub async fn link_status(&self, id: uuid::Uuid) -> Result<anarchy_proto::LinkStatus, Error> {
+        self.get(&format!("/v1/devices/links/{id}"), &[]).await
+    }
+
+    /// Lets the phone that claimed this offer in.
+    pub async fn link_approve(&self, id: uuid::Uuid) -> Result<(), Error> {
+        self.post(&format!("/v1/devices/links/{id}/approve"), &serde_json::json!({}))
+            .await?;
+        Ok(())
+    }
+
+    /// Cancels an offer, or turns the phone that claimed it away.
+    pub async fn link_end(&self, id: uuid::Uuid) -> Result<(), Error> {
+        self.post(&format!("/v1/devices/links/{id}/end"), &serde_json::json!({}))
+            .await?;
+        Ok(())
+    }
+
+    /// The phone's side: claims a scanned offer and gets a ticket to wait with.
+    pub async fn link_claim(
+        base_url: &str,
+        secret: &str,
+        label: &str,
+    ) -> Result<anarchy_proto::LinkTicket, Error> {
+        let base = base_url.trim_end_matches('/');
+        let resp = reqwest::Client::new()
+            .post(format!("{base}/v1/devices/links/claim"))
+            .json(&anarchy_proto::LinkClaim {
+                secret: secret.to_owned(),
+                label: label.to_owned(),
+            })
+            .send()
+            .await?;
+        Ok(check(resp).await?.json().await?)
+    }
+
+    /// The phone's side: a session once the desktop approves, `None` until then.
+    pub async fn link_collect(base_url: &str, ticket: &str) -> Result<Option<Session>, Error> {
+        let base = base_url.trim_end_matches('/');
+        let resp = reqwest::Client::new()
+            .post(format!("{base}/v1/devices/links/collect"))
+            .json(&anarchy_proto::LinkTicket {
+                ticket: ticket.to_owned(),
+            })
+            .send()
+            .await?;
+        Ok(check(resp).await?.json().await?)
+    }
+
     /// Tells the server the app is open and in use, for presence (D35).
     pub async fn heartbeat(&self) -> Result<(), Error> {
         self.post("/v1/me/heartbeat", &serde_json::json!({})).await?;

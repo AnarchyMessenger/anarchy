@@ -6,6 +6,7 @@
 
 pub mod accounts;
 pub mod auth;
+pub mod companion;
 pub mod email;
 pub mod forms;
 pub mod links;
@@ -178,6 +179,12 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/invites/{invite}/revoke", post(revoke_invite))
         .route("/v1/devices", post(register_device).get(my_devices))
         .route("/v1/devices/{device}/revoke", post(revoke_device))
+        .route("/v1/devices/links", post(companion::offer))
+        .route("/v1/devices/links/claim", post(companion::claim))
+        .route("/v1/devices/links/collect", post(companion::collect))
+        .route("/v1/devices/links/{id}", get(companion::status))
+        .route("/v1/devices/links/{id}/approve", post(companion::approve))
+        .route("/v1/devices/links/{id}/end", post(companion::end))
         .route("/v1/channels", post(create_channel).get(accounts::my_channels))
         .route("/v1/channels/{channel}/events", post(append).get(events))
         .route("/v1/channels/{channel}/members", get(members))
@@ -965,6 +972,10 @@ async fn download_blob(
 
 // ---------- key packages and invites ----------
 
+/// Waiting key packages kept per device: enough to be added to many channels
+/// while offline, not a storage bin. Past it the oldest go.
+const MAX_KEY_PACKAGES: i64 = 200;
+
 async fn upload_key_packages(
     State(s): State<AppState>,
     dev: AuthDevice,
@@ -981,6 +992,14 @@ async fn upload_key_packages(
             .execute(&s.db)
             .await?;
     }
+    sqlx::query(
+        "DELETE FROM key_packages WHERE device_id = $1 AND id NOT IN
+           (SELECT id FROM key_packages WHERE device_id = $1 ORDER BY id DESC LIMIT $2)",
+    )
+    .bind(device)
+    .bind(MAX_KEY_PACKAGES)
+    .execute(&s.db)
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

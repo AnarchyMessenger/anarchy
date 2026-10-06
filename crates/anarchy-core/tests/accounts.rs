@@ -437,5 +437,80 @@ async fn an_email_finds_someone_only_if_you_could_message_them() {
     for _ in 0..56 {
         let _ = maya.lookup_email("x@example.com").await;
     }
-    assert_eq!(status(maya.lookup_email("bob@example.com").await), 403);
+    assert_eq!(status(maya.lookup_email("bob@example.com").await), 429);
+}
+
+#[tokio::test]
+async fn a_phone_links_only_after_the_desktop_approves() {
+    let server = open_server().await;
+    let maya = anon(&server, "Maya").await;
+
+    // The desktop makes an offer; a phone scans it and waits.
+    let offer = maya.link_offer().await.unwrap();
+    assert_eq!(maya.link_status(offer.id).await.unwrap().state, "open");
+    let ticket = Client::link_claim(&server.url, &offer.secret, "  Pixel 8  ")
+        .await
+        .unwrap();
+    // The same code can't be claimed twice, and a wrong code gets nothing.
+    assert_eq!(
+        status(Client::link_claim(&server.url, &offer.secret, "Thief").await),
+        404
+    );
+    assert_eq!(
+        status(Client::link_claim(&server.url, "guess", "Thief").await),
+        404
+    );
+    let st = maya.link_status(offer.id).await.unwrap();
+    assert_eq!(
+        (st.state.as_str(), st.label.as_deref()),
+        ("claimed", Some("Pixel 8"))
+    );
+
+    // Nothing for the phone until the desktop says yes.
+    assert!(
+        Client::link_collect(&server.url, &ticket.ticket)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    maya.link_approve(offer.id).await.unwrap();
+    let session = Client::link_collect(&server.url, &ticket.ticket)
+        .await
+        .unwrap()
+        .unwrap();
+    let phone = ready(&server, session).await;
+    assert_eq!(
+        phone.me().await.unwrap().username,
+        maya.me().await.unwrap().username
+    );
+    // Once only.
+    assert_eq!(
+        status(Client::link_collect(&server.url, &ticket.ticket).await),
+        403
+    );
+    assert_eq!(maya.link_status(offer.id).await.unwrap().state, "done");
+
+    // Turned away: the phone never gets in.
+    let offer = maya.link_offer().await.unwrap();
+    let ticket = Client::link_claim(&server.url, &offer.secret, "Unknown")
+        .await
+        .unwrap();
+    maya.link_end(offer.id).await.unwrap();
+    assert_eq!(status(maya.link_approve(offer.id).await), 409);
+    assert_eq!(
+        status(Client::link_collect(&server.url, &ticket.ticket).await),
+        403
+    );
+
+    // Someone else can't watch or approve your offers, and there's a cap on open ones.
+    let tomas = anon(&server, "Tomás").await;
+    let offer = maya.link_offer().await.unwrap();
+    assert_eq!(status(tomas.link_status(offer.id).await), 404);
+    Client::link_claim(&server.url, &offer.secret, "Phone")
+        .await
+        .unwrap();
+    assert_eq!(status(tomas.link_approve(offer.id).await), 409);
+    maya.link_offer().await.unwrap();
+    maya.link_offer().await.unwrap();
+    assert_eq!(status(maya.link_offer().await), 429);
 }

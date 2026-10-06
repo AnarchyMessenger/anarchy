@@ -8,7 +8,11 @@ The order follows one rule: **fix what stops a new person from using the app wit
 
 - Local accounts, tour, new first screen (D38).
 - Email threads that upgrade to encrypted conversations (D39).
-- The Buddy sidekick body and headwear (D40).
+- The Buddy sidekick body and headwear (D40); the Buddy is now the only body.
+- The sidekick maker fits the window without scrolling.
+- Title bars per platform: macOS traffic lights, Windows and GNOME controls (D41).
+- Linking a phone: QR code, approve on the desktop, then a session (D42). Server, client and desktop are done; the phone app is step 12.
+- Audit, October 2026 (`docs/AUDIT-2026-10.md`): the CSP was blocking inline styles in the real app; fixed, and the preview now runs under the same CSP.
 
 ## 1. A public server people can join (M)
 
@@ -81,6 +85,9 @@ Space and channel roles; removing people from a space; leaving a channel yoursel
 ## 12. Mobile (L)
 
 Tauri mobile or native shells over `anarchy-core`. Comes after 2 and 3 because a phone is the second device.
+**Already there (D42):** the desktop shows an `anarchy://link?server=…&secret=…` QR code and approves the phone; the server's `/v1/devices/links/claim` and `/collect` are the phone's side, and `Client::link_claim` / `link_collect` in `anarchy-core` are ready to call.
+**The phone app needs:** a QR scanner that opens `anarchy://link` links; claim, then poll `collect` every two seconds while showing "Approve on your computer"; register the device and publish key packages; then wait for step 2 to add it to your conversations. Notifications need APNs and FCM, and the app has to show something useful before history arrives.
+**Done when:** a phone scans the desktop's code, is approved, and reads and sends in a conversation that existed before it linked.
 
 ## 13. Federation (L)
 

@@ -12,6 +12,7 @@
 <svg width="0" height="0" class="sprite" aria-hidden="true">
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></symbol>
+  <symbol id="i-mobile" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></symbol>
   <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 19h20"/></symbol>
   <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></symbol>
   <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5 5h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-5 4v-4H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></symbol>
@@ -38,6 +39,11 @@
   <symbol id="i-truck" viewBox="0 0 24 24"><path d="M3 6h11v10H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></symbol>
   <symbol id="i-cart" viewBox="0 0 24 24"><path d="M3 4h2l2.4 11h10.2L20 8H6.3"/><circle cx="9" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/></symbol>
   <symbol id="i-lifebuoy" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M6 6l3.5 3.5M18 6l-3.5 3.5M6 18l3.5-3.5M18 18l-3.5-3.5"/></symbol>
+  <!-- Window controls for Windows and Linux, drawn on a 10px grid like the system ones. -->
+  <symbol id="i-win-min" viewBox="0 0 10 10"><path d="M0 5.5h10"/></symbol>
+  <symbol id="i-win-max" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9" rx="1"/></symbol>
+  <symbol id="i-win-restore" viewBox="0 0 10 10"><rect x=".5" y="2.5" width="7" height="7" rx="1"/><path d="M2.5 2.5V1.5a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-1"/></symbol>
+  <symbol id="i-win-close" viewBox="0 0 10 10"><path d="M.5.5l9 9M9.5.5l-9 9"/></symbol>
   <symbol id="i-anarchy" viewBox="0 0 24 24"><circle cx="12" cy="12.5" r="8"/><path d="M6.2 21.2 12 3l5.8 18.2M4.4 15h15.2"/></symbol>
   <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></symbol>
@@ -84,7 +90,13 @@
         <div class="search-results panel" id="search-results" role="listbox" hidden></div>
       </div>
     </div>
-    <div class="tb-right" data-tauri-drag-region></div>
+    <div class="tb-right" data-tauri-drag-region>
+      <div class="winctl">
+        <button type="button" data-win="min" aria-label="Minimize" title="Minimize"><svg class="wi"><use href="#i-win-min"/></svg></button>
+        <button type="button" data-win="max" aria-label="Maximize" title="Maximize"><svg class="wi"><use href="#i-win-max"/></svg></button>
+        <button type="button" data-win="close" aria-label="Close" title="Close"><svg class="wi"><use href="#i-win-close"/></svg></button>
+      </div>
+    </div>
   </header>
 
   <div class="stage">
@@ -263,15 +275,21 @@
 
         <!-- 6. sidekick -->
         <form class="auth-step wide" id="s-sidekick" novalidate hidden>
-          <h1>Meet your sidekick</h1>
-          <p class="sub">Your own agent. It works for you, sees only what you can see, and says so whenever it writes. It sits on your picture so people know it's yours.</p>
-          <label class="field" for="sk-name">Name
-            <input class="text-input" id="sk-name" maxlength="24" autocomplete="off"></label>
+          <div class="sk-top">
+            <div>
+              <h1>Meet your sidekick</h1>
+              <p class="sub">Your own agent. It sees only what you can see, says so whenever it writes, and sits on your picture.</p>
+            </div>
+            <label class="field" for="sk-name">Name
+              <input class="text-input" id="sk-name" maxlength="24" autocomplete="off"></label>
+          </div>
           <div class="sk-maker" id="sk-maker"></div>
-          <p class="note-plain fine">No AI model is connected yet. Until one is, your sidekick searches what this device can decrypt and answers from your desks. When a model is connected, you choose what it may read; Sealed conversations stay off-limits.</p>
-          <button class="btn-ink" id="sk-save" type="submit">Done</button>
+          <div class="sk-foot">
+            <p class="fine">No AI model is connected yet, so it answers from what this device can decrypt. Sealed conversations stay off-limits.</p>
+            <button class="link" id="sk-skip" type="button">Skip for now</button>
+            <button class="btn-ink inline" id="sk-save" type="submit">Done</button>
+          </div>
           <p class="error" id="sk-error" role="alert" hidden></p>
-          <p class="fine"><button class="link" id="sk-skip" type="button">Skip for now</button></p>
         </form>
       </div>
 
@@ -740,6 +758,11 @@
             <p class="page-sub">Every computer or phone signed in as you. Revoke one you've lost: it's signed out and removed from your conversations.</p>
             <div class="list" id="device-list"></div>
             <p class="error" id="device-error" hidden></p>
+            <div class="phone-card">
+              <span class="space-tile"><svg class="i"><use href="#i-mobile"/></svg></span>
+              <span class="grow"><strong>Link a phone</strong><small>Show a code to scan with the Anarchy phone app. You approve the phone here before it gets in.</small></span>
+              <button class="btn-outline sm" type="button" id="phone-link">Show code</button>
+            </div>
           </div>
 
           <div class="page" data-page="invites" hidden>
@@ -775,6 +798,27 @@
 </div>
 
 <!-- ============ Dialogs ============ -->
+<dialog class="modal panel" id="dlg-phone" aria-labelledby="dlg-phone-title">
+  <h2 id="dlg-phone-title">Link a phone</h2>
+  <div class="phone-wait" id="phone-wait">
+    <svg class="phone-qr" id="phone-qr" role="img" aria-label="Code to scan"></svg>
+    <p class="sub">Open the Anarchy app on your phone and scan this. The phone app isn't out yet; the code is ready for when it is.</p>
+    <p class="fine" id="phone-ttl"></p>
+  </div>
+  <div class="phone-ask" id="phone-ask" hidden>
+    <span class="space-tile big"><svg class="i"><use href="#i-mobile"/></svg></span>
+    <p><strong id="phone-label"></strong> wants to sign in as you.</p>
+    <p class="fine">Only approve a phone you're holding. It gets your account, and your conversations once it's added to them.</p>
+  </div>
+  <p class="sub" id="phone-done" hidden></p>
+  <p class="error" id="phone-error" hidden></p>
+  <div class="modal-actions">
+    <button class="btn-outline" type="button" id="phone-close">Close</button>
+    <button class="btn-outline" type="button" id="phone-deny" hidden>Not mine</button>
+    <button class="btn-ink inline" type="button" id="phone-approve" hidden>Approve</button>
+  </div>
+</dialog>
+
 <dialog class="modal panel" id="dlg-channel" aria-labelledby="dlg-channel-title">
   <form id="channel-form" novalidate>
     <h2 id="dlg-channel-title">New channel</h2>

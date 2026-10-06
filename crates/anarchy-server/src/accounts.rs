@@ -983,7 +983,7 @@ pub async fn by_email(
             *e = (hour, 0);
         }
         if e.1 >= LOOKUPS_PER_HOUR {
-            return Err(ApiError::forbidden("too many lookups; try again in an hour"));
+            return Err(ApiError::too_many("too many lookups; try again in an hour"));
         }
         e.1 += 1;
     }

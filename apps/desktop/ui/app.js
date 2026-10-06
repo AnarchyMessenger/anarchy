@@ -39,6 +39,8 @@ function el(tag, props = {}, ...children) {
     if (k === "class") node.className = v;
     else if (k === "text") node.textContent = v;
     else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    // Through the CSSOM: the app's CSP refuses style attributes.
+    else if (k === "style") node.style.cssText = v;
     else node.setAttribute(k, v === true ? "" : v);
   }
   node.append(...children.filter((c) => c !== null && c !== undefined));
@@ -100,14 +102,15 @@ const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "lon
 const dateTimeFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 const monthFmt = new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric" });
 async function busy(button, label, fn) {
-  const old = button.innerHTML;
+  // Keep the nodes themselves: re-parsing markup would drop listeners and inline styles.
+  const old = [...button.childNodes];
   button.disabled = true;
   button.textContent = label;
-  try { return await fn(); } finally { button.disabled = false; button.innerHTML = old; }
+  try { return await fn(); } finally { button.disabled = false; button.replaceChildren(...old); }
 }
 async function copy(text, button) {
   try { await navigator.clipboard.writeText(text); } catch { return; }
-  if (button) { const old = button.innerHTML; button.textContent = "Copied"; setTimeout(() => { button.innerHTML = old; }, 1400); }
+  if (button) { const old = [...button.childNodes]; button.textContent = "Copied"; setTimeout(() => button.replaceChildren(...old), 1400); }
 }
 function isCompanyServer() { return spaces.some((s) => s.is_default); }
 
@@ -1613,7 +1616,7 @@ $("ask-brief").addEventListener("click", async () => {
   const today = isoToday();
   const evs = events().filter((e) => e.date === today).sort((a, b) => (a.start || "").localeCompare(b.start || ""));
   out.push(el("p", { class: "brief-h", text: evs.length ? `${evs.length} ${evs.length === 1 ? "thing" : "things"} on today` : "Nothing on your agenda today" }));
-  for (const e of evs) out.push(el("button", { class: "ask-hit", type: "button", onclick: () => openAgenda().then(() => openEvent(e)) }, el("small", { text: e.all_day ? "All day" : `${e.start}${e.end ? `–${e.end}` : ""}${e.where ? ` · ${e.where}` : ""}` }), el("span", { text: e.title })));
+  for (const e of evs) out.push(el("button", { class: "ask-hit", type: "button", onclick: () => openAgenda().then(() => openEvent(e)) }, el("small", { text: e.all_day ? "All day" : `${e.start}${e.end ? ` - ${e.end}` : ""}${e.where ? ` · ${e.where}` : ""}` }), el("span", { text: e.title })));
   const unread = channels.filter((c) => c.unread && (c.kind === "dm" || c.kind === "channel") && !c.desk);
   if (unread.length) {
     out.push(el("p", { class: "brief-h", text: `${unread.length} ${unread.length === 1 ? "conversation has" : "conversations have"} new messages` }));
@@ -1828,7 +1831,7 @@ function renderAgenda() {
       const evs = dayEvents(iso);
       return el("div", { class: `cal-col${iso === today ? " today" : ""}`, onclick: (e) => quickAdd(iso, e.currentTarget) },
         el("div", { class: "cal-col-head" }, el("span", { text: weekdayFmt.format(d) }), el("strong", { text: String(d.getDate()) })),
-        ...(evs.length ? evs.map((e) => { const b = chip(e); b.classList.add("big"); if (!e.due && !e.all_day && e.end) b.append(el("span", { class: "ev-range", text: `${e.start}–${e.end}` })); if (e.where) b.append(el("span", { class: "ev-where", text: e.where })); return b; }) : [el("p", { class: "fine cal-free", text: "Free" })]));
+        ...(evs.length ? evs.map((e) => { const b = chip(e); b.classList.add("big"); if (!e.due && !e.all_day && e.end) b.append(el("span", { class: "ev-range", text: `${e.start} - ${e.end}` })); if (e.where) b.append(el("span", { class: "ev-where", text: e.where })); return b; }) : [el("p", { class: "fine cal-free", text: "Free" })]));
     });
     grid.replaceChildren(...cols);
   }
@@ -2397,7 +2400,7 @@ function renderDay(iso, grid) {
     const top = Math.max(0, (mins(e.start) - DAY_FROM * 60) / 60 * HOUR_PX);
     const len = Math.max(26, ((e.end ? mins(e.end) : mins(e.start) + 60) - mins(e.start)) / 60 * HOUR_PX - 3);
     const b = chip(e); b.classList.add("big", "day-ev"); b.style.top = `${top}px`; b.style.height = `${len}px`;
-    b.append(el("span", { class: "ev-range", text: `${e.start}${e.end ? `–${e.end}` : ""}${e.where ? ` · ${e.where}` : ""}` }));
+    b.append(el("span", { class: "ev-range", text: `${e.start}${e.end ? ` - ${e.end}` : ""}${e.where ? ` · ${e.where}` : ""}` }));
     hours.append(b);
   }
   if (iso === isoToday()) {
@@ -2502,7 +2505,7 @@ function todayItems() {
     if (c.stage === "done" || !c.due || c.due > today) continue;
     out.push({ kind: "task", late: c.due < today, icon: "board", title: c.title, sub: `${c.desk.kind === "personal" ? "My tasks" : c.desk.name} · ${c.due < today ? `was due ${shortDay(c.due)}` : "due today"}`, at: c.due, go: () => openChannel(c.desk.id) });
   }
-  for (const e of dayEvents(today).filter((e) => !e.due)) out.push({ kind: "agenda", icon: "calendar", title: e.title, sub: e.all_day ? "All day" : `${e.start}${e.end ? `–${e.end}` : ""}${e.where ? ` · ${e.where}` : ""}`, at: e.start || "", go: () => openAgenda().then(() => openEvent(e)) });
+  for (const e of dayEvents(today).filter((e) => !e.due)) out.push({ kind: "agenda", icon: "calendar", title: e.title, sub: e.all_day ? "All day" : `${e.start}${e.end ? ` - ${e.end}` : ""}${e.where ? ` · ${e.where}` : ""}`, at: e.start || "", go: () => openAgenda().then(() => openEvent(e)) });
   for (const c of channels) if (c.unread && c.kind !== "personal") out.push({ kind: "msg", icon: c.kind === "dm" ? "chat" : "thread", title: c.kind === "dm" ? c.name : `#${c.name}`, sub: c.last_text || "New messages", at: "", go: () => goTo(c.id) });
   return out.sort((a, b) => (b.late ? 1 : 0) - (a.late ? 1 : 0));
 }
@@ -2922,11 +2925,30 @@ async function renderSpaceOverview() {
 
 // ---------- window and search ----------
 
+// Window controls follow the platform. macOS: traffic lights at the left (the
+// system's own in the app, see tauri.macos.conf.json). Windows and Linux:
+// minimize, maximize and close at the right, in each system's style.
+// `?os=mac|windows|linux` picks one for previews.
+const OS = new URLSearchParams(location.search).get("os")
+  || (/Mac/i.test(navigator.userAgentData?.platform || navigator.platform) ? "mac" : /Win/i.test(navigator.userAgentData?.platform || navigator.platform) ? "windows" : "linux");
+document.documentElement.dataset.os = OS;
+if (OS === "mac" && tauri) document.documentElement.dataset.nativeLights = "";
 const appWindow = tauri?.window?.getCurrentWindow?.();
-$("win-close").addEventListener("click", () => appWindow?.close());
-$("win-min").addEventListener("click", () => appWindow?.minimize());
-$("win-max").addEventListener("click", () => appWindow?.toggleMaximize());
-$("search-kbd").textContent = /Mac/.test(navigator.platform) ? "⌘K" : "Ctrl K";
+const winAct = { close: () => appWindow?.close(), min: () => appWindow?.minimize(), max: () => appWindow?.toggleMaximize() };
+$("win-close").addEventListener("click", winAct.close);
+$("win-min").addEventListener("click", winAct.min);
+$("win-max").addEventListener("click", winAct.max);
+for (const b of document.querySelectorAll(".winctl [data-win]")) b.addEventListener("click", winAct[b.dataset.win]);
+// Maximized, the middle button restores.
+async function paintMaximized() {
+  const max = await appWindow?.isMaximized?.().catch(() => false);
+  const b = document.querySelector('.winctl [data-win="max"]');
+  b.querySelector("use").setAttribute("href", max ? "#i-win-restore" : "#i-win-max");
+  b.setAttribute("aria-label", max ? "Restore" : "Maximize"); b.title = max ? "Restore" : "Maximize";
+}
+appWindow?.onResized?.(paintMaximized);
+paintMaximized();
+$("search-kbd").textContent = OS === "mac" ? "⌘K" : "Ctrl K";
 
 let searchTimer = null, searchSeq = 0, searchCursor = -1;
 document.addEventListener("keydown", (e) => {
@@ -3486,9 +3508,9 @@ function renderClients() {
   $("client-grid").replaceChildren(...shown.map(({ c, st }) => el("button", { class: "client-card", type: "button", onclick: () => openClient(c) },
     el("span", { class: "cc-top" }, avatarEl(c.name, { size: "sm" }), el("span", { class: "lines" }, el("strong", { text: c.name }), el("small", { text: [c.contact, c.email].filter(Boolean).join(" · ") || "No contact yet" }))),
     el("span", { class: "cc-figs" },
-      el("span", {}, el("small", { text: "Owes" }), el("b", { class: st.late ? "late" : "", text: st.owed ? money(st.owed) : "—" })),
-      el("span", {}, el("small", { text: "Paid" }), el("b", { text: st.paid ? moneyShort(st.paid) : "—" })),
-      el("span", {}, el("small", { text: "Unbilled" }), el("b", { text: st.unbilledMin ? hoursFmt(st.unbilledMin) : "—" }))),
+      el("span", {}, el("small", { text: "Owes" }), el("b", { class: st.late ? "late" : "", text: st.owed ? money(st.owed) : "None" })),
+      el("span", {}, el("small", { text: "Paid" }), el("b", { text: st.paid ? moneyShort(st.paid) : "None" })),
+      el("span", {}, el("small", { text: "Unbilled" }), el("b", { text: st.unbilledMin ? hoursFmt(st.unbilledMin) : "None" }))),
     el("span", { class: "cc-foot fine", text: st.late ? `${st.late} overdue` : st.last ? `Last invoice ${shortDay(st.last)}` : c.rate ? `${money(c.rate)} an hour` : "No invoices yet" }))),
     ...(loose.length && !q ? [el("div", { class: "client-loose" }, el("p", { class: "fine", text: "On invoices, without a card:" }), ...loose.slice(0, 8).map((n) => el("button", { class: "chip", type: "button", onclick: () => openClient(null, { name: n, email: inv.find((i) => i.customer === n)?.email || "" }) }, icon("plus"), n)))] : []));
   void today;
@@ -3729,7 +3751,7 @@ function renderTime() {
       return el("div", { class: `time-row${running ? " running" : ""}`, role: "button", tabindex: "0", onclick: () => !running && openTimeEntry(t) },
         check, el("span", { class: "what", text: t.what || "Untitled work" }), el("span", { class: "who fine", text: cname(t.client) || "No client" }),
         el("span", { class: "fine", text: running ? `running · ${t.who_name || ""}` : t.billed ? "Billed" : t.rate ? `${money(t.rate)}/h` : "No rate" }),
-        el("b", { class: "mono", text: hoursFmt(entryMinutes(t)) }), el("b", { class: "num", text: t.rate ? money(entryValue(t)) : "—" }));
+        el("b", { class: "mono", text: hoursFmt(entryMinutes(t)) }), el("b", { class: "num", text: t.rate ? money(entryValue(t)) : "None" }));
     }))));
   paintTimeInvoice();
 }
@@ -4669,11 +4691,10 @@ for (const id of ["n-desktop", "n-mentions", "n-previews"]) {
 
 // ---------- files on this computer (local WebDAV share) ----------
 
-const OS = /Mac/.test(navigator.platform) ? "mac" : /Win/.test(navigator.platform) ? "win" : "linux";
-for (const n of document.querySelectorAll(".os-files")) n.textContent = { mac: "Finder", win: "File Explorer", linux: "Files" }[OS];
+for (const n of document.querySelectorAll(".os-files")) n.textContent = { mac: "Finder", windows: "File Explorer", linux: "Files" }[OS];
 const MOUNT_HOW = {
   mac: "Finder mounts it as \u201cAnarchy\u201d under Locations. To add it by hand: Go \u2192 Connect to Server (\u2318K), paste the address.",
-  win: "Explorer opens it by address. To give it a drive letter: This PC \u2192 Map network drive, paste the address. Files up to 50 MB unless you raise Windows' WebClient limit.",
+  windows: "Explorer opens it by address. To give it a drive letter: This PC \u2192 Map network drive, paste the address. Files up to 50 MB unless you raise Windows' WebClient limit.",
   linux: "Files (GNOME) and Dolphin open it as a network location. Other file managers: connect to the address with dav:// in place of http://.",
 };
 let mount = null;
@@ -4682,7 +4703,7 @@ function paintMount() {
   show("m-box", !!mount?.running);
   $("m-url").textContent = mount?.url || "";
   $("m-win").textContent = mount?.windows || "";
-  show("m-win-row", OS === "win");
+  show("m-win-row", OS === "windows");
   $("m-how").textContent = MOUNT_HOW[OS];
 }
 async function loadMount() {
@@ -4702,7 +4723,7 @@ $("m-enabled").addEventListener("change", () => setMount($("m-enabled").checked)
 $("m-rotate").addEventListener("click", () => setMount(true, true));
 $("m-open").addEventListener("click", openMount);
 $("m-copy").addEventListener("click", async () => {
-  await navigator.clipboard.writeText(OS === "win" ? mount.windows : mount.url);
+  await navigator.clipboard.writeText(OS === "windows" ? mount.windows : mount.url);
   show("m-copied", true);
 });
 $("drive-mount").addEventListener("click", async () => {
@@ -4724,6 +4745,63 @@ async function loadDevices() {
         : el("button", { class: "btn-outline sm", text: "Revoke", onclick: () => revoke(d.device_id) }))));
   } catch (err) { setError("device-error", String(err)); }
 }
+// Linking a phone (D42): show a code, wait for a phone to claim it, approve it.
+let phoneLink = null, phoneTimer = 0;
+function paintQr(svg, width, dark) {
+  const q = 2; // quiet zone, in modules
+  let d = "";
+  dark.forEach((on, k) => { if (on) d += `M${(k % width) + q} ${Math.floor(k / width) + q}h1v1h-1z`; });
+  const side = width + q * 2, ns = "http://www.w3.org/2000/svg";
+  const bg = document.createElementNS(ns, "rect"), marks = document.createElementNS(ns, "path");
+  for (const [k, v] of [["width", side], ["height", side]]) bg.setAttribute(k, v);
+  marks.setAttribute("d", d);
+  svg.setAttribute("viewBox", `0 0 ${side} ${side}`);
+  svg.replaceChildren(bg, marks);
+}
+function phoneStep(step, label) {
+  show("phone-wait", step === "wait");
+  show("phone-ask", step === "ask");
+  show("phone-done", step === "done" || step === "ended");
+  show("phone-approve", step === "ask");
+  show("phone-deny", step === "ask");
+  if (label) $("phone-label").textContent = label;
+  if (step === "done") $("phone-done").textContent = "Linked. The phone is signed in as you, and shows up in your devices once it registers.";
+  if (step === "ended") $("phone-done").textContent = "This code has ended. Close and show a new one to try again.";
+}
+async function pollPhone() {
+  if (!phoneLink || !$("dlg-phone").open) return;
+  try {
+    const st = await invoke("phone_link_status", { id: phoneLink.id });
+    const left = Math.max(0, Math.round((st.expires_at_ms - Date.now()) / 60000));
+    $("phone-ttl").textContent = `Works for ${left < 1 ? "less than a minute" : `${left} more ${left === 1 ? "minute" : "minutes"}`}, once.`;
+    if (st.state === "claimed") phoneStep("ask", st.label);
+    else if (st.state === "done") { phoneStep("done"); loadDevices(); return; }
+    else if (st.state === "ended") { phoneStep("ended"); return; }
+  } catch (err) { setError("phone-error", String(err)); }
+  phoneTimer = setTimeout(pollPhone, 2000);
+}
+$("phone-link").addEventListener("click", async () => {
+  setError("phone-error", "");
+  try {
+    phoneLink = await busy($("phone-link"), "Making a code…", () => invoke("phone_link_start"));
+    paintQr($("phone-qr"), phoneLink.width, phoneLink.dark);
+    phoneStep("wait");
+    $("dlg-phone").showModal();
+    pollPhone();
+  } catch (err) { setError("device-error", String(err)); }
+});
+$("phone-approve").addEventListener("click", async () => {
+  try { await invoke("phone_link_approve", { id: phoneLink.id }); $("phone-ask").hidden = true; show("phone-approve", false); show("phone-deny", false); } catch (err) { setError("phone-error", String(err)); }
+});
+$("phone-deny").addEventListener("click", async () => {
+  try { await invoke("phone_link_end", { id: phoneLink.id }); phoneStep("ended"); } catch (err) { setError("phone-error", String(err)); }
+});
+// Closing before a phone is through ends the code: it shouldn't outlive the dialog.
+$("dlg-phone").addEventListener("close", () => {
+  clearTimeout(phoneTimer);
+  if (phoneLink) invoke("phone_link_status", { id: phoneLink.id }).then((st) => { if (st.state === "open" || st.state === "claimed") invoke("phone_link_end", { id: phoneLink.id }); }).catch(() => {});
+});
+$("phone-close").addEventListener("click", () => $("dlg-phone").close());
 async function revoke(id) {
   try { await invoke("revoke_device", { device: id }); await loadDevices(); } catch (err) { setError("device-error", String(err)); }
 }

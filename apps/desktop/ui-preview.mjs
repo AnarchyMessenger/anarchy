@@ -5,9 +5,10 @@
 //   NODE_PATH=$(npm root -g) node apps/desktop/ui-preview.mjs [out-dir]
 
 import { createRequire } from "node:module";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
@@ -18,16 +19,35 @@ mkdirSync(out, { recursive: true });
 // The fake backend lives in ui/demo.js (the app's tour uses it too).
 const demoPath = join(here, "ui/demo.js");
 
+// Served with the app's real content security policy, so anything the
+// policy would block in the app (inline styles, stray origins) fails here too.
+const csp = JSON.parse(readFileSync(join(here, "src-tauri/tauri.conf.json"), "utf8")).app.security.csp;
+const types = { html: "text/html", js: "text/javascript", css: "text/css", svg: "image/svg+xml", png: "image/png", woff2: "font/woff2" };
+const server = createServer((req, res) => {
+  const path = decodeURIComponent(new URL(req.url, "http://x").pathname).replace(/^\/+/, "") || "index.html";
+  const file = resolve(here, "ui", path);
+  if (!file.startsWith(resolve(here, "ui"))) { res.writeHead(403).end(); return; }
+  try {
+    const body = readFileSync(file);
+    res.writeHead(200, { "content-type": types[file.split(".").pop()] || "application/octet-stream", "content-security-policy": csp }).end(body);
+  } catch { res.writeHead(404).end(); }
+}).listen(0, "127.0.0.1");
+await new Promise((r) => server.once("listening", r));
+const origin = `http://127.0.0.1:${server.address().port}`;
+process.on("exit", () => server.close());
+
 const browser = await chromium.launch();
 const errors = [];
 process.on("exit", () => { if (errors.length) console.error("page errors:\n" + errors.join("\n")); });
-async function newPage(startLocked) {
+async function newPage(startLocked, query = "?os=mac") {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
   page.on("pageerror", (e) => errors.push(String(e)));
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
   await page.addInitScript({ path: demoPath });
+  // Say where a CSP refusal came from, not just that it happened.
+  await page.addInitScript(() => document.addEventListener("securitypolicyviolation", (e) => console.error(`CSP ${e.effectiveDirective} at ${e.sourceFile.split("/").pop()}:${e.lineNumber} ${e.sample}`)));
   await page.addInitScript((locked) => { window.__TAURI__ = anarchyDemo(locked); }, startLocked);
-  await page.goto(pathToFileURL(join(here, "ui/index.html")).href);
+  await page.goto(`${origin}/index.html${query}`);
   await page.evaluate(() => document.fonts.ready);
   return page;
 }
@@ -120,7 +140,7 @@ await shot("07-welcome-card");
 await page.click("#card-save");
 await visible("#s-sidekick");
 await page.fill("#sk-name", "Pip");
-await page.click('#sk-maker .skm-shape[data-shape="case"]');
+await page.click('#sk-maker .skm-hat[data-hat="dog"]');
 await page.click('#sk-maker .skm-face[data-face="stern"]');
 await page.click("#sk-maker .skm-color");
 await shot("07c-sidekick-colour");
@@ -131,7 +151,6 @@ await shot("07b-sidekick");
 await page.click('#sk-maker .skm-state[data-state="idle"]');
 await page.click("#sk-maker .skm-preset");
 await page.waitForTimeout(500);
-await page.evaluate(() => document.querySelector("#sk-maker .skm-stage").scrollIntoView({ block: "start" }));
 await shot("07d-buddy");
 await page.click('#sk-maker .skm-state[data-state="idle"]');
 await page.click("#sk-save");
@@ -536,6 +555,15 @@ await page.check("#humans-only");
 await shot("17-settings-privacy");
 await folder("Account & device");
 await shot("18-settings-account");
+await folder("Devices");
+await page.click("#phone-link");
+await visible("#phone-wait");
+await shot("18b-link-phone");
+await visible("#phone-ask");
+await shot("18c-link-phone-approve");
+await page.click("#phone-approve");
+await visible("#phone-done");
+await page.click("#phone-close");
 await folder("Appearance");
 await page.click('#settings-appearance [data-display="dark"]');
 await shot("19-appearance-dark");
@@ -587,5 +615,20 @@ await page.waitForTimeout(300);
 await shot("00f-connect-from-local");
 await page.click("#account-back");
 await visible("#app");
+
+// The title bar on each platform: lights at the left on macOS, controls at the right elsewhere.
+for (const os of ["windows", "linux"]) {
+  await page.close();
+  page = await newPage(true, `?os=${os}`);
+  await visible("#lock");
+  await page.fill("#lock-pass", "correct horse battery");
+  await page.click("#lock-submit");
+  await visible("#app");
+  await page.waitForTimeout(400);
+  await page.hover('.winctl [data-win="close"]');
+  await page.screenshot({ path: join(out, `00g-titlebar-${os}.png`), clip: { x: 0, y: 0, width: 1280, height: 120 } });
+  console.log("saved", `00g-titlebar-${os}`);
+}
 await browser.close();
+server.close();
 if (errors.length) { console.error("page errors:\n" + errors.join("\n")); process.exit(1); }

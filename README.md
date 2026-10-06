@@ -76,6 +76,15 @@ Sign up with Google, email or anonymously, then say what it's for, lock the devi
 |---|---|
 | ![Mail upgrade](docs/screens/mail-upgrade.png) | ![Buddy](docs/screens/sidekick-buddy.png) |
 
+| Linking a phone | Approving it |
+|---|---|
+| ![Link a phone](docs/screens/link-phone.png) | ![Approve the phone](docs/screens/link-phone-approve.png) |
+
+Title bars on Windows and Linux (macOS keeps its own traffic lights):
+
+![Windows title bar](docs/screens/titlebar-windows.png)
+![Linux title bar](docs/screens/titlebar-linux.png)
+
 These are rendered by `apps/desktop/ui-preview.mjs` with a mocked backend. The one below is the real app: a DM from an anonymous account arriving by handle, against a real server, taken under Xvfb.
 
 ![Real app](docs/screens/real-app-dm-received.png)

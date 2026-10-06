@@ -2004,3 +2004,68 @@ pub async fn mail_continue(i: &mut Inner, email: String) -> Result<ChannelId, St
 pub async fn mail_links(i: &mut Inner) -> Result<HashMap<String, ChannelId>, String> {
     Ok(read_json(i.device(), "mail:upgraded").unwrap_or_default())
 }
+
+// ---------- linking a phone (D42) ----------
+// The desktop's half: an offer shown as a QR code, then approving the phone
+// that claims it. The phone app doesn't exist yet; the server side is ready.
+
+#[derive(Serialize)]
+pub struct PhoneLinkView {
+    pub id: uuid::Uuid,
+    /// What the QR code holds: `anarchy://link?server=…&secret=…`.
+    pub uri: String,
+    /// The code itself, one row after another, `width` squares a side.
+    pub width: usize,
+    pub dark: Vec<bool>,
+    pub expires_at_ms: u64,
+}
+
+pub async fn phone_link_start(i: &mut Inner) -> Result<PhoneLinkView, String> {
+    if i.is_local() {
+        return Err("Connect a server first: your phone signs in to the same account.".into());
+    }
+    let client = i.client()?;
+    let offer = client.link_offer().await.map_err(err)?;
+    let uri = format!(
+        "anarchy://link?server={}&secret={}",
+        query_escape(client.server_url()),
+        offer.secret
+    );
+    let code = qrcode::QrCode::with_error_correction_level(uri.as_bytes(), qrcode::EcLevel::M)
+        .map_err(|e| e.to_string())?;
+    let width = code.width();
+    let dark = code
+        .to_colors()
+        .into_iter()
+        .map(|c| c == qrcode::Color::Dark)
+        .collect();
+    Ok(PhoneLinkView {
+        id: offer.id,
+        uri,
+        width,
+        dark,
+        expires_at_ms: offer.expires_at_ms,
+    })
+}
+
+pub async fn phone_link_status(i: &mut Inner, id: uuid::Uuid) -> Result<anarchy_proto::LinkStatus, String> {
+    i.client()?.link_status(id).await.map_err(err)
+}
+
+pub async fn phone_link_approve(i: &mut Inner, id: uuid::Uuid) -> Result<(), String> {
+    i.client()?.link_approve(id).await.map_err(err)
+}
+
+pub async fn phone_link_end(i: &mut Inner, id: uuid::Uuid) -> Result<(), String> {
+    i.client()?.link_end(id).await.map_err(err)
+}
+
+/// Percent-encodes everything but unreserved characters (RFC 3986).
+fn query_escape(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}

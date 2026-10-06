@@ -511,11 +511,33 @@ form.start-card { cursor: default; }
 .light { width: 12px; height: 12px; padding: 0; border: 0; border-radius: 50%; cursor: pointer; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.18); }
 .light.close { background: #ff5f57; } .light.min { background: #febc2e; } .light.max { background: #28c840; }
 .lights:hover .light { filter: saturate(1.1) brightness(.96); }
+/* In the macOS app the system draws its own lights over this spot. */
+[data-native-lights] .lights { visibility: hidden; width: 56px; }
+/* Windows and Linux: controls at the right, the wordmark first. */
+.winctl { display: none; }
+[data-os="windows"] .lights, [data-os="linux"] .lights { display: none; }
+[data-os="windows"] .wordmark, [data-os="linux"] .wordmark { padding-left: 8px; }
+[data-os="windows"] .tb-right, [data-os="linux"] .tb-right { display: flex; justify-content: end; align-self: stretch; }
+[data-os="windows"] .winctl, [data-os="linux"] .winctl { display: flex; }
+.winctl button { display: grid; place-items: center; padding: 0; border: 0; background: transparent; color: inherit; cursor: default; }
+.winctl .wi { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1; }
+/* Windows 11: flat 46px buttons flush with the window's corner; close turns red. */
+[data-os="windows"] .winctl { margin-right: -12px; }
+[data-os="windows"] .winctl button { width: 46px; height: 100%; transition: background .1s; }
+[data-os="windows"] .winctl button:hover { background: color-mix(in srgb, var(--ink) 9%, transparent); }
+[data-os="windows"] .winctl button:active { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+[data-os="windows"] .winctl [data-win="close"]:hover { background: #c42b1c; color: #fff; }
+[data-os="windows"] .winctl [data-win="close"]:active { background: #c84031; color: #fff; }
+/* GNOME (Adwaita): round buttons with a soft fill. */
+[data-os="linux"] .winctl { align-items: center; gap: 12px; padding-right: 6px; }
+[data-os="linux"] .winctl button { width: 24px; height: 24px; border-radius: 50%; background: color-mix(in srgb, var(--ink) 9%, transparent); }
+[data-os="linux"] .winctl button:hover { background: color-mix(in srgb, var(--ink) 15%, transparent); }
+[data-os="linux"] .winctl .wi { width: 8px; height: 8px; stroke-width: 1.4; }
 .wordmark { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; font-size: 13.5px; letter-spacing: -0.01em; color: var(--ink); }
 .wordmark .mark { width: 20px; height: 20px; border-radius: 6px; }
 .wordmark .mark svg.i { width: 13px; height: 13px; }
 .tb-center { display: flex; justify-content: center; min-width: 0; height: 100%; align-items: center; }
-.tb-right { width: 120px; }
+.tb-right { min-width: 120px; }
 .omnibox { position: relative; width: min(520px, 100%); }
 .omni-field { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px 0 10px; border-radius: 8px; background: color-mix(in srgb, var(--surface) 62%, transparent); color: var(--ink-muted);
   box-shadow: 0 0 0 1px rgba(26,24,20,.07); backdrop-filter: blur(8px); transition: background .12s, box-shadow .12s; }
@@ -1220,7 +1242,20 @@ svg.i.flip { transform: scaleX(-1); }
 
 .auth.making { grid-template-columns: 1fr; }
 .auth.making .auth-art { display: none; }
-.auth.making #s-sidekick { max-width: 1000px; }
+/* The sidekick step fills the window instead of scrolling: title row, maker, footer row. */
+.auth.making .auth-body { min-height: 0; padding: 10px 0 6px; place-items: stretch; }
+.auth.making #s-sidekick { max-width: 1120px; height: 100%; min-height: 0; justify-self: center; grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; }
+.sk-top { display: flex; align-items: end; gap: 24px; }
+.sk-top > div { flex: 1; min-width: 0; }
+.sk-top .sub { margin-top: 4px; }
+.sk-top .field { width: 240px; flex: none; }
+.sk-foot { display: flex; align-items: center; gap: 16px; }
+.sk-foot .fine { flex: 1; margin: 0; }
+#s-sidekick .sk-maker { min-height: 0; }
+#s-sidekick .skm { height: 100%; align-items: stretch; }
+#s-sidekick .skm-stage { min-height: 0; grid-template-rows: minmax(0, 1fr) auto auto; align-content: center; }
+#s-sidekick .skm-orbit { height: 100%; width: auto; max-width: 100%; max-height: 400px; min-height: 0; justify-self: center; }
+#s-sidekick .skm-panel { min-height: 0; overflow: auto; align-content: start; }
 .sk-maker { margin: 6px 0 10px; }
 .skm { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; background-image: radial-gradient(color-mix(in srgb, var(--ink) 14%, transparent) 1px, transparent 1px); background-size: 16px 16px; border: 1px solid var(--border); border-radius: 18px; padding: 18px; }
 .skm-stage { display: grid; justify-items: center; gap: 10px; min-width: 0; }
@@ -1232,12 +1267,6 @@ svg.i.flip { transform: scaleX(-1); }
 .skm-face svg { width: 100%; height: 100%; }
 .skm-hero { position: absolute; inset: 26%; display: grid; place-items: center; filter: drop-shadow(0 10px 18px rgb(26 24 20 / .16)); }
 .skm-hero svg { width: 100%; height: 100%; overflow: visible; }
-.skm-shapes { display: flex; align-items: end; justify-content: center; gap: 10px; flex-wrap: wrap; }
-.skm-shape { width: 48px; height: 48px; padding: 6px; border: 0; border-radius: 14px; background: transparent; cursor: pointer; opacity: .55; filter: blur(.3px); transition: opacity .12s, transform .12s; }
-.skm-shape:hover { opacity: 1; filter: none; }
-.skm-shape[aria-checked="true"] { width: 64px; height: 64px; opacity: 1; filter: none; background: var(--surface); box-shadow: 0 0 0 1px var(--border), var(--shadow-2); }
-.skm-shape svg { width: 100%; height: 100%; }
-.skm-shape-name { margin: -2px 0 0; font-size: 12px; font-weight: 600; color: var(--ink-muted); }
 .skm-bar { display: flex; align-items: center; gap: 10px; max-width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-2); flex-wrap: wrap; justify-content: center; }
 .skm-color-wrap { position: relative; flex: none; }
 .skm-color { width: 44px; height: 44px; border: 0; border-radius: 50%; padding: 0; cursor: pointer; background: radial-gradient(circle, var(--c) 0 62%, transparent 63%), conic-gradient(#f15a4a, #ffcc4d, #86dca0, #52c2ca, #3d8bff, #a970ff, #ff7eb6, #f15a4a); }
@@ -1252,7 +1281,7 @@ svg.i.flip { transform: scaleX(-1); }
 .skm-state[aria-checked="true"] { background: var(--surface-sunken); color: var(--ink); font-weight: 650; box-shadow: inset 0 0 0 1px var(--border); }
 .skm-state-face { width: 26px; height: 26px; }
 .skm-state-face svg { width: 100%; height: 100%; }
-.skm-surprise { margin-top: 2px; }
+.skm-surprise { flex: none; }
 .skm-panel { min-width: 0; display: grid; gap: 4px; padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-2); }
 .skm-head { margin: 8px 0 2px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); }
 .skm-head:first-child { margin-top: 0; }
@@ -1380,7 +1409,7 @@ svg.i.flip { transform: scaleX(-1); }
 .sk-svg .sk-z, .sk-svg .sk-dots { display: none; }
 .sk-svg[data-state="asleep"] .sk-z, .sk-svg[data-state="thinking"] .sk-dots { display: inline; }
 .sk-svg .sk-squash { transform-box: fill-box; transform-origin: 50% 92%; }
-.sk-svg.live .sk-shape, .sk-svg.live .sk-extra { transition: fill .35s ease, stroke .35s ease; }
+.sk-svg.live .sk-shape { transition: fill .35s ease, stroke .35s ease; }
 .sk-svg.live .sk-anchor { transition: transform .35s cubic-bezier(.3, 1.4, .5, 1); }
 .sk-svg.live .sk-eye { transition: transform .22s cubic-bezier(.3, 1.4, .5, 1); }
 .sk-svg .sk-eyes.sk-shut { animation: none !important; transform: scaleY(.08); transition: transform .09s ease-in; }
@@ -1395,12 +1424,11 @@ svg.i.flip { transform: scaleX(-1); }
 @keyframes sk-spin { 0% { transform: rotate(0) scale(1); } 40% { transform: rotate(200deg) scale(.8); } 100% { transform: rotate(360deg) scale(1); } }
 .skm-hero svg { cursor: pointer; }
 .skm.enter .skm-face { animation: skm-in .4s cubic-bezier(.3, 1.5, .5, 1) backwards; animation-delay: calc(var(--i) * 22ms); }
-.skm.enter .skm-shape { animation: skm-rise .4s cubic-bezier(.3, 1.5, .5, 1) backwards; animation-delay: calc(240ms + var(--i) * 30ms); }
 .skm.enter .skm-hero { animation: skm-hero .55s cubic-bezier(.3, 1.6, .5, 1) backwards .1s; }
 @keyframes skm-in { from { opacity: 0; transform: translate(-50%, -50%) scale(.3); } }
 @keyframes skm-rise { from { opacity: 0; transform: translateY(14px); } }
 @keyframes skm-hero { from { opacity: 0; transform: scale(.6); } }
-.skm-face, .skm-shape, .skm-state, .skm-preset { transition: transform .18s cubic-bezier(.3, 1.6, .5, 1), opacity .15s, background .15s; }
+.skm-face, .skm-state, .skm-preset { transition: transform .18s cubic-bezier(.3, 1.6, .5, 1), opacity .15s, background .15s; }
 .skm-preset:hover, .skm-state:hover { transform: translateY(-2px); }
 @media (prefers-reduced-motion: reduce) { .sk-squash, .skm.enter *, .sk-svg.live * { animation: none !important; transition: none !important; } }
 
@@ -1511,3 +1539,31 @@ svg.i.flip { transform: scaleX(-1); }
 .skm-hat[aria-checked="true"] { opacity: 1; background: var(--surface); box-shadow: 0 0 0 1px var(--border), var(--shadow-2); }
 .skm-hat svg { width: 100%; height: 100%; overflow: visible; }
 .skm.enter .skm-hat { animation: skm-rise .4s cubic-bezier(.3, 1.5, .5, 1) backwards; animation-delay: calc(320ms + var(--i) * 25ms); }
+#s-sidekick .skm-presets { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; }
+#s-sidekick .skm-preset { padding: 3px; }
+
+/* Linking a phone (D42). */
+.phone-card { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.phone-card .grow { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.phone-card small { color: var(--ink-muted); font-size: 12.5px; }
+#dlg-phone { width: min(420px, calc(100vw - 32px)); }
+.phone-wait { display: grid; justify-items: center; gap: 10px; text-align: center; }
+.phone-qr { width: 216px; height: 216px; border-radius: 12px; box-shadow: 0 0 0 1px var(--border); }
+/* A code stays dark on light in every theme, or phones can't read it. */
+.phone-qr rect { fill: #fdfcfa; }
+.phone-qr path { fill: #1d1b18; }
+.phone-ask { display: grid; justify-items: center; gap: 8px; text-align: center; padding: 8px 0; }
+.space-tile.big { width: 48px; height: 48px; border-radius: 14px; }
+.space-tile.big svg.i { width: 24px; height: 24px; }
+
+/* Wherever the maker lands narrow (Settings → Profile), the panel goes under the stage. */
+.sk-maker { container-type: inline-size; }
+@container (max-width: 640px) {
+  .skm { grid-template-columns: minmax(0, 1fr); }
+  .skm-hats { max-width: 100%; }
+  .skm-bar { border-radius: 16px; }
+}
+/* Settings → Profile: while the maker is open the page widens, and the maker
+   runs under the ID card (which sits higher up) to get the full width. */
+.page:has(#ps-maker:not([hidden])) { max-width: 1040px; }
+#ps-maker { width: calc(100% + 312px); }

@@ -193,7 +193,7 @@ pub fn new_session_token() -> (String, Vec<u8>) {
     (token, hash)
 }
 
-fn hash_token(token: &str) -> Vec<u8> {
+pub(crate) fn hash_token(token: &str) -> Vec<u8> {
     Sha256::digest(token.as_bytes()).to_vec()
 }
 

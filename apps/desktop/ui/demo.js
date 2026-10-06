@@ -181,6 +181,7 @@ function anarchyDemo(startLocked) {
   const skOn = new Set();
   let mailOn = true;
   const mail = (uid, from_name, from_addr, subject, text, mins, seen) => ({ uid, message_id: `m${uid}@mail.test`, from_name, from_addr, to: ["maya@studiochen.fr"], subject, date_ms: now - mins * 60e3, text, seen, references: [] });
+  let phonePolls = 0, phoneState = "open";
   const mailLinked = {};
   const mailbox = [
     mail(42, "Tomás Ruiz", "tomas@ruizstudio.es", "Deck fonts, licence question", "Hey Maya,\n\nBefore I send the deck: is the serif licensed for print too, or just web? Happy to switch if not.\n\nT.", 8, false),
@@ -286,6 +287,29 @@ function anarchyDemo(startLocked) {
     mail_find: async ({ email }) => { await wait(250); return email === "tomas@ruizstudio.es" ? peer("u2") : null; },
     mail_continue: async ({ email }) => { await wait(150); const c = channels.find((x) => x.kind === "dm" && x.peer === "u2"); mailLinked[email] = c.id; return c.id; },
     mail_links: async () => ({ ...mailLinked }),
+    // Linking a phone: a code that looks like one, then a phone that claims it.
+    phone_link_start: async () => {
+      const w = 29, dark = [];
+      const finder = (x, y) => [[0, 0], [w - 7, 0], [0, w - 7]].some(([fx, fy]) => {
+        const dx = x - fx, dy = y - fy;
+        if (dx < 0 || dy < 0 || dx > 6 || dy > 6) return false;
+        return dx === 0 || dy === 0 || dx === 6 || dy === 6 || (dx > 1 && dx < 5 && dy > 1 && dy < 5) || null;
+      });
+      let seed = 7;
+      for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) {
+        const f = finder(x, y);
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        dark.push(f === true ? true : f === null ? false : [[0, 7], [w - 8, 7], [0, w - 8]].some(([gx, gy]) => (x >= gx && x <= gx + 7 && y === gy) || (y >= (gy === 7 ? 0 : w - 8) && y <= (gy === 7 ? 7 : w - 1) && x === (gx === 0 ? 7 : w - 8))) ? false : seed % 5 < 2);
+      }
+      phonePolls = 0; phoneState = "open";
+      return { id: "link-1", uri: "anarchy://link?server=demo&secret=demo", width: w, dark, expires_at_ms: Date.now() + 600000 };
+    },
+    phone_link_status: async () => {
+      if (phoneState === "open" && ++phonePolls > 2) phoneState = "claimed";
+      return { state: phoneState, label: phoneState === "open" ? null : "Pixel 8", expires_at_ms: Date.now() + 540000 };
+    },
+    phone_link_approve: async () => { phoneState = "done"; },
+    phone_link_end: async () => { phoneState = "ended"; },
     mail_connect: async () => { await wait(300); mailOn = true; },
     mail_disconnect: async () => { mailOn = false; },
     sidekick_leave: async ({ channel }) => { skOn.delete(channel); },

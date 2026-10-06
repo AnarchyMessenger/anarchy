@@ -1,0 +1,18 @@
+{
+  "app": {
+    "windows": [
+      {
+        "title": "Anarchy",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 560,
+        "label": "main",
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 18, "y": 20 }
+      }
+    ]
+  }
+}

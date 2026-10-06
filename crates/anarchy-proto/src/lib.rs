@@ -365,6 +365,38 @@ pub struct DirectoryEntry {
     pub presence: Option<Presence>,
 }
 
+/// `POST /v1/devices/links`: a one-time offer to link a phone to this account
+/// (D42). The desktop shows `secret` as a QR code; it lasts ten minutes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkOffer {
+    pub id: Uuid,
+    pub secret: String,
+    pub expires_at_ms: u64,
+}
+
+/// `POST /v1/devices/links/claim`, sent by the phone that scanned the code.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkClaim {
+    pub secret: String,
+    /// What the phone calls itself ("Pixel 8"), shown on the desktop to approve.
+    pub label: String,
+}
+
+/// What a claiming phone holds while it waits for the desktop to approve.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkTicket {
+    pub ticket: String,
+}
+
+/// `GET /v1/devices/links/{id}`: where an offer stands, for the desktop.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkStatus {
+    /// `open`, `claimed` (a phone is waiting for approval), `approved`, `done` or `ended`.
+    pub state: String,
+    pub label: Option<String>,
+    pub expires_at_ms: u64,
+}
+
 /// `POST /v1/directory/by-email`: is this address someone I could message here? (D39)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmailLookup {
