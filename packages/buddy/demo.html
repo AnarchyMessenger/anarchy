@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buddy</title>
+<link rel="stylesheet" href="buddy.css">
+<style>
+  body { margin: 0; padding: 32px 16px; font: 15px/1.5 system-ui, sans-serif; background: #f6f4f0; color: #1d1b18; }
+  main { max-width: 900px; margin: 0 auto; display: grid; gap: 28px; }
+  h1 { margin: 0; font-size: 26px; }
+  .hero { width: 160px; height: 160px; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .row svg { width: 44px; height: 44px; }
+  .states { display: flex; flex-wrap: wrap; gap: 18px; }
+  .states figure { margin: 0; display: grid; justify-items: center; gap: 4px; font-size: 12px; color: #6b6359; }
+  .states svg { width: 64px; height: 64px; }
+  @media (prefers-color-scheme: dark) { body { background: #16181d; color: #eef0f3; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Buddy</h1>
+  <p>A live one follows your pointer and hops when clicked. The row below is badge-sized: still until you point at one. No two breathe or blink in step.</p>
+  <div id="hero"></div>
+  <div class="row" id="crowd"></div>
+  <div class="states" id="states"></div>
+  <div id="maker"></div>
+</main>
+<script src="buddy.js"></script>
+<script src="demo.js"></script>
+</body>
+</html>

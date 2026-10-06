@@ -1572,6 +1572,7 @@ $("ask-server-chat").addEventListener("click", async () => {
 
 let askFace = null;
 function paintAskHead() {
+  paintAskBubble();
   const sk = profile?.sidekick;
   // The panel's sidekick is alive: it watches the pointer and reacts (D36).
   if (sk) {
@@ -1587,10 +1588,44 @@ function paintAskHead() {
   $("ask-server-chat").textContent = sk ? `Ask ${sk.name} on the server instead` : "Ask on the server instead";
   $("ask-memory").textContent = sk ? `What does ${sk.name} remember?` : "What does it remember?";
 }
+// The assistant lives in a bubble at the bottom right; opening it grows the
+// bubble into the side panel, closing it shrinks the panel back (D45).
+function morphAsk(on) {
+  const panel = $("ask"), bubble = $("ask-bubble");
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches || !panel.animate) return;
+  const p = panel.getBoundingClientRect(), b = bubble.getBoundingClientRect();
+  if (!p.width || !b.width) return;
+  // The bubble's box, as an inset of the panel's.
+  const from = `inset(${Math.max(0, b.top - p.top)}px ${Math.max(0, p.right - b.right)}px ${Math.max(0, p.bottom - b.bottom)}px ${Math.max(0, b.left - p.left)}px round ${b.height / 2}px)`;
+  const to = "inset(0px 0px 0px 0px round 16px)";
+  const frames = on ? [{ clipPath: from, opacity: .6 }, { clipPath: to, opacity: 1 }] : [{ clipPath: to, opacity: 1 }, { clipPath: from, opacity: .4 }];
+  return panel.animate(frames, { duration: on ? 420 : 300, easing: on ? "cubic-bezier(.2, .9, .25, 1)" : "cubic-bezier(.4, 0, .6, 1)" });
+}
+function paintAskBubble() {
+  const sk = profile?.sidekick;
+  $("ask-bubble-name").textContent = sk?.name || "Assistant";
+  const face = $("ask-bubble-face");
+  if (sk && face.dataset.look !== sk.look) {
+    face.dataset.look = sk.look;
+    face.replaceChildren(skLive(sk.look, "idle", { track: false, react: false }));
+  } else if (!sk) face.replaceChildren(icon("sparkle"));
+}
+$("ask-bubble").addEventListener("click", () => openAsk(true));
 function openAsk(on = true) {
   if (on && thread) closeThread();
   if (on) { drawer = null; paintDrawers(); }
-  show("ask", on);
+  const wasOpen = !$("ask").hidden;
+  if (!on && wasOpen) {
+    // Shrink back into the bubble, then hide.
+    show("ask-bubble", true);
+    const a = morphAsk(false);
+    const done = () => { if (!$("ask").classList.contains("opening")) { show("ask", false); syncDock(); } };
+    if (a) a.finished.then(done, done);
+    else done();
+  } else show("ask", on);
+  $("ask").classList.toggle("opening", on);
+  if (on && !wasOpen) morphAsk(true)?.finished.then(() => { if (!$("ask").hidden) show("ask-bubble", false); }).catch(() => {});
+  else if (on) show("ask-bubble", false);
   $("tool-ask").setAttribute("aria-expanded", String(on));
   syncDock();
   document.querySelector(".main")?.classList.toggle("with-ask", on);
@@ -1725,7 +1760,34 @@ function paintSide() {
   show("side-space", view === "space");
   show("side-home", view === "home");
   renderTodos();
+  renderSidePeople();
 }
+// People sit under the channels, on the left (D45): who's in this space and
+// whether they're around. On Home the conversations above already are the people.
+let sidePeopleFor = null;
+async function renderSidePeople() {
+  const sp = view === "space" ? currentSpace : null;
+  show("side-people", !!sp);
+  if (!sp || $("drawer-chats").hidden) return;
+  show("side-people-invite", !profile?.is_guest);
+  if (sidePeopleFor === sp.id && $("side-people-list").children.length) return;
+  sidePeopleFor = sp.id;
+  let members = [];
+  try { members = await invoke("space_members", { space: sp.id }); } catch { sidePeopleFor = null; return; }
+  if (currentSpace !== sp) return;
+  const mine = handleOf(profile);
+  // Who's around first, then by name.
+  const rank = { online: 0, busy: 1, away: 2 };
+  members.sort((a, b) => (rank[a.presence] ?? 3) - (rank[b.presence] ?? 3) || a.name.localeCompare(b.name));
+  $("side-people-list").replaceChildren(...members.map((m) => {
+    const me = m.handle && m.handle === mine;
+    return el("button", { class: "side-item person", type: "button", title: m.handle ? `Message @${m.handle}` : m.name, disabled: me || !m.handle || undefined,
+      onclick: async (e) => { await startDm(m.handle, "people-dm-error", e.currentTarget); } },
+      m.is_agent ? sidekickEl(m.sidekick, "xs") : avatarEl(m.name, { color: m.color, avatar: m.avatar, sidekick: m.sidekick, presence: m.presence, size: "xs" }),
+      el("span", { class: "name", text: me ? `${m.name} (you)` : m.name }), m.is_agent ? el("span", { class: "flag-pill warn", text: "AI" }) : null);
+  }));
+}
+$("side-people-invite").addEventListener("click", () => openInvite());
 
 // ---------- personal desks: agenda and notes ----------
 // Each lives in a personal channel: only this person's devices are in it, so
@@ -4172,6 +4234,11 @@ function notifItems() {
 function renderNotifs() {
   const items = notifItems();
   show("notif-dot", items.some((n) => !notifRead[n.key]));
+  // On Home, the newest few (D45); the full list is the Inbox.
+  const fresh = items.filter((n) => !notifRead[n.key]).slice(0, 6);
+  $("home-notif-list").replaceChildren(...(fresh.length ? fresh.map((n) => el("button", { class: `notif unread${n.late ? " late" : ""}`, type: "button", onclick: () => { markRead([n.key]); n.go(); } },
+    icon(n.icon), el("strong", { text: n.title }), el("small", { text: n.sub }))) : [el("p", { class: "notif-empty", text: "You're all caught up." })]));
+  show("home-notifs-read", fresh.length > 0);
   if ($("drawer-notifs").hidden) return;
   $("notif-list").replaceChildren(...(items.length ? items.map((n) => el("button", { class: `notif${notifRead[n.key] ? "" : " unread"}${n.late ? " late" : ""}`, type: "button", onclick: () => { markRead([n.key]); n.go(); } },
     icon(n.icon), el("strong", { text: n.title }), el("small", { text: n.sub }))) : [el("p", { class: "notif-empty", text: "Nothing right now. Reminders for events, due invoices and tasks show up here." })]));
@@ -4185,6 +4252,7 @@ function markRead(keys) {
   renderInbox();
 }
 $("notifs-read").addEventListener("click", () => markRead(notifItems().map((n) => n.key)));
+$("home-notifs-read").addEventListener("click", () => markRead(notifItems().map((n) => n.key)));
 
 // ---------- inbox (D37) ----------
 // Email and what happens in the app, in one list, read like mail: folders on
@@ -4710,7 +4778,7 @@ function paintMount() {
 }
 // Agents on this computer (D43).
 let bridgeInfo = null;
-const TOOL_SAYS = { anarchy_search: "Searched", anarchy_today: "Read your day", anarchy_desks: "Listed desks", anarchy_desk_items: "Read", anarchy_draft: "Drafted" };
+const TOOL_SAYS = { anarchy_get_context: "Read your context", anarchy_search: "Searched", anarchy_today: "Read your day", anarchy_list_tasks: "Listed tasks", anarchy_create_tasks: "Added", anarchy_update_task: "Moved a task", anarchy_desks: "Listed desks", anarchy_desk_items: "Read", anarchy_draft: "Drafted" };
 function paintBridge() {
   const b = bridgeInfo;
   $("b-enabled").checked = !!b?.enabled;

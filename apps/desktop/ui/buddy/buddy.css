@@ -1,0 +1,166 @@
+/* Buddy: the look and the motion of an Anarchy sidekick.
+   Pairs with buddy.js. No dependencies; colours fall back to plain values
+   when the page has no design tokens. */
+
+/* ---------- idle motion, after blobatar (MIT, github.com/Alain00/blobatar) ----------
+   Three loops at periods that aren't multiples of each other, so they drift in
+   and out of phase instead of beating as one pulse: a breathe (a 2% squash), a
+   bob (a pixel up and down), and the eyes' glances, which jump and hold rather
+   than slide. Blink and glance timings, and where each Buddy likes to look,
+   are seeded from its look (buddy.js, `seeds`), so a row of them never moves
+   in step. Everything is scaled by --bd-amp: 1 on a live Buddy, 0 on a badge
+   until the pointer is on it, where it eases up. Registered, so it eases. */
+@property --bd-amp { syntax: "<number>"; inherits: true; initial-value: 0; }
+.sk-svg { --bd-amp: 0; transition: --bd-amp .45s cubic-bezier(.23, 1, .32, 1), transform .3s cubic-bezier(.23, 1, .32, 1); }
+.sk-svg.live, .sk-svg.bd-always { --bd-amp: 1; }
+.sk-svg.bd-hover:hover { --bd-amp: 1; transform: translateY(-1px) scale(1.04); }
+.sk-svg .sk-body { animation: bd-breathe 2800ms ease-in-out var(--bd-phase, 0ms) infinite alternate; }
+.sk-svg .sk-bob { animation: bd-bob 3400ms ease-in-out var(--bd-bob, 0ms) infinite alternate; }
+.sk-svg .sk-eyes { animation: bd-blink var(--bd-blink, 4800ms) linear var(--bd-blink-phase, 0ms) infinite; }
+.sk-svg .sk-look { animation: bd-glance var(--bd-glance, 5600ms) linear var(--bd-glance-phase, 0ms) infinite; }
+/* Badges sit still until pointed at: the loops pause, and at amplitude 0 they're the identity anyway. */
+.sk-svg:not(.live):not(.bd-always):not(:hover) * { animation-play-state: paused; }
+.sk-svg .sk-bob { transform-box: fill-box; transform-origin: 50% 60%; }
+@keyframes bd-breathe { to { transform: scaleX(calc(1 + .022 * var(--bd-amp))) scaleY(calc(1 - .018 * var(--bd-amp))); } }
+@keyframes bd-bob { to { transform: translateY(calc(-1.6px * var(--bd-amp))); } }
+@keyframes bd-blink {
+  0%, 97.2% { transform: scaleY(1); animation-timing-function: ease-in; }
+  98.6% { transform: scaleY(calc(1 - .92 * var(--bd-amp))); animation-timing-function: ease-out; }
+  100% { transform: scaleY(1); }
+}
+/* Glances: hold, jump, hold. `translate` is separate from `transform`, which
+   the pointer-following in buddy.js sets, so the two add up. */
+@keyframes bd-glance {
+  0%, 15% { translate: 0 0; }
+  16.5%, 31% { translate: calc(-.8px * var(--bd-lx, 1.4) * var(--bd-amp)) calc(-.9px * var(--bd-ly, 1.1) * var(--bd-amp)); }
+  32.5%, 47% { translate: calc(1px * var(--bd-lx, 1.4) * var(--bd-amp)) calc(.1px * var(--bd-ly, 1.1) * var(--bd-amp)); }
+  48.5%, 63% { translate: calc(-.15px * var(--bd-lx, 1.4) * var(--bd-amp)) calc(.85px * var(--bd-ly, 1.1) * var(--bd-amp)); }
+  64.5%, 79% { translate: calc(.75px * var(--bd-lx, 1.4) * var(--bd-amp)) calc(-.8px * var(--bd-ly, 1.1) * var(--bd-amp)); }
+  80.5%, 98.5% { translate: calc(-1px * var(--bd-lx, 1.4) * var(--bd-amp)) calc(-.15px * var(--bd-ly, 1.1) * var(--bd-amp)); }
+  100% { translate: 0 0; }
+}
+/* While busy it doesn't glance about: it looks where its state says. */
+.sk-svg:not([data-state="idle"]) .sk-look { animation: none; }
+/* On touch screens there's no hover: only live Buddies move. */
+@media not ((hover: hover) and (pointer: fine)) { .sk-svg.bd-hover:hover { --bd-amp: 0; transform: none; } }
+
+/* ---------- states, one-shots and the maker ---------- */
+/* ---------- sidekick states and the maker (D34) ---------- */
+.sk-svg .sk-body, .sk-svg .sk-eyes { transform-box: fill-box; transform-origin: 50% 60%; }
+.sk-svg .sk-eyes { transform-origin: 50% 50%; }
+.sk-z { font: 700 16px/1 var(--font-sans, system-ui); opacity: 0; }
+.sk-svg.live[data-state="listening"] .sk-body { animation: sk-lean 2.4s ease-in-out infinite; }
+.sk-svg.live[data-state="thinking"] .sk-body { animation: sk-float 2.6s ease-in-out infinite; }
+.sk-svg.live[data-state="thinking"] .sk-dots circle { animation: sk-dot 1.1s ease-in-out infinite; }
+.sk-svg.live[data-state="writing"] .sk-body { animation: sk-scribble .5s ease-in-out infinite; }
+.sk-svg.live[data-state="success"] .sk-body { animation: sk-hop .9s cubic-bezier(.3, 1.6, .5, 1) infinite; }
+.sk-svg.live[data-state="alert"] .sk-body { animation: sk-shake 1.6s ease-in-out infinite; }
+.sk-svg.live[data-state="error"] .sk-body { animation: sk-no 1.8s ease-in-out infinite; }
+.sk-svg.live[data-state="asleep"] .sk-body { animation: sk-breathe 3.6s ease-in-out infinite; }
+.sk-svg.live[data-state="asleep"] .sk-z { animation: sk-z 3s ease-out infinite; }
+.sk-svg.live[data-state="asleep"] .sk-eyes, .sk-svg.live[data-state="success"] .sk-eyes, .sk-svg.live[data-state="error"] .sk-eyes { animation: none; }
+@keyframes sk-float { 50% { transform: translateY(-3px); } }
+@keyframes sk-lean { 50% { transform: rotate(-6deg) translateX(-2px); } }
+@keyframes sk-dot { 50% { transform: translateY(-3px); opacity: .4; } }
+@keyframes sk-scribble { 25% { transform: translateX(-1px) rotate(-1deg); } 75% { transform: translateX(1px) rotate(1deg); } }
+@keyframes sk-hop { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-10px) scale(1.03, .97); } }
+@keyframes sk-shake { 0%, 40%, 100% { transform: rotate(0); } 8% { transform: rotate(-9deg); } 16% { transform: rotate(8deg); } 24% { transform: rotate(-5deg); } 32% { transform: rotate(3deg); } }
+@keyframes sk-no { 0%, 50%, 100% { transform: translateX(0); } 10%, 30% { transform: translateX(-4px); } 20%, 40% { transform: translateX(4px); } }
+@keyframes sk-breathe { 50% { transform: scale(1.03, .97); } }
+@keyframes sk-z { 0% { opacity: 0; transform: translate(0, 4px) scale(.7); } 30% { opacity: 1; } 100% { opacity: 0; transform: translate(8px, -12px) scale(1.2); } }
+@media (prefers-reduced-motion: reduce) { .sk-svg.live *, .sk-svg.live .sk-body { animation: none !important; } .sk-z { opacity: 1; } }
+.sk-maker { margin: 6px 0 10px; }
+.skm { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; background-image: radial-gradient(color-mix(in srgb, var(--ink, #1d1b18) 14%, transparent) 1px, transparent 1px); background-size: 16px 16px; border: 1px solid var(--border, rgba(26,24,20,.12)); border-radius: 18px; padding: 18px; }
+.skm-stage { display: grid; justify-items: center; gap: 10px; min-width: 0; }
+.skm-orbit { position: relative; width: min(100%, 380px); aspect-ratio: 1; }
+.skm-ring { position: absolute; inset: 0; }
+.skm-face { position: absolute; width: 38px; height: 38px; padding: 0; transform: translate(-50%, -50%); border: 0; border-radius: 50%; background: transparent; cursor: pointer; transition: transform .12s ease; }
+.skm-face:hover { transform: translate(-50%, -50%) scale(1.15); }
+.skm-face[aria-checked="true"] { background: var(--surface, #fdfcfa); box-shadow: 0 0 0 2px var(--surface, #fdfcfa), 0 0 0 4px color-mix(in srgb, var(--ink, #1d1b18) 30%, transparent), var(--shadow-2, 0 4px 14px -6px rgba(26,24,20,.25)); transform: translate(-50%, -50%) scale(1.2); }
+.skm-face svg { width: 100%; height: 100%; }
+.skm-hero { position: absolute; inset: 26%; display: grid; place-items: center; filter: drop-shadow(0 10px 18px rgb(26 24 20 / .16)); }
+.skm-hero svg { width: 100%; height: 100%; overflow: visible; }
+.skm-bar { display: flex; align-items: center; gap: 10px; max-width: 100%; padding: 8px; border: 1px solid var(--border, rgba(26,24,20,.12)); border-radius: 18px; background: var(--surface, #fdfcfa); box-shadow: var(--shadow-2, 0 4px 14px -6px rgba(26,24,20,.25)); flex-wrap: wrap; justify-content: center; }
+.skm-color-wrap { position: relative; flex: none; }
+.skm-color { width: 44px; height: 44px; border: 0; border-radius: 50%; padding: 0; cursor: pointer; background: radial-gradient(circle, var(--c) 0 62%, transparent 63%), conic-gradient(#f15a4a, #ffcc4d, #86dca0, #52c2ca, #3d8bff, #a970ff, #ff7eb6, #f15a4a); }
+.skm-color-pop { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 5; display: grid; grid-template-columns: repeat(6, 26px); gap: 6px; padding: 10px; border-radius: 14px; box-shadow: var(--shadow-3, 0 18px 40px -16px rgba(26,24,20,.35)); }
+.skm-swatch { width: 26px; height: 26px; border: 0; border-radius: 50%; cursor: pointer; }
+.skm-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--surface, #fdfcfa), 0 0 0 4px var(--ink, #1d1b18); }
+.skm-custom-row { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-muted, #6b6359); }
+.skm-custom { width: 28px; height: 28px; padding: 0; border: 0; background: none; cursor: pointer; }
+.skm-states { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; }
+.skm-state { display: grid; justify-items: center; gap: 2px; min-width: 56px; padding: 6px 4px 5px; border: 0; border-radius: 12px; background: transparent; color: var(--ink-muted, #6b6359); font: inherit; font-size: 11px; font-weight: 560; cursor: pointer; }
+.skm-state:hover { background: var(--surface-hover, #f6f3ee); }
+.skm-state[aria-checked="true"] { background: var(--surface-sunken, #f3f0eb); color: var(--ink, #1d1b18); font-weight: 650; box-shadow: inset 0 0 0 1px var(--border, rgba(26,24,20,.12)); }
+.skm-state-face { width: 26px; height: 26px; }
+.skm-state-face svg { width: 100%; height: 100%; }
+.skm-surprise { flex: none; }
+.skm-panel { min-width: 0; display: grid; gap: 4px; padding: 14px; border: 1px solid var(--border, rgba(26,24,20,.12)); border-radius: 16px; background: var(--surface, #fdfcfa); box-shadow: var(--shadow-2, 0 4px 14px -6px rgba(26,24,20,.25)); }
+.skm-head { margin: 8px 0 2px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint, #9a938a); }
+.skm-head:first-child { margin-top: 0; }
+.skm-row { display: grid; grid-template-columns: 74px minmax(0, 1fr) 40px; align-items: center; gap: 8px; min-height: 38px; font-size: 13px; border-bottom: 1px solid var(--border, rgba(26,24,20,.12)); }
+.skm-row:has(.skm-seg) { grid-template-columns: 40px minmax(0, 1fr); }
+.skm-row input[type=range] { width: 100%; accent-color: var(--ink, #1d1b18); }
+.skm-val { font-size: 11.5px; color: var(--ink-faint, #9a938a); text-align: right; font-variant-numeric: tabular-nums; }
+.skm-seg { display: inline-flex; justify-self: end; gap: 2px; padding: 3px; border-radius: 10px; background: var(--surface-sunken, #f3f0eb); }
+.skm-seg button { padding: 4px 9px; border: 0; border-radius: 8px; background: transparent; color: var(--ink-muted, #6b6359); font: inherit; font-size: 12px; cursor: pointer; }
+.skm-seg button[aria-checked="true"] { background: var(--surface, #fdfcfa); color: var(--ink, #1d1b18); font-weight: 600; box-shadow: 0 1px 2px rgb(26 24 20 / .12); }
+.skm-sizes { display: flex; align-items: end; gap: 14px; padding: 6px 2px 10px; border-bottom: 1px solid var(--border, rgba(26,24,20,.12)); }
+.skm-presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.skm-preset { aspect-ratio: 1; padding: 6px; border: 0; border-radius: 12px; background: transparent; cursor: pointer; }
+.skm-preset:hover { background: var(--surface-hover, #f6f3ee); }
+.skm-preset svg { width: 100%; height: 100%; }
+@media (max-width: 860px) { .skm { grid-template-columns: 1fr; } }
+/* ---------- a sidekick that's alive (D36) ---------- */
+.sk-svg .sk-z, .sk-svg .sk-dots { display: none; }
+.sk-svg[data-state="asleep"] .sk-z, .sk-svg[data-state="thinking"] .sk-dots { display: inline; }
+.sk-svg .sk-squash { transform-box: fill-box; transform-origin: 50% 92%; }
+.sk-svg.live .sk-shape { transition: fill .35s ease, stroke .35s ease; }
+.sk-svg.live .sk-anchor { transition: transform .35s cubic-bezier(.3, 1.4, .5, 1); }
+.sk-svg.live .sk-eye { transition: transform .22s cubic-bezier(.3, 1.4, .5, 1); }
+.sk-svg .sk-eyes.sk-shut { animation: none !important; transform: scaleY(.08); transition: transform .09s ease-in; }
+.sk-svg .sk-eyes { transition: transform .12s ease-out; }
+.sk-squash.sk-pop { animation: sk-pop .42s cubic-bezier(.3, 1.5, .5, 1); }
+.sk-squash.sk-squish { animation: sk-squish .5s cubic-bezier(.3, 1.6, .5, 1); }
+.sk-squash.sk-jump { animation: sk-jump .7s cubic-bezier(.3, 1.5, .5, 1); }
+.sk-squash.sk-spin { animation: sk-spin .6s cubic-bezier(.4, 1.3, .5, 1); }
+@keyframes sk-pop { 0% { transform: scale(1); } 25% { transform: scale(.78, .7); } 60% { transform: scale(1.08, 1.04); } 100% { transform: scale(1); } }
+@keyframes sk-squish { 0% { transform: scale(1); } 30% { transform: scale(1.08, .9); } 65% { transform: scale(.97, 1.04); } 100% { transform: scale(1); } }
+@keyframes sk-jump { 0% { transform: none; } 20% { transform: scale(1.1, .86); } 45% { transform: translateY(-16px) scale(.94, 1.08); } 75% { transform: translateY(0) scale(1.06, .94); } 100% { transform: none; } }
+@keyframes sk-spin { 0% { transform: rotate(0) scale(1); } 40% { transform: rotate(200deg) scale(.8); } 100% { transform: rotate(360deg) scale(1); } }
+.skm-hero svg { cursor: pointer; }
+.skm.enter .skm-face { animation: skm-in .4s cubic-bezier(.3, 1.5, .5, 1) backwards; animation-delay: calc(var(--i) * 22ms); }
+.skm.enter .skm-hero { animation: skm-hero .55s cubic-bezier(.3, 1.6, .5, 1) backwards .1s; }
+@keyframes skm-in { from { opacity: 0; transform: translate(-50%, -50%) scale(.3); } }
+@keyframes skm-rise { from { opacity: 0; transform: translateY(14px); } }
+@keyframes skm-hero { from { opacity: 0; transform: scale(.6); } }
+.skm-face, .skm-state, .skm-preset { transition: transform .18s cubic-bezier(.3, 1.6, .5, 1), opacity .15s, background .15s; }
+.skm-preset:hover, .skm-state:hover { transform: translateY(-2px); }
+@media (prefers-reduced-motion: reduce) { .sk-squash, .skm.enter *, .sk-svg.live * { animation: none !important; transition: none !important; } }
+/* ---------- the Buddy and headwear (D40) ---------- */
+.sk-svg .sk-dark { filter: brightness(.82); }
+.sk-svg[data-shape="bot"] .sk-eyes { filter: drop-shadow(0 0 1.6px var(--glow)) drop-shadow(0 0 3.5px var(--glow)); }
+.sk-svg.live[data-shape="bot"] .sk-glowball { animation: sk-glow 2.4s ease-in-out infinite; }
+@keyframes sk-glow { 50% { opacity: .55; } }
+.skm-hats { display: flex; justify-content: center; flex-wrap: wrap; gap: 2px; max-width: 600px; }
+.skm-hat { width: 40px; height: 40px; padding: 3px; border: 0; border-radius: 12px; background: transparent; cursor: pointer; opacity: .7; transition: transform .18s cubic-bezier(.3, 1.6, .5, 1), opacity .12s, background .12s; }
+.skm-hat:hover { opacity: 1; transform: translateY(-2px); }
+.skm-hat[aria-checked="true"] { opacity: 1; background: var(--surface, #fdfcfa); box-shadow: 0 0 0 1px var(--border, rgba(26,24,20,.12)), var(--shadow-2, 0 4px 14px -6px rgba(26,24,20,.25)); }
+.skm-hat svg { width: 100%; height: 100%; overflow: visible; }
+.skm.enter .skm-hat { animation: skm-rise .4s cubic-bezier(.3, 1.5, .5, 1) backwards; animation-delay: calc(320ms + var(--i) * 25ms); }
+/* Wherever the maker lands narrow (Settings → Profile), the panel goes under the stage. */
+.sk-maker { container-type: inline-size; }
+@container (max-width: 640px) {
+  .skm { grid-template-columns: minmax(0, 1fr); }
+  .skm-hats { max-width: 100%; }
+  .skm-bar { border-radius: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-svg, .sk-svg * { animation: none !important; transition: none !important; }
+  .sk-svg.bd-hover:hover { transform: none; }
+}
+
+/* Standalone basics: the maker shouldn't depend on the host page's own rules. */
+.skm [hidden] { display: none !important; }
+.skm-surprise { padding: 8px 14px; border: 0; border-radius: 999px; background: var(--ink, #1d1b18); color: var(--surface, #fdfcfa); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }

@@ -84,3 +84,8 @@ jobs:
       - run: node design-system/build.mjs
       - name: Fail if generated CSS differs from what is committed
         run: git diff --exit-code -- design-system/dist apps/desktop/ui/ds
+      - name: Buddy package tests
+        run: node packages/buddy/test.mjs
+      - run: node packages/buddy/build.mjs
+      - name: Fail if the app's copy of Buddy differs from the package
+        run: git diff --exit-code -- apps/desktop/ui/buddy

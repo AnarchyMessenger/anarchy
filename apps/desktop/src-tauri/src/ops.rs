@@ -542,7 +542,7 @@ async fn refresh_metas(i: &mut Inner) -> Result<(), String> {
 
 // ---------- channels and messages ----------
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct ChannelView {
     id: ChannelId,
     /// `channel` or `dm`.
@@ -2095,26 +2095,113 @@ fn where_of(c: &ChannelView) -> String {
     }
 }
 
-/// The tools the bridge offers, as MCP describes them.
+/// The tools the bridge offers, as MCP describes them. Shaped after Roma's
+/// (roma.app/developers): one orienting call first, tasks with a status, notes
+/// that belong to a task, writes that append unless told otherwise, and every
+/// tool saying whether it reads, adds or changes (D46).
 pub fn agent_tools() -> serde_json::Value {
-    let obj = |props: serde_json::Value, required: &[&str]| serde_json::json!({ "type": "object", "properties": props, "required": required });
-    serde_json::json!([
-        { "name": "anarchy_search",
-          "description": "Search what the user keeps in Anarchy (their desks and Company channels; never private Sealed conversations). Returns matching messages and records, newest first.",
-          "inputSchema": obj(serde_json::json!({ "query": { "type": "string", "description": "A word or phrase" } }), &["query"]) },
-        { "name": "anarchy_today",
+    use serde_json::json;
+    let obj = |props: serde_json::Value, required: &[&str]| json!({ "type": "object", "properties": props, "required": required });
+    let reads = |title: &str| json!({ "title": title, "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false });
+    let adds = |title: &str| json!({ "title": title, "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false });
+    let changes = |title: &str| json!({ "title": title, "readOnlyHint": false, "destructiveHint": true, "idempotentHint": true, "openWorldHint": false });
+    let status = json!({ "type": "string", "enum": ["todo", "inProgress", "completed"] });
+    json!([
+        { "name": "anarchy_get_context", "annotations": reads("Get context"),
+          "description": "Call this first. The user, today's date and time zone, their task desks, tasks that are late, due today, in progress or due this week, today's agenda, and their recent notes, each with an id for follow-up calls. Private Sealed conversations are never included.",
+          "inputSchema": obj(json!({}), &[]) },
+        { "name": "anarchy_search", "annotations": reads("Search"),
+          "description": "Search what the user keeps in Anarchy (their desks and Company channels; never private Sealed conversations). Returns matching messages and records, newest first. Search before adding something that may already exist.",
+          "inputSchema": obj(json!({ "query": { "type": "string", "description": "A word or phrase" } }), &["query"]) },
+        { "name": "anarchy_today", "annotations": reads("Today"),
           "description": "The user's day: agenda events and tasks that are due or late.",
-          "inputSchema": obj(serde_json::json!({ "date": { "type": "string", "description": "YYYY-MM-DD; today if left out" } }), &[]) },
-        { "name": "anarchy_desks",
+          "inputSchema": obj(json!({ "date": { "type": "string", "description": "YYYY-MM-DD; today if left out" } }), &[]) },
+        { "name": "anarchy_list_tasks", "annotations": reads("List tasks"),
+          "description": "The user's tasks, by due date. Without a status, finished ones are left out.",
+          "inputSchema": obj(json!({
+              "status": { "type": "array", "items": status },
+              "desk": { "type": "string", "description": "A task desk's name or id; every desk if left out" },
+              "query": { "type": "string", "description": "Words in the title or notes" },
+              "due_before": { "type": "string", "description": "YYYY-MM-DD, exclusive" },
+              "limit": { "type": "integer", "description": "Default 50, at most 200" } }), &[]) },
+        { "name": "anarchy_create_tasks", "annotations": adds("Create tasks"),
+          "description": "Add up to 100 tasks in one call, to the user's own Tasks desk unless a desk is named. Give each an external_id (your own id for it) and re-sending is safe: a task already made with that id comes back under `existing` instead of twice. One bad row never fails the batch.",
+          "inputSchema": obj(json!({
+              "tasks": { "type": "array", "maxItems": 100, "items": { "type": "object", "required": ["title"], "properties": {
+                  "title": { "type": "string" }, "notes": { "type": "string", "description": "What goes with the task: context, links, a plan" },
+                  "due": { "type": "string", "description": "YYYY-MM-DD" }, "status": status, "external_id": { "type": "string" } } } },
+              "desk": { "type": "string", "description": "A task desk's name or id" } }), &["tasks"]) },
+        { "name": "anarchy_update_task", "annotations": changes("Update a task"),
+          "description": "Change a task: title, status (todo → inProgress → completed as the work moves), due date (null clears it), or its notes. Notes are added at the end unless mode is \"replace\", which also needs confirm_replace: true and only when the user asked to rewrite them.",
+          "inputSchema": obj(json!({
+              "id": { "type": "string" }, "title": { "type": "string" }, "status": status,
+              "due": { "type": ["string", "null"] }, "notes": { "type": "string" },
+              "mode": { "type": "string", "enum": ["append", "prepend", "replace"] }, "confirm_replace": { "type": "boolean" } }), &["id"]) },
+        { "name": "anarchy_desks", "annotations": reads("List desks"),
           "description": "The desks the user lets agents read (tasks, invoices, clients, notes…), with how many records each holds.",
-          "inputSchema": obj(serde_json::json!({}), &[]) },
-        { "name": "anarchy_desk_items",
+          "inputSchema": obj(json!({}), &[]) },
+        { "name": "anarchy_desk_items", "annotations": reads("Read a desk"),
           "description": "The records in one desk, by its name or id from anarchy_desks.",
-          "inputSchema": obj(serde_json::json!({ "desk": { "type": "string" }, "limit": { "type": "integer", "description": "At most this many, newest first (default 50)" } }), &["desk"]) },
-        { "name": "anarchy_draft",
+          "inputSchema": obj(json!({ "desk": { "type": "string" }, "limit": { "type": "integer", "description": "At most this many, newest first (default 50)" } }), &["desk"]) },
+        { "name": "anarchy_draft", "annotations": adds("Draft a message"),
           "description": "Put a message in the composer of a desk or channel for the user to read and send. Nothing is sent: the user decides.",
-          "inputSchema": obj(serde_json::json!({ "to": { "type": "string", "description": "Desk or channel name or id" }, "text": { "type": "string" } }), &["to", "text"]) },
+          "inputSchema": obj(json!({ "to": { "type": "string", "description": "Desk or channel name or id" }, "text": { "type": "string" } }), &["to", "text"]) },
     ])
+}
+
+/// A task desk's columns, and which status each one means: the first is
+/// `todo`, the done ones `completed`, the rest `inProgress`.
+fn task_columns(items: &[DeskItem]) -> Vec<(String, &'static str)> {
+    let custom = items
+        .iter()
+        .find(|i| i.kind == "settings" && i.id == "columns")
+        .and_then(|i| i.data.get("list"))
+        .and_then(|l| l.as_array())
+        .filter(|l| !l.is_empty())
+        .cloned();
+    let list = custom.unwrap_or_else(|| {
+        vec![
+            serde_json::json!({ "id": "todo" }),
+            serde_json::json!({ "id": "doing" }),
+            serde_json::json!({ "id": "done", "done": true }),
+        ]
+    });
+    let n = list.len();
+    list.iter()
+        .enumerate()
+        .map(|(k, c)| {
+            let id = c["id"].as_str().unwrap_or("").to_owned();
+            let done = c.get("done").and_then(|d| d.as_bool()).unwrap_or(k + 1 == n);
+            let status = if done {
+                "completed"
+            } else if k == 0 {
+                "todo"
+            } else {
+                "inProgress"
+            };
+            (id, status)
+        })
+        .collect()
+}
+
+fn status_of(cols: &[(String, &'static str)], column: &str) -> &'static str {
+    cols.iter()
+        .find(|(id, _)| id == column)
+        .map(|(_, s)| *s)
+        .unwrap_or("todo")
+}
+
+fn column_for(cols: &[(String, &'static str)], status: &str) -> Option<String> {
+    cols.iter().find(|(_, s)| *s == status).map(|(id, _)| id.clone())
+}
+
+fn task_json(it: &DeskItem, cols: &[(String, &'static str)], desk: &ChannelView) -> serde_json::Value {
+    let d = &it.data;
+    serde_json::json!({
+        "id": it.id, "title": d["title"], "status": status_of(cols, d["column"].as_str().unwrap_or("")),
+        "due": d.get("due"), "who": d.get("who"), "notes": d.get("notes"),
+        "desk": desk.name, "desk_id": desk.id, "updated_ms": it.updated_ms,
+    })
 }
 
 /// Runs one bridge tool. `Ok` holds the result for the agent; a draft also
@@ -2177,6 +2264,281 @@ pub async fn agent_call(i: &mut Inner, tool: &str, args: &serde_json::Value) -> 
             Ok(AgentAnswer::data(
                 json!({ "date": date, "events": events, "tasks": tasks }),
             ))
+        }
+        "anarchy_get_context" => {
+            let now = chrono::Local::now();
+            let today = now.format("%Y-%m-%d").to_string();
+            let week = (now + chrono::Duration::days(7)).format("%Y-%m-%d").to_string();
+            let (mut late, mut due_today, mut doing, mut upcoming, mut events, mut notes, mut desks) =
+                (vec![], vec![], vec![], vec![], vec![], vec![], vec![]);
+            for c in &visible {
+                let items = desk_items(i, c.id).await?;
+                if c.desk.is_some() {
+                    desks.push(json!({ "id": c.id, "name": c.name, "kind": c.desk }));
+                }
+                let cols = task_columns(&items);
+                for it in items
+                    .iter()
+                    .filter(|x| x.data.get("deleted").and_then(|v| v.as_bool()) != Some(true))
+                {
+                    match it.kind.as_str() {
+                        "card" if c.desk.as_deref() == Some("tasks") => {
+                            let t = task_json(it, &cols, c);
+                            let due = it.data.get("due").and_then(|v| v.as_str()).unwrap_or("").to_owned();
+                            match (t["status"].as_str(), due.as_str()) {
+                                (Some("completed"), _) => {}
+                                (_, d) if !d.is_empty() && d < today.as_str() => late.push(t),
+                                (_, d) if d == today => due_today.push(t),
+                                (Some("inProgress"), _) => doing.push(t),
+                                (_, d) if !d.is_empty() && d <= week.as_str() => upcoming.push(t),
+                                _ => {}
+                            }
+                        }
+                        "event" if it.data.get("date").and_then(|v| v.as_str()) == Some(today.as_str()) => {
+                            events.push(json!({ "title": it.data["title"], "start": it.data.get("start"), "end": it.data.get("end"), "all_day": it.data.get("all_day") }))
+                        }
+                        "page" => notes.push(json!({ "id": it.id, "title": it.data.get("title"), "desk": c.name, "updated_ms": it.updated_ms })),
+                        _ => {}
+                    }
+                }
+            }
+            notes.sort_by(|a, b| b["updated_ms"].as_u64().cmp(&a["updated_ms"].as_u64()));
+            notes.truncate(8);
+            let me = i
+                .profile
+                .as_ref()
+                .map(|p| p.display_name.clone())
+                .unwrap_or_default();
+            Ok(AgentAnswer::data(json!({
+                "about": "Anarchy keeps this person's tasks, agenda, notes and desks, encrypted on their devices. Tasks have a status (todo, inProgress, completed), a due date and notes that go with them. You can read, add and update tasks, and draft messages for them to send; you can't send messages or read private Sealed conversations.",
+                "user": { "name": me, "today": today, "now": now.format("%H:%M").to_string(), "utc_offset": now.offset().to_string(), "weekday": now.format("%A").to_string() },
+                "desks": desks,
+                "tasks": { "late": late, "due_today": due_today, "in_progress": doing, "this_week": upcoming },
+                "agenda_today": events,
+                "recent_notes": notes,
+            })))
+        }
+        "anarchy_list_tasks" => {
+            let want: Vec<String> = args
+                .get("status")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect())
+                .unwrap_or_default();
+            let q = s("query").to_lowercase();
+            let before = s("due_before");
+            let only = s("desk");
+            let limit = args
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(50)
+                .clamp(1, 200) as usize;
+            let mut out = Vec::new();
+            for c in visible.iter().filter(|c| c.desk.as_deref() == Some("tasks")) {
+                if !only.is_empty() && c.id.to_string() != only && !c.name.eq_ignore_ascii_case(&only) {
+                    continue;
+                }
+                let items = desk_items(i, c.id).await?;
+                let cols = task_columns(&items);
+                for it in items.iter().filter(|x| {
+                    x.kind == "card" && x.data.get("deleted").and_then(|v| v.as_bool()) != Some(true)
+                }) {
+                    let t = task_json(it, &cols, c);
+                    let st = t["status"].as_str().unwrap_or("");
+                    if (want.is_empty() && st == "completed")
+                        || (!want.is_empty() && !want.iter().any(|w| w == st))
+                    {
+                        continue;
+                    }
+                    let due = it.data.get("due").and_then(|v| v.as_str()).unwrap_or("");
+                    if !before.is_empty() && (due.is_empty() || due >= before.as_str()) {
+                        continue;
+                    }
+                    if !q.is_empty() {
+                        let hay = format!(
+                            "{} {}",
+                            it.data["title"].as_str().unwrap_or(""),
+                            it.data.get("notes").and_then(|v| v.as_str()).unwrap_or("")
+                        )
+                        .to_lowercase();
+                        if !hay.contains(&q) {
+                            continue;
+                        }
+                    }
+                    out.push(t);
+                }
+            }
+            // By due date, undated last.
+            out.sort_by_key(|t| {
+                t["due"]
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| "9999".into())
+            });
+            out.truncate(limit);
+            Ok(AgentAnswer::data(json!({ "count": out.len(), "tasks": out })))
+        }
+        "anarchy_create_tasks" => {
+            let rows = args
+                .get("tasks")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            if rows.is_empty() || rows.len() > 100 {
+                return Err("Send between 1 and 100 tasks".into());
+            }
+            let named = s("desk");
+            let desk = if named.is_empty() {
+                let id = ensure_personal(i, "tasks".into()).await?;
+                agent_channels(i)
+                    .await?
+                    .into_iter()
+                    .find(|c| c.id == id)
+                    .ok_or("Your Tasks desk isn't ready yet")?
+            } else {
+                find(&named)
+                    .filter(|c| c.desk.as_deref() == Some("tasks"))
+                    .cloned()
+                    .ok_or("No task desk by that name that agents may write to")?
+            };
+            let items = desk_items(i, desk.id).await?;
+            let cols = task_columns(&items);
+            let mut order = items
+                .iter()
+                .filter_map(|x| x.data.get("order").and_then(|v| v.as_f64()))
+                .fold(0.0, f64::max);
+            let now = crate::engine::now_ms();
+            let (mut created, mut existing, mut failed, mut records) = (vec![], vec![], vec![], vec![]);
+            for (k, r) in rows.iter().enumerate() {
+                let title: String = r
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .chars()
+                    .take(300)
+                    .collect();
+                if title.is_empty() {
+                    failed.push(json!({ "row": k, "reason": "a task needs a title" }));
+                    continue;
+                }
+                let ext = r.get("external_id").and_then(|v| v.as_str()).map(str::to_owned);
+                if let Some(e) = &ext
+                    && let Some(it) = items
+                        .iter()
+                        .find(|x| x.kind == "card" && x.data.get("ext").and_then(|v| v.as_str()) == Some(e))
+                {
+                    existing.push(task_json(it, &cols, &desk));
+                    continue;
+                }
+                let status = r.get("status").and_then(|v| v.as_str()).unwrap_or("todo");
+                let Some(column) = column_for(&cols, status) else {
+                    failed.push(
+                        json!({ "row": k, "reason": format!("no column means {status} on this desk") }),
+                    );
+                    continue;
+                };
+                order += 1.0;
+                let id = uuid::Uuid::new_v4().to_string();
+                let data = json!({
+                    "title": title, "column": column, "order": order, "added": now, "hist": [[column, now]], "color": "ink",
+                    "due": r.get("due").and_then(|v| v.as_str()).filter(|d| d.len() == 10), "notes": r.get("notes").and_then(|v| v.as_str()).unwrap_or(""),
+                    "ext": ext, "by": "agent",
+                });
+                created.push(json!({ "id": id, "title": title, "status": status }));
+                records.push(ItemRecord {
+                    id,
+                    kind: "card".into(),
+                    data,
+                });
+            }
+            put_items(i, desk.id, records).await?;
+            Ok(AgentAnswer::data(
+                json!({ "desk": desk.name, "created": created, "existing": existing, "failed": failed }),
+            ))
+        }
+        "anarchy_update_task" => {
+            let id = s("id");
+            let mut hit = None;
+            for c in visible.iter().filter(|c| c.desk.as_deref() == Some("tasks")) {
+                let items = desk_items(i, c.id).await?;
+                if let Some(it) = items.iter().find(|x| {
+                    x.kind == "card"
+                        && x.id == id
+                        && x.data.get("deleted").and_then(|v| v.as_bool()) != Some(true)
+                }) {
+                    hit = Some((c.clone(), task_columns(&items), it.clone()));
+                    break;
+                }
+            }
+            let (desk, cols, it) = hit.ok_or("No task with that id that agents may change")?;
+            let mut data = it.data.clone();
+            let now = crate::engine::now_ms();
+            if let Some(t) = args
+                .get("title")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+            {
+                data["title"] = json!(t.chars().take(300).collect::<String>());
+            }
+            if let Some(st) = args.get("status").and_then(|v| v.as_str()) {
+                let col =
+                    column_for(&cols, st).ok_or_else(|| format!("No column means {st} on this desk"))?;
+                if data["column"].as_str() != Some(col.as_str()) {
+                    let mut hist = data
+                        .get("hist")
+                        .and_then(|h| h.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    hist.push(json!([col, now]));
+                    let keep = hist.len().saturating_sub(40);
+                    data["hist"] = json!(hist[keep..]);
+                    data["column"] = json!(col);
+                }
+            }
+            if let Some(due) = args.get("due") {
+                data["due"] = if due.is_null() {
+                    json!(null)
+                } else {
+                    json!(
+                        due.as_str()
+                            .filter(|d| d.len() == 10)
+                            .ok_or("due is YYYY-MM-DD")?
+                    )
+                };
+            }
+            if let Some(n) = args.get("notes").and_then(|v| v.as_str()) {
+                let old = data
+                    .get("notes")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+                data["notes"] = json!(match s("mode").as_str() {
+                    "replace" if args.get("confirm_replace").and_then(|v| v.as_bool()) == Some(true) =>
+                        n.to_owned(),
+                    "replace" => return Err(
+                        "Replacing a task's notes needs confirm_replace: true, and only when the user asked"
+                            .into()
+                    ),
+                    "prepend" if !old.is_empty() => format!("{n}\n\n{old}"),
+                    _ if old.is_empty() => n.to_owned(),
+                    "prepend" => n.to_owned(),
+                    _ => format!("{old}\n\n{n}"),
+                });
+            }
+            put_items(
+                i,
+                desk.id,
+                vec![ItemRecord {
+                    id: it.id.clone(),
+                    kind: "card".into(),
+                    data: data.clone(),
+                }],
+            )
+            .await?;
+            let mut out = it;
+            out.data = data;
+            Ok(AgentAnswer::data(task_json(&out, &cols, &desk)))
         }
         "anarchy_desks" => {
             let mut out = Vec::new();

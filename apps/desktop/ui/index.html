@@ -6,6 +6,7 @@
 <title>Anarchy</title>
 <link rel="stylesheet" href="ds/tokens.css">
 <link rel="stylesheet" href="ds/components.css">
+<link rel="stylesheet" href="buddy/buddy.css">
 <link rel="stylesheet" href="app.css">
 </head>
 <body class="ax">
@@ -377,6 +378,11 @@
             <p class="side-empty" id="no-channels">No channels yet.</p>
             <div class="side-todo" data-todo></div>
           </div>
+          <!-- People: everyone in the space (or the people you talk to), next to the channels (D45). -->
+          <div class="side side-people" id="side-people">
+            <div class="side-group"><span id="side-people-title">People</span><span class="side-group-btns"><button class="icon-btn sm" id="side-people-invite" type="button" title="Invite people" aria-label="Invite people"><svg class="i"><use href="#i-plus"/></svg></button></span></div>
+            <div class="side-list" id="side-people-list"></div>
+          </div>
         </aside>
 
         <aside class="drawer rpanel" id="drawer-notifs" aria-label="Notifications" hidden>
@@ -396,14 +402,18 @@
             <header class="pagehead home-head"><div><h1 id="home-headline">Good morning.</h1><p class="sub" id="home-summary"></p></div>
               <div class="row-actions"><button class="btn-ink inline" id="home-new-task" type="button"><svg class="i"><use href="#i-plus"/></svg><span>New task</span></button></div></header>
             <div class="local-banner" id="local-banner" hidden><svg class="i"><use href="#i-laptop"/></svg><span><strong>Only on this computer for now.</strong> Connect a server to message people and share spaces; everything you've made here comes with you.</span><button class="btn-ink sm" id="local-connect" type="button">Connect a server</button></div>
+            <section class="today" aria-labelledby="today-title">
+              <div class="today-head"><h2 id="today-title">Today</h2><div class="pills" id="today-pills" role="tablist" aria-label="Show"></div></div>
+              <div class="inbox-list" id="today-list"></div>
+            </section>
+            <section class="home-notifs" aria-labelledby="home-notifs-title">
+              <div class="today-head"><h2 id="home-notifs-title">Notifications</h2><span class="spacer"></span><button class="link" id="home-notifs-read" type="button">Mark all read</button></div>
+              <div class="notif-list" id="home-notif-list"></div>
+            </section>
             <section class="pipe" aria-labelledby="pipe-title">
               <div class="pipe-head"><h2 id="pipe-title">Task pipeline</h2><span class="fine" id="pipe-range">Last 30 days · every board you're on</span></div>
               <div class="pipe-grid" id="pipe-grid"></div>
               <table class="sr-only" id="pipe-table"></table>
-            </section>
-            <section class="today" aria-labelledby="today-title">
-              <div class="today-head"><h2 id="today-title">Today</h2><div class="pills" id="today-pills" role="tablist" aria-label="Show"></div></div>
-              <div class="inbox-list" id="today-list"></div>
             </section>
             <div class="start-grid">
               <form class="start-card" id="start-dm-form" novalidate>
@@ -757,9 +767,9 @@
 
           <div class="page" data-page="agents" hidden>
             <h1 class="page-title">Agents on this computer</h1>
-            <p class="page-sub">Let Claude Code, Codex, Cursor, Backspace or any agent that speaks MCP read what you keep here, and draft messages for you to send.</p>
+            <p class="page-sub">Let Claude Code, Codex, Cursor, Backspace or any agent that speaks MCP read what you keep here, add and move your tasks, and draft messages for you to send.</p>
             <div class="toggles">
-              <label class="toggle"><input type="checkbox" id="b-enabled"><span><strong>Let agents on this computer read Anarchy</strong><small>Your desks and Company channels. Never a Sealed conversation with other people.</small></span></label>
+              <label class="toggle"><input type="checkbox" id="b-enabled"><span><strong>Let agents on this computer use Anarchy</strong><small>Your desks and Company channels. Never a Sealed conversation with other people.</small></span></label>
             </div>
             <div class="mount-box" id="b-box" hidden>
               <dl class="facts-list">
@@ -768,7 +778,7 @@
                 <div><dt>Over HTTP</dt><dd><code id="b-url"></code></dd></div>
               </dl>
               <div class="row-actions"><button class="btn-outline pill" id="b-copy" type="button"><svg class="i"><use href="#i-copy"/></svg><span>Copy the Claude Code command</span></button><span class="saved" id="b-copied" hidden>Copied</span></div>
-              <div class="callout"><svg class="i"><use href="#i-shield"/></svg><p>Agents can read; they can't send. A draft opens in the conversation for you to read first. Anarchy has to be running and unlocked. Anything you give the token to can read the same things, so keep it in the agent's settings only.</p></div>
+              <div class="callout"><svg class="i"><use href="#i-shield"/></svg><p>Agents can read and change your tasks; they can't send messages. A draft opens in the conversation for you to read first, and every request is listed below. Anarchy has to be running and unlocked. Anything you give the token to can read the same things, so keep it in the agent's settings only.</p></div>
               <h2 class="block-label">Recent requests</h2>
               <div class="list" id="b-calls"></div>
               <div class="row-actions"><button class="btn-outline sm" id="b-rotate" type="button">New token</button><span class="fine">Agents using the old one have to be set up again.</span></div>
@@ -806,6 +816,7 @@
           <form class="ask-composer" id="thread-form"><textarea id="thread-input" rows="2" placeholder="Reply in thread…" aria-label="Reply"></textarea><button class="send round" id="thread-send" type="submit" aria-label="Reply" disabled><svg class="i"><use href="#i-send"/></svg></button></form>
           <p class="ask-foot" id="thread-foot">Replies are encrypted like the rest of the conversation, for the same people.</p>
         </aside>
+        <button class="ask-bubble" id="ask-bubble" type="button" aria-label="Ask your sidekick (Ctrl J)" title="Ask your sidekick · Ctrl J"><span class="ask-bubble-face" id="ask-bubble-face"></span><span id="ask-bubble-name">Assistant</span></button>
         <aside class="ask" id="ask" aria-label="Ask" hidden>
           <header class="ask-head"><span class="ask-mark" id="ask-mark"><svg class="i"><use href="#i-sparkle"/></svg></span><div><strong id="ask-name">Assistant</strong><small id="ask-scope"></small></div><span class="spacer"></span><button class="icon-btn" id="ask-new" type="button" title="New conversation" aria-label="New conversation"><svg class="i"><use href="#i-plus"/></svg></button><button class="icon-btn" id="ask-close" type="button" title="Close (Esc)" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></header>
           <div class="ask-log" id="ask-log" role="log" aria-live="polite"></div>
@@ -1134,6 +1145,7 @@
 </div>
 
 <script src="demo.js"></script>
+<script src="buddy/buddy.js"></script>
 <script src="sidekick.js"></script>
 <script src="app.js"></script>
 <script src="summon.js"></script>

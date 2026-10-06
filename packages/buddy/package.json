@@ -1,0 +1,12 @@
+{
+  "name": "@anarchy/buddy",
+  "version": "0.1.0",
+  "description": "Anarchy's sidekick: a little robot with a face, headwear and moods, alive in plain SVG and CSS. No dependencies.",
+  "main": "buddy.js",
+  "style": "buddy.css",
+  "files": ["buddy.js", "buddy.css", "README.md"],
+  "license": "AGPL-3.0-only",
+  "repository": "github:AnarchyMessenger/anarchy",
+  "scripts": { "test": "node test.mjs", "build": "node build.mjs" },
+  "keywords": ["avatar", "agent", "sidekick", "svg", "animation"]
+}

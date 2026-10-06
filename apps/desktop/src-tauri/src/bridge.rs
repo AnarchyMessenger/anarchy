@@ -8,7 +8,8 @@
 //!   refused, so a web page can't reach it by DNS rebinding.
 //! - Sees your personal desks and Company channels, never a Sealed
 //!   conversation with other people (`ops::agent_call`).
-//! - Reads, and drafts into the composer; it never sends anything itself.
+//! - Reads; adds and updates tasks (D46); drafts into the composer. It never
+//!   sends a message itself, and never deletes.
 //! - Every call is listed in Settings, newest first.
 //!
 //! Clients that speak MCP over HTTP use the URL and token directly. Clients
@@ -108,6 +109,7 @@ pub async fn start(
         port,
         log: log.clone(),
         on_draft,
+        recent: Mutex::new(VecDeque::new()),
     });
     tokio::spawn(async move {
         loop {
@@ -145,9 +147,12 @@ struct Ctx {
     port: u16,
     log: Log,
     on_draft: OnDraft,
+    /// When the last requests came, for the rate limit.
+    recent: Mutex<VecDeque<std::time::Instant>>,
 }
 
 const MAX_BODY: usize = 256 * 1024;
+const RATE_PER_MINUTE: usize = 60;
 
 impl Ctx {
     async fn handle(&self, req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>> {
@@ -171,6 +176,15 @@ impl Ctx {
             .is_some_and(|t| same(t.as_bytes(), self.token.as_bytes()));
         if !authorized {
             return plain(StatusCode::UNAUTHORIZED, "unauthorized");
+        }
+        if !self.allow() {
+            return Response::builder()
+                .status(StatusCode::TOO_MANY_REQUESTS)
+                .header(hyper::header::RETRY_AFTER, "60")
+                .body(Full::new(Bytes::from_static(
+                    b"too many requests; at most 60 a minute",
+                )))
+                .unwrap();
         }
         if req.method() != hyper::Method::POST || req.uri().path() != "/mcp" {
             return plain(StatusCode::NOT_FOUND, "POST /mcp");
@@ -208,7 +222,7 @@ impl Ctx {
                 "protocolVersion": msg["params"]["protocolVersion"].as_str().unwrap_or("2025-06-18"),
                 "capabilities": { "tools": {} },
                 "serverInfo": { "name": "anarchy", "version": env!("CARGO_PKG_VERSION") },
-                "instructions": "What the user keeps in Anarchy: their desks (tasks, agenda, invoices, clients, notes) and Company channels. Private Sealed conversations are never shared. You can read, and draft messages for the user to send; you can't send.",
+                "instructions": "Anarchy is this person's task list, agenda, notes and desks. Call anarchy_get_context first. When they mention something they need to do, add it with anarchy_create_tasks (give it an external_id); move tasks along with anarchy_update_task as work happens; search before adding what may already exist. You can draft messages for them to send, but not send them, and private Sealed conversations are never shared.",
             })),
             "ping" => ok(json!({})),
             "tools/list" => ok(json!({ "tools": crate::ops::agent_tools() })),
@@ -240,6 +254,23 @@ impl Ctx {
         })
     }
 
+    /// 60 requests a minute, like Roma's: plenty for an agent, not a firehose.
+    fn allow(&self) -> bool {
+        let now = std::time::Instant::now();
+        let mut recent = self.recent.lock().unwrap_or_else(|e| e.into_inner());
+        while recent
+            .front()
+            .is_some_and(|t| now.duration_since(*t).as_secs() >= 60)
+        {
+            recent.pop_front();
+        }
+        if recent.len() >= RATE_PER_MINUTE {
+            return false;
+        }
+        recent.push_back(now);
+        true
+    }
+
     fn record(&self, tool: &str, ok: bool, about: String) {
         let mut log = self.log.lock().unwrap_or_else(|e| e.into_inner());
         log.push_front(Call {
@@ -266,6 +297,19 @@ fn about(tool: &str, args: &Value) -> String {
         "anarchy_desk_items" => s("desk"),
         "anarchy_draft" => format!("for {}", s("to")),
         "anarchy_today" => s("date"),
+        "anarchy_create_tasks" => {
+            let n = args
+                .get("tasks")
+                .and_then(|t| t.as_array())
+                .map_or(0, |t| t.len());
+            format!("{n} {}", if n == 1 { "task" } else { "tasks" })
+        }
+        "anarchy_update_task" => args
+            .get("status")
+            .and_then(|v| v.as_str())
+            .map(|st| format!("to {st}"))
+            .unwrap_or_default(),
+        "anarchy_list_tasks" => s("desk"),
         _ => String::new(),
     }
 }
@@ -506,7 +550,10 @@ mod tests {
             // Notifications get no answer.
             assert_eq!(post(&url, &token, r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#).unwrap(), "");
             let list: Value = serde_json::from_str(&post(&url, &token, r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#).unwrap()).unwrap();
-            assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 5);
+            let tools = list["result"]["tools"].as_array().unwrap().clone();
+            assert_eq!(tools.len(), 9);
+            // Every tool says whether it reads or writes, so clients know what to ask about.
+            assert!(tools.iter().all(|t| t["annotations"]["readOnlyHint"].is_boolean()));
 
             let day = call(&url, &token, 3, "anarchy_today", json!({}));
             let day = &day["structuredContent"];
@@ -527,6 +574,35 @@ mod tests {
             assert_eq!(drafted["structuredContent"]["sent"], false);
             let bad = call(&url, &token, 7, "anarchy_desk_items", json!({ "desk": "nowhere" }));
             assert_eq!(bad["isError"], true);
+
+            // Tasks, the Roma way: orient, add (safely twice), move, and add notes.
+            let ctx = call(&url, &token, 8, "anarchy_get_context", json!({}));
+            let ctx = &ctx["structuredContent"];
+            assert_eq!(ctx["user"]["name"], "Maya Chen");
+            assert_eq!(ctx["tasks"]["late"][0]["title"], "Send the Acme invoice");
+            assert_eq!(ctx["agenda_today"][0]["title"], "Call with Tomás");
+            let batch = json!({ "tasks": [
+                { "title": "Book the venue", "external_id": "chat-1", "notes": "Three options in SF" },
+                { "title": "", "external_id": "chat-2" },
+                { "title": "Order the cake", "status": "inProgress", "due": "2999-05-01" } ] });
+            let made = call(&url, &token, 9, "anarchy_create_tasks", batch.clone());
+            let made = &made["structuredContent"];
+            assert_eq!(made["created"].as_array().unwrap().len(), 2);
+            assert_eq!(made["failed"][0]["row"], 1, "one bad row doesn't fail the batch");
+            let again = call(&url, &token, 10, "anarchy_create_tasks", json!({ "tasks": [batch["tasks"][0].clone()] }));
+            assert_eq!(again["structuredContent"]["existing"].as_array().unwrap().len(), 1, "the same external_id isn't added twice");
+            assert!(again["structuredContent"]["created"].as_array().unwrap().is_empty());
+            let venue = made["created"][0]["id"].as_str().unwrap().to_owned();
+            let moved = call(&url, &token, 11, "anarchy_update_task", json!({ "id": venue, "status": "inProgress", "notes": "Called the first one" }));
+            assert_eq!(moved["structuredContent"]["status"], "inProgress");
+            assert_eq!(moved["structuredContent"]["notes"], "Three options in SF\n\nCalled the first one", "notes append by default");
+            let wipe = call(&url, &token, 12, "anarchy_update_task", json!({ "id": venue, "notes": "gone", "mode": "replace" }));
+            assert_eq!(wipe["isError"], true, "replacing notes needs confirm_replace");
+            let doing = call(&url, &token, 13, "anarchy_list_tasks", json!({ "status": ["inProgress"] }));
+            let titles: Vec<_> = doing["structuredContent"]["tasks"].as_array().unwrap().iter().map(|t| t["title"].as_str().unwrap().to_owned()).collect();
+            assert_eq!(titles, ["Order the cake", "Book the venue"], "by due date, undated last");
+            let open = call(&url, &token, 14, "anarchy_list_tasks", json!({}));
+            assert!(!open.to_string().contains("Done already"), "finished tasks are left out unless asked for");
         })
         .await
         .unwrap();
@@ -534,9 +610,12 @@ mod tests {
         assert_eq!(drafts.lock().unwrap().len(), 1);
         assert_eq!(drafts.lock().unwrap()[0].1, "Reminder: Acme");
         let log = running.log.lock().unwrap().clone();
-        assert_eq!(log.len(), 5);
-        assert_eq!(log[0].tool, "anarchy_desk_items");
-        assert!(!log[0].ok);
+        assert_eq!(log.len(), 12);
+        assert_eq!(log[0].tool, "anarchy_list_tasks");
+        assert!(
+            log.iter().any(|c| c.tool == "anarchy_update_task" && !c.ok),
+            "a refused write is logged as refused"
+        );
         drop(running);
         assert!(
             !bridge_file(&dir).exists(),

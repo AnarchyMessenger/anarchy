@@ -76,6 +76,8 @@ Sign up with Google, email or anonymously, then say what it's for, lock the devi
 |---|---|
 | ![Mail upgrade](docs/screens/mail-upgrade.png) | ![Buddy](docs/screens/sidekick-buddy.png) |
 
+The sidekick is a package of its own, [`packages/buddy`](packages/buddy): drop it into any page that needs a face for an agent.
+
 | Summon: ask by voice or typing | The answer, as cards |
 |---|---|
 | ![Summon listening](docs/screens/summon-listening.png) | ![Summon money](docs/screens/summon-money.png) |
